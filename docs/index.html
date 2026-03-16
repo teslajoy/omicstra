@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>omicstra</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#1a1f2e;
+  --bg2:#1e2538;
+  --bg3:#232a40;
+  --border:#2e3650;
+  --text:#f0f0f0;
+  --muted:#8a9bbf;
+  --accent:#5DCAA5;
+  --accent2:#BA7517;
+  --code:#161b2b;
+  --font-mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:15px;line-height:1.7;min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+
+/* nav */
+nav{border-bottom:1px solid var(--border);padding:16px 0;position:sticky;top:0;background:rgba(26,31,46,.94);backdrop-filter:blur(8px);z-index:100}
+.nav-inner{max-width:860px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between}
+.nav-logo{font-family:var(--font-mono);font-size:16px;font-weight:600;color:var(--text);letter-spacing:-.5px}
+.nav-logo .omic{color:#ffffff}.nav-logo .cstra{color:#5DCAA5}
+.nav-links{display:flex;gap:24px;font-size:13px;color:var(--muted)}
+.nav-links a{color:var(--muted)}
+.nav-links a:hover{color:var(--text);text-decoration:none}
+
+/* main */
+main{max-width:860px;margin:0 auto;padding:0 24px}
+
+/* hero */
+.hero{padding:80px 0 56px;border-bottom:1px solid var(--border)}
+.hero-tag{font-family:var(--font-mono);font-size:11px;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:20px}
+h1{font-size:clamp(28px,4vw,42px);font-weight:500;letter-spacing:-.02em;line-height:1.15;margin-bottom:20px;color:#ffffff}
+.hero-sub{font-size:16px;color:#c0cce0;max-width:560px;line-height:1.7;margin-bottom:32px}
+.hero-badges{display:flex;flex-wrap:wrap;gap:8px}
+.badge{font-family:var(--font-mono);font-size:11px;padding:4px 10px;border-radius:3px;border:1px solid var(--border);color:var(--muted);background:var(--bg2)}
+.badge.green{border-color:#1D9E7560;color:#5DCAA5;background:#0F6E5610}
+.badge.amber{border-color:#BA751760;color:#EF9F27;background:#BA751710}
+
+/* section */
+section{padding:48px 0;border-bottom:1px solid var(--border)}
+h2{font-size:13px;font-family:var(--font-mono);color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:24px}
+
+/* arch block */
+.arch{background:var(--code);border:1px solid var(--border);border-radius:6px;padding:24px;font-family:var(--font-mono);font-size:13px;line-height:1.9;overflow-x:auto}
+.arch .layer-label{color:var(--muted);font-size:11px}
+.arch .hl-green{color:#5DCAA5}
+.arch .hl-coral{color:#F0997B}
+.arch .hl-amber{color:#EF9F27}
+.arch .hl-blue{color:#85B7EB}
+.arch .hl-dim{color:#3a4a6a}
+
+/* hypotheses */
+.hyp-grid{display:grid;gap:12px}
+.hyp{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:18px 20px;display:grid;grid-template-columns:28px 1fr auto;gap:12px;align-items:start}
+.hyp-id{font-family:var(--font-mono);font-size:12px;color:var(--accent);font-weight:600;padding-top:2px}
+.hyp-text{font-size:14px;color:#d0daf0}
+.hyp-metrics{font-family:var(--font-mono);font-size:11px;color:var(--muted);text-align:right;line-height:1.8}
+
+/* stack table */
+.stack-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stack-row{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;font-size:13px}
+.stack-label{color:var(--muted);font-family:var(--font-mono);font-size:11px}
+.stack-val{color:var(--text);font-size:13px}
+
+/* modality extend */
+.extend-box{background:var(--code);border:1px solid var(--border);border-radius:6px;padding:20px 24px;font-family:var(--font-mono);font-size:12.5px;line-height:2}
+.extend-box .path{color:#85B7EB}
+.extend-box .comment{color:#4a5a7a}
+
+/* timeline embed */
+.timeline-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:6px;overflow:hidden}
+iframe{display:block;width:100%;border:none;height:620px;background:transparent}
+
+/* footer */
+footer{padding:40px 0 48px;color:var(--muted);font-size:12px;line-height:1.9}
+.footer-inner{max-width:860px;margin:0 auto;padding:0 24px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px}
+.footer-left{font-family:var(--font-mono)}
+.footer-right{text-align:right}
+.footer-right a{color:var(--muted)}
+
+@media(max-width:600px){
+  .stack-grid{grid-template-columns:1fr}
+  .hyp{grid-template-columns:24px 1fr;grid-template-rows:auto auto}
+  .hyp-metrics{grid-column:2;text-align:left}
+  .footer-inner{flex-direction:column}
+  .footer-right{text-align:left}
+  .nav-links{display:none}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <span class="nav-logo" style="display:flex;align-items:center;gap:8px"><img src="images/omicstra.png" style="width:22px;height:22px;border-radius:4px" alt=""><span class="omic">omic</span><span class="cstra">stra</span></span>
+    <div class="nav-links">
+      <a href="#architecture">architecture</a>
+      <a href="#hypotheses">hypotheses</a>
+      <a href="#stack">stack</a>
+      <a href="#timeline">timeline</a>
+      <a href="https://github.com/teslajoy/omicstra">github</a>
+    </div>
+  </div>
+</nav>
+
+<main>
+
+  <div class="hero">
+    <img src="images/omicstra.png" style="width:72px;height:72px;border-radius:12px;margin-bottom:20px;display:block" alt="omicstra logo">
+    <div class="hero-tag">A Multi-Agent MCP Server for Cross-Modal Biomedical Embedding Alignment + Reasoning in Spatial Biology</div>
+    <h1><span style="color:#ffffff">omic</span><span style="color:#5DCAA5">stra</span></h1>
+    <p class="hero-sub">a multi-agent MCP server for cross-modal reasoning in spatial biology. modality-specialized components + integration are orchestrated with LangGraph; foundation model encoders are pluggable.</p>
+    <div class="hero-badges">
+      <span class="badge green">active development</span>
+      <span class="badge amber">ResearchHub Foundation grant</span>
+      <span class="badge">OHSU Knight Cancer Institute</span>
+      <span class="badge">MIT license</span>
+    </div>
+  </div>
+
+  <section id="architecture">
+    <h2>architecture</h2>
+    <img src="images/architecture_diagram.png" width="100%" style="border-radius:6px;margin-top:4px" alt="omicstra architecture"/>
+  </section>
+
+  <section id="hypotheses">
+    <h2>hypotheses - seed cohort</h2>
+    <div class="hyp-grid">
+      <div class="hyp">
+        <span class="hyp-id">H1</span>
+        <span class="hyp-text">aligned embeddings retrieve better cross-modal matches than any unaligned baseline</span>
+        <span class="hyp-metrics">Recall@K - MRR<br>CKA</span>
+      </div>
+      <div class="hyp">
+        <span class="hyp-id">H2</span>
+        <span class="hyp-text">manifold alignment preserves biological structure better than either modality alone</span>
+        <span class="hyp-metrics">ARI - silhouette<br>UMAP</span>
+      </div>
+      <div class="hyp">
+        <span class="hyp-id">H3</span>
+        <span class="hyp-text">shared space encodes interpretable biological signals</span>
+        <span class="hyp-metrics">CCA<br>spatial maps</span>
+      </div>
+    </div>
+    <p style="font-size:13px;color:#9ab0cf;margin-top:16px">seed cohort: <a href="https://www.nature.com/articles/s41467-024-54145-w">Wang et al. 2024</a> - 92 TNBC patients, co-registered Visium ST + H&E WSI (<a href="https://doi.org/10.5281/zenodo.8135721">Zenodo</a>)</p>
+  </section>
+
+  <section id="stack">
+    <h2>stack</h2>
+    <div class="stack-grid">
+      <div class="stack-row"><span class="stack-label">synthesis</span><span class="stack-val">Claude Opus 4.6</span></div>
+      <div class="stack-row"><span class="stack-label">routing</span><span class="stack-val">Claude Sonnet 4.6</span></div>
+      <div class="stack-row"><span class="stack-label">orchestration</span><span class="stack-val">LangGraph StateGraph</span></div>
+      <div class="stack-row"><span class="stack-label">tracing</span><span class="stack-val">LangSmith</span></div>
+      <div class="stack-row"><span class="stack-label">pluggable tools</span><span class="stack-val">foundation models + embeddings</span></div>
+      <div class="stack-row"><span class="stack-label">compute</span><span class="stack-val">local / cloud / SLURM</span></div>
+      <div class="stack-row"><span class="stack-label">vector retrieval</span><span class="stack-val">Qdrant</span></div>
+      <div class="stack-row"><span class="stack-label">interface</span><span class="stack-val">MCP</span></div>
+    </div>
+  </section>
+
+  <section id="timeline">
+    <h2>timeline</h2>
+    <div class="timeline-wrap">
+      <iframe src="timeline.html" title="project timeline"></iframe>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-left">
+      omicstra - MIT license<br>
+      funded by ResearchHub Foundation<br>
+      nonprofit recipient: OHSU Foundation - EIN 23-7083114<br>
+      seed cohort: Wang et al. 2024, Nat. Commun. 15:10232
+    </div>
+    <div class="footer-right">
+      <a href="https://github.com/teslajoy/omicstra">github</a><br>
+      <a href="https://doi.org/10.55277/researchhub.6ou1w3h3">grant doi</a>
+
+      <br>OHSU Knight Cancer Institute
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

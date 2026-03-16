@@ -1,0 +1,55 @@
+# os
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# env
+.env
+.env.*
+!.env.example
+
+# data - large files never committed
+data/inputs/
+data/embeddings/
+data/outputs/
+runs/
+notebooks/exploration/
+
+# ml artifacts
+*.pt
+*.pth
+*.ckpt
+*.npy
+*.zarr
+*.h5
+*.h5ad
+*.parquet
+
+# ide
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# langsmith / api logs
+*.log
+langsmith_traces/

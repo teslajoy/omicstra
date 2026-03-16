@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>omicstra - timeline</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#1a1f2e;
+  --bg2:#1e2538;
+  --border:#2e3650;
+  --text:#f0f0f0;
+  --muted:#8a9bbf;
+  --dim:#4a5a7a;
+  --accent:#5DCAA5;
+  --amber:#EF9F27;
+  --coral:#F0997B;
+  --purple:#AFA9EC;
+  --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13px;padding:28px 32px;min-height:100vh}
+
+.header{margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid var(--border)}
+.wordmark{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--text)}
+.wordmark .stra{color:var(--accent)}
+.meta{font-size:11px;color:var(--muted);margin-top:4px}
+.meta span{margin-right:16px}
+.meta .now{color:var(--coral)}
+
+/* grid */
+.grid{display:grid;grid-template-columns:140px 1fr;gap:0}
+.wk-headers{display:flex;padding-left:140px;border-bottom:1px solid var(--border);margin-bottom:2px}
+.wk-h{flex:1;text-align:center;font-family:var(--mono);font-size:9.5px;color:var(--dim);border-left:1px solid var(--border);padding:3px 0}
+.wk-h.now-col{color:var(--coral)}
+
+/* rows */
+.row{display:contents}
+.row-label{padding:6px 12px 6px 0;display:flex;flex-direction:column;justify-content:center;border-top:1px solid var(--border)}
+.row-name{font-size:11.5px;font-weight:500;color:var(--text)}
+.row-dates{font-family:var(--mono);font-size:9.5px;color:var(--dim);margin-top:2px}
+.row-track{position:relative;border-top:1px solid var(--border);min-height:52px}
+
+/* week lines in track */
+.wk-line{position:absolute;top:0;bottom:0;width:1px;background:var(--border);opacity:.5}
+.now-line{position:absolute;top:0;bottom:0;width:2px;background:var(--coral);opacity:.8;z-index:10}
+
+/* bars */
+.bar{position:absolute;top:8px;bottom:8px;border-radius:3px;display:flex;align-items:center;padding:0 0 0 10px;font-size:10.5px;font-weight:500;white-space:nowrap;overflow:hidden;cursor:default;justify-content:flex-start}
+.buf{position:absolute;top:7px;bottom:7px;border-radius:0 3px 3px 0;opacity:.25}
+
+
+/* legend */
+.legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:20px;padding-top:14px;border-top:1px solid var(--border);font-size:11px;color:var(--muted)}
+.leg{display:flex;align-items:center;gap:6px}
+.leg-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+
+
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="meta">
+    <span class="now">today: Mar 16 2026</span>
+    <span>Aug 22 2026</span>
+    <span>23 weeks</span>
+  </div>
+</div>
+
+<div id="wk-headers" class="wk-headers"></div>
+<div id="rows" class="grid"></div>
+
+<div class="legend">
+  <div class="leg"><div class="leg-dot" style="background:#0F6E56"></div>spec</div>
+  <div class="leg"><div class="leg-dot" style="background:#185FA5"></div>EDA - exploratory data analysis</div>
+  <div class="leg"><div class="leg-dot" style="background:#BA7517"></div>analyses workflows</div>
+  <div class="leg"><div class="leg-dot" style="background:#2D7A8A"></div>refine design</div>
+  <div class="leg"><div class="leg-dot" style="background:#534AB7"></div>embedding alignment + loops</div>
+  <div class="leg"><div class="leg-dot" style="background:#993C1D"></div>evaluation</div>
+  <div class="leg"><div class="leg-dot" style="background:#0F6E56"></div>MCP + packaging</div>
+  <div class="leg"><div class="leg-dot" style="background:#993356"></div>paper</div>
+</div>
+
+
+</div>
+
+<script>
+const W = 23;
+const NOW = 0;
+
+function wkDate(i) {
+  const d = new Date(2026, 2, 16);
+  d.setDate(d.getDate() + i * 7);
+  return (d.getMonth()+1) + '/' + d.getDate();
+}
+
+const phases = [
+  {name:'Phase 0\nspec', dates:'Mar 16 - Mar 27', start:0,   len:1.5, buf:.5,  color:'#0F6E56',
+   dels:['Zenodo download','pairing.py','coregistration findings']},
+  {name:'Phase 1\nEDA',             dates:'Mar 27 - Apr 17', start:1.5, len:3,   buf:1,   color:'#185FA5',
+   dels:['EDA','qc_he.py','qc_st.py','exclusion report']},
+  {name:'Phase 2\nanalyses workflows',     dates:'Apr 10 - May 8',  start:3.7, len:4,   buf:2,   color:'#BA7517',
+   dels:['analyses workflows','UNI2 extraction','Novae extraction','manifest.db']},
+  {name:'Phase 3\nalignment + loops', dates:'May 1 - May 29',  start:6.7, len:4,   buf:1.5, color:'#534AB7',
+   dels:['K1: QC threshold loop','K2: alignment hyperparam loop','winner.json','checkpoint']},
+  {name:'Phase 4\nevaluation', dates:'May 22 - Jun 19', start:9.7, len:4.5, buf:1,   color:'#993C1D',
+   dels:['K3: retrieval optimization loop','h1 - h2 - h3','Opus synthesis','UMAP plots']},
+  {name:'Phase 5\nrefine design',      dates:'Jun 12 - Jul 3',  start:12.7,len:3,   buf:1,   color:'#2D7A8A',
+   dels:['refine design','encoder swap','baselines']},
+  {name:'Phase 6\nMCP + packaging',dates:'Jun 26 - Jul 17', start:14.0,len:3.5, buf:.5,  color:'#0F6E56',
+   dels:['MCP server','best run notebook','release'],
+},
+  {name:'Phase 7\npaper',          dates:'Jun 19 - Aug 22', start:13.7,len:8.3, buf:0,   color:'#993356',
+   dels:['methods','results + figures','submission'],
+},
+];
+
+// week headers
+const hdrEl = document.getElementById('wk-headers');
+for(let i=0;i<W;i++){
+  const d = document.createElement('div');
+  d.className = 'wk-h' + (i===NOW?' now-col':'');
+  d.textContent = i===NOW ? 'now' : wkDate(i);
+  hdrEl.appendChild(d);
+}
+
+const PCT = w => (w/W*100).toFixed(3)+'%';
+const container = document.getElementById('rows');
+
+phases.forEach(p => {
+  // label
+  const lbl = document.createElement('div');
+  lbl.className = 'row-label';
+  const np = p.name.split('\n');
+  lbl.innerHTML = `<div class="row-name" style="font-size:9.5px;opacity:.65;line-height:1.3">${np[0]}</div><div class="row-name" style="font-size:11.5px;font-weight:500">${np[1]||''}</div><div class="row-dates">${p.dates}</div>`;
+
+  // track
+  const track = document.createElement('div');
+  track.className = 'row-track';
+
+  // week lines
+  for(let w=1;w<W;w++){
+    const l = document.createElement('div');
+    l.className = 'wk-line' + (w===NOW?' now-line':'');
+    l.style.left = PCT(w);
+    track.appendChild(l);
+  }
+
+  // now line at 0
+  const nl = document.createElement('div');
+  nl.className = 'now-line';
+  nl.style.left = '0%';
+  track.appendChild(nl);
+
+  // buffer
+  if(p.buf){
+    const bf = document.createElement('div');
+    bf.className = 'buf';
+    bf.style.left = PCT(p.start+p.len);
+    bf.style.width = PCT(p.buf);
+    bf.style.background = p.color;
+    track.appendChild(bf);
+  }
+
+  // bar
+  const bar = document.createElement('div');
+  bar.className = 'bar';
+  bar.style.left = PCT(p.start);
+  bar.style.width = PCT(p.len);
+  bar.style.background = p.color;
+  bar.style.color = '#fff';
+  const parts = p.name.split('\n');
+  bar.textContent = parts.length > 1 ? parts[1] : p.name;
+  bar.title = p.dels.join(' - ');
+  track.appendChild(bar);
+
+
+  container.appendChild(lbl);
+  container.appendChild(track);
+});
+</script>
+</body>
+</html>
