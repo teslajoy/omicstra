@@ -32,7 +32,6 @@ data/inputs/
 data/embeddings/
 data/outputs/
 runs/
-notebooks/exploration/
 
 # ml artifacts
 *.pt
@@ -53,3 +52,5 @@ notebooks/exploration/
 # langsmith / api logs
 *.log
 langsmith_traces/
+
+s41467-024-54145-w.pdf

@@ -22,6 +22,37 @@ early vs late fusion is an experimental variable, not an assumption.
 
 ## architecture
 
+three layers:
+
+```
+layer 0: EDA (gate)
+  is data usable? quality? signal? modalities alignable?
+  -> proceed / proceed with caution / stop
+
+layer 1: pipeline (execution)
+  embed -> align -> eval
+  fixed protocol, deterministic with seed
+
+layer 2: karpathy loop (outer optimization)
+  editable asset: alignment_config.json
+  scalar metric: Recall@K or MRR (fixed)
+  proposes config -> runs pipeline -> scores -> keeps or discards
+  output: git log of validated decisions + winner.json
+```
+
+program.md defines search space, constraints, stopping criteria.
+
+embedding dimensions: UNI2 1536d - Novae 256d -> shared 512d
+
+alignment strategies (experimental variable):
+```
+  late interaction  - tiles aggregated per spot (mean/max),
+                      then independent MLPs -> shared 512d (InfoNCE)
+  early interaction - tile-level cross-attention between H&E tokens
+                      and ST spot before projection (~4M params, local K tiles)
+  comparison: does tile-level morphological detail lost at aggregation
+              matter for cross-modal alignment quality?
+```
 
 ---
 
@@ -31,6 +62,9 @@ early vs late fusion is an experimental variable, not an assumption.
 omicstra/
 │
 ├── CLAUDE.md                        # north star for Claude Code
+├── EDA.md                           # gate - data quality checks before pipeline
+├── PLAN_RULES.md                    # constraints - no alignment until EDA passes
+├── MODELS.md                        # training provenance + tissue compatibility per model
 ├── MODALITY_TEMPLATE.md             # how to add a new modality
 ├── .mcp.json                        # MCP server entry
 ├── .env.example                     # COMPUTE_BACKEND=local|cloud|slurm
@@ -53,7 +87,8 @@ omicstra/
 │   ├── registry.json
 │   └── {project_id}/
 │       ├── project.json
-│       └── loops/                   # K1 - K2 - K3 program.md
+│       ├── program.md               # karpathy loop - search space + constraints + metric
+│       └── eda_summary.md           # EDA gate output
 │
 ├── src/
 │   ├── agents/                      # CLAUDE.md - orchestrator - he_agent - st_agent
