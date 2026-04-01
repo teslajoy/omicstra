@@ -1,0 +1,107 @@
+{
+  "produced_by": "manual",
+  "regenerate": true,
+  "notebook_sources": [
+    "notebooks/exploration/eda_data_inventory.ipynb",
+    "notebooks/exploration/eda_biological_signal.ipynb"
+  ],
+  "dataset": "Wang et al. 2024, TNBC spatial transcriptomics + H&E",
+  "dataset_doi": "10.5281/zenodo.14204217",
+  "dataset_source": "Zenodo",
+  "dataset_publication": "Wang et al. 2024, Nat. Commun. 15:10232",
+  "eda_date": "2026-04-01",
+  "platform": "Visium",
+  "patients": 94,
+  "patients_with_st": 94,
+  "patients_in_publication": 92,
+  "samples": 282,
+  "samples_with_counts": 281,
+  "units_total": 537069,
+  "units_selected": 287674,
+  "units_post_qc": 270310,
+  "gene_id_format": "ensembl_versioned",
+  "genome_reference": "GRCh38/hg38 (GENCODE v38)",
+  "quantification": "Salmon 0.38",
+  "normalization": "Log(1 + 10000x/Σx)",
+  "batch_correction": "gene-specific coefficient via glmGamPoi",
+  "counts_are_raw": false,
+  "encoder_input_decision": "unresolved",
+  "positive_markers_pass": true,
+  "positive_markers": {
+    "MKI67": {"mean": 0.501, "pct_expressing": 31.2, "expected": "proliferation"},
+    "CD3D": {"mean": 0.148, "pct_expressing": 8.9, "expected": "T cell infiltration"},
+    "CD3E": {"mean": 0.123, "pct_expressing": 8.7, "expected": "T cell infiltration"},
+    "ERBB2": {"mean": 1.887, "pct_expressing": 54.7, "expected": "low level, HER2-neg by IHC"},
+    "CD79A": {"mean": 0.056, "pct_expressing": 3.7, "expected": "TLS signature"},
+    "CD37": {"mean": 0.263, "pct_expressing": 17.2, "expected": "TLS signature"}
+  },
+  "negative_markers_pass": true,
+  "negative_markers": {
+    "ESR1": {"mean": 0.029, "pct_expressing": 2.6, "expected": "near-zero (triple-negative)"},
+    "PGR": {"mean": 0.011, "pct_expressing": 0.9, "expected": "near-zero (triple-negative)"}
+  },
+  "spatial_autocorrelation_pass": true,
+  "morans_i_summary": {
+    "subarray": "CN1/C1",
+    "n_spots": 1075,
+    "k": 6,
+    "n_permutations": 999,
+    "caveat": "single subarray only - compute median across all 281 for registered report",
+    "results": {
+      "COL1A1": {"I": 0.5959, "z": 34.4, "p": 0.0},
+      "CD3D": {"I": 0.4952, "z": 30.8, "p": 0.0},
+      "ERBB2": {"I": 0.4315, "z": 24.8, "p": 0.0},
+      "CD79A": {"I": 0.3889, "z": 25.3, "p": 0.0},
+      "CD37": {"I": 0.3229, "z": 19.7, "p": 0.0},
+      "CD3E": {"I": 0.3181, "z": 19.1, "p": 0.0},
+      "MKI67": {"I": 0.1867, "z": 11.0, "p": 0.0},
+      "MS4A1": {"I": 0.1748, "z": 11.0, "p": 0.0},
+      "PGR": {"I": 0.0376, "z": 2.2, "p": 0.03},
+      "ESR1": {"I": 0.0147, "z": 0.9, "p": 0.36}
+    },
+    "markers_above_0.3": 6,
+    "top_5_above_0.3": 5
+  },
+  "batch_silhouette": {
+    "plate_pc": -0.076,
+    "plate_umap": -0.054,
+    "lane_pc": -0.081,
+    "lane_umap": -0.054,
+    "subtype_pc": -0.143,
+    "subtype_umap": -0.053
+  },
+  "batch_correction_needed": false,
+  "pca_variance_explained": {
+    "PC1": 0.4242,
+    "PC2": 0.1760,
+    "PC3": 0.0771
+  },
+  "excluded_samples": [
+    {"subarray": "CN26/D1", "reason": "8 selection spots", "patient_id": 51, "patient_usable": true}
+  ],
+  "segmentation_qc_pass": null,
+  "cross_modal_registration_pass": true,
+  "cross_modal_registration_note": "spot-H&E overlay visually confirmed on CN1/C1",
+  "multi_section_alignment_pass": null,
+  "model_tissue_fit": {
+    "UNI2-h": {"tissue": "breast_TNBC", "fit": "validated", "reason": "TCGA-BRCA in training"},
+    "Virchow2": {"tissue": "breast_TNBC", "fit": "validated", "reason": "MSK breast cases in training"},
+    "Novae": {"tissue": "breast_TNBC", "fit": "uncertain", "reason": "TNBC Visium not confirmed in Novae training data", "validation_required": "embedding UMAP before alignment"}
+  },
+  "annotations_available": {
+    "molecular_subtype_global": {"n": 94, "values": ["M", "IM", "BL", "MSL", "LAR"]},
+    "molecular_subtype_tumor": {"n": 94, "values": ["LAR", "M", "BL"]},
+    "molecular_subtype_stroma": {"n": 94, "values": ["M", "IM", "BL", "MSL", "LAR"]},
+    "TIME_pathologist": {"n": 94, "values": ["SR", "ID", "MR", "FI", "nd"]},
+    "spatial_archetypes": {"n": 94, "values": [1, 2, 3, 4, 5, 6, 7, 8, 9]},
+    "morphological_annotations": {"n_subarrays": 94, "categories": 18}
+  },
+  "verdict": "proceed",
+  "risks": [
+    "Novae GNN tissue compatibility uncertain on TNBC Visium - validate embedding UMAP in phase 1",
+    "counts are log-normalized + batch corrected, not raw - encoder_input_decision unresolved",
+    "Moran's I computed on single subarray (CN1/C1) - compute median across all 281 for registered report",
+    "MKI67 spatial autocorrelation lower than expected (I=0.19) - check consistency across subarrays",
+    "17 subarrays with <500 selection spots - monitor for downstream impact"
+  ]
+}

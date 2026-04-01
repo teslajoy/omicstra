@@ -159,9 +159,10 @@ read `MODALITY_TEMPLATE.md`:
 | H&E foundation model | UNI2 - Virchow2 as swap |
 | ST foundation model | Novae GNN |
 | pathway | gpath2vec + biological pathway embeddings |
-| alignment | contrastive - 2-layer MLP projection |
-| compute | laptop / cloud GPU / SLURM |
+| alignment | contrastive MLP + cross-attention bridge |
+| compute | laptop / cloud GPU / SLURM (ARC HPC at OHSU) |
 | vector retrieval | Qdrant |
+| graph store | Neo4j |
 | interface | Model Context Protocol |
 
 ---

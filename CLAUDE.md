@@ -113,6 +113,7 @@ do not compare debug metrics to full run metrics.
 | pathway embeddings | gpath2vec |
 | alignment | contrastive MLP + cross-attention bridge |
 | vector retrieval | Qdrant |
+| graph store | Neo4j |
 | interface | Model Context Protocol (MCP) |
 | compute | local / cloud GPU / SLURM |
 
