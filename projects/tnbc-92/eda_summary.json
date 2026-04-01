@@ -25,7 +25,11 @@
   "normalization": "Log(1 + 10000x/Σx)",
   "batch_correction": "gene-specific coefficient via glmGamPoi",
   "counts_are_raw": false,
-  "encoder_input_decision": "unresolved",
+  "encoder_input_decision": "use selection.RData - raw integer counts, tissue-filtered spots (1075 spots x 27567 genes after low-expression filtering), median 16492 UMI/spot. rawCountsMatrices TSVs are normalized + batch-corrected despite the name - do not use for Novae.",
+  "raw_counts_location": "byArray/{slide}/{subarray}/selection.RData",
+  "raw_counts_format": "RData matrix, versioned Ensembl gene IDs, coordinate spot indices (ex. '2x6')",
+  "raw_counts_dims_example": "1075 spots x 27567 genes (CN1/C1, tissue-selected, low-expression filtered)",
+  "naming_warning": "rawCountsMatrices/ contains normalized floats, not raw counts. all.RData = full grid raw counts (1931 spots x 30263 genes). selection.RData = tissue-filtered raw counts (1075 spots x 27567 genes). use selection.RData for Novae.",
   "positive_markers_pass": true,
   "positive_markers": {
     "MKI67": {"mean": 0.501, "pct_expressing": 31.2, "expected": "proliferation"},
@@ -99,9 +103,11 @@
   "verdict": "proceed",
   "risks": [
     "Novae GNN tissue compatibility uncertain on TNBC Visium - validate embedding UMAP in phase 1",
-    "counts are log-normalized + batch corrected, not raw - encoder_input_decision unresolved",
     "Moran's I computed on single subarray (CN1/C1) - compute median across all 281 for registered report",
     "MKI67 spatial autocorrelation lower than expected (I=0.19) - check consistency across subarrays",
     "17 subarrays with <500 selection spots - monitor for downstream impact"
+  ],
+  "resolved_risks": [
+    "encoder_input_decision resolved 2026-04-01: raw integer counts found in selection.RData (byArray/{slide}/{subarray}/). rawCountsMatrices name is misleading - contains normalized floats."
   ]
 }
