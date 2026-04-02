@@ -81,15 +81,15 @@ by slide noise rather than biology, with no diagnostic signal.
 
 ### gpath2vec (pathway embeddings)
 
-| field | value |
-|---|---|
-| output dim | configurable |
-| type | gene-set to pathway-level embedding vectors encoding enrichment strength and inter-pathway network topology |
-| source | Reactome / KEGG pathway databases |
-| target pathways (H3) | TGF-β Signaling, Immune System, Extracellular Matrix Organization, Cell Cycle, Programmed Cell Death |
+| field | value                                                                                                                        |
+|---|------------------------------------------------------------------------------------------------------------------------------|
+| output dim | configurable                                                                                                                 |
+| type | gene-set to pathway-level embedding vectors encoding enrichment strength and inter-pathway network topology                  |
+| source | Reactome functional interactions w upper / lower level pathways                                                              |
+| target pathways (H3) | TGF-β Signaling, Immune System, Extracellular Matrix Organization, Cell Cycle, Programmed Cell Death                         |
 | use case | H3 evaluation — correlate pathway embeddings with shared latent dimensions via CCA; generate pathway-morphology spatial maps |
-| contingency | if spot-level embeddings too noisy, aggregate to spatial neighborhood level (k=15 neighbors) |
-| reference | Sanati 2024, github.com/teslajoy/gpath2vec |
+| contingency | if spot-level embeddings too noisy, aggregate to spatial neighborhood level (k=15 neighbors)                                 |
+| reference | Sanati 2024, github.com/teslajoy/gpath2vec                                                                                   |
 
 ---
 
