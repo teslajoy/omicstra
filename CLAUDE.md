@@ -46,7 +46,7 @@ layer 2: karpathy loop (outer optimization)
 ## embedding dimensions
 
 - UNI2: 1536d (Virchow2 as swap: 1280d)
-- Novae GNN: 256d
+- Novae GNN: 64d (novae_latent, raw GAT output - LayerNorm at MLP input required)
 - shared space: 512d
 
 ---
@@ -109,7 +109,7 @@ do not compare debug metrics to full run metrics.
 | synthesis | Claude Opus 4.6 |
 | tracing | LangSmith (observability only) |
 | H&E encoder | UNI2 1536d (Virchow2 1280d as swap) |
-| ST encoder | Novae GNN 256d |
+| ST encoder | Novae GNN 64d (novae_latent) |
 | pathway embeddings | gpath2vec |
 | alignment | contrastive MLP + cross-attention bridge |
 | vector retrieval | Qdrant |
@@ -131,7 +131,11 @@ do not compare debug metrics to full run metrics.
 - `config/` — qc_params.json (K1 editable), alignment_config.json (K2 editable), debug.json
 - `knowledge/` — shared domain assets: pathways, annotations (committed)
 - `runs/` — execution traces per run (git-ignored)
-- `data/` — inputs, embeddings, outputs (git-ignored except READMEs)
+- `data/inputs/` — raw data: byArray, Images, clinical (git-ignored except READMEs)
+- `data/embeddings/` — cached encoder outputs: uni2_raw/, uni2_reinhard/, novae/, pca_hvg/, etc. (git-ignored)
+- `notebooks/exploration/` — EDA notebooks (committed)
+- `notebooks/embeddings/` — modality encoder runs: he_agent writes uni2_*/virchow2_*, st_agent writes novae_*/pca_hvg_*/scvi_* (committed)
+- `notebooks/experiments/` — alignment runs consuming data/embeddings/, one per config (committed)
 - `notebooks/final/` — best-run notebooks from LangSmith traces (committed)
 
 ---
@@ -145,6 +149,7 @@ do not compare debug metrics to full run metrics.
 - `MODELS.md` — training provenance + tissue compatibility per model
 - `MODALITY_TEMPLATE.md` — how to add a new modality
 - `projects/{project_id}/program.md` — search space, constraints, stopping criteria
+- `docs/papers/` — reference papers: Wang 2024 (dataset), Sanati 2025 (proposal), Komen 2025 (FM robustness)
 
 ---
 

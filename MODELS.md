@@ -17,11 +17,14 @@ by slide noise rather than biology, with no diagnostic signal.
 | field | value |
 |---|---|
 | output dim | 1536 |
-| architecture | ViT-H/14 |
+| architecture | ViT-H/14 (DINOv2, 350k WSIs) |
+| model size | 681M params |
 | training data | Mass General Brigham + TCGA, 200M+ pathology images, 100k+ WSIs |
 | tissue coverage | broad pan-cancer: breast, lung, colon, prostate, kidney, liver, skin |
 | known gaps | rare cancers, non-oncology tissue, pediatric |
-| TNBC status | supported — TCGA-BRCA in training |
+| TNBC status | supported - TCGA-BRCA in training |
+| robustness (PathoROB) | mid-tier: RI=0.836 (TCGA), 0.544 (Camelyon), 0.923 (Tolkach). after ComBat+Reinhard: 0.870, 0.931, 0.963. encodes center signatures in early PCs. Komen et al. 2025 |
+| L2 normalization | none - raw CLS tokens |
 | role in omicstra | primary H&E encoder; histology agent tool |
 | reference | Chen et al. 2024, Nat. Med. 30, 850-862 |
 
@@ -30,28 +33,47 @@ by slide noise rather than biology, with no diagnostic signal.
 | field | value |
 |---|---|
 | output dim | 1280 |
-| architecture | ViT-H/14 (self-supervised, mixed magnification) |
+| architecture | ViT-H/14 (DINOv2, 3.1M WSIs) |
+| model size | 632M params |
 | training data | 3.1M slides, Memorial Sloan Kettering |
 | tissue coverage | broad pan-cancer, MSK case mix weighted toward adult solid tumors |
 | known gaps | non-cancer tissue, rare cancers, pediatric |
-| TNBC status | supported — MSK breast cases in training |
-| role in omicstra | drop-in ablation encoder via pluggable agent tool interface (H1 encoder sensitivity) |
+| TNBC status | supported - MSK breast cases in training |
+| robustness (PathoROB) | Pareto-optimal (with Atlas): RI=0.848 (TCGA), 0.806 (Camelyon), 0.955 (Tolkach). most robust SSL model tested. Komen et al. 2025 |
+| role in omicstra | drop-in ablation encoder via pluggable agent tool interface (H1 encoder sensitivity). robustness-motivated: if UNI2-h alignment shows center-driven clustering, Virchow2 swap is justified |
 | reference | Vorontsov et al. 2024, arXiv:2408.00738 |
 
 ### Novae GNN (spatial transcriptomics)
 
 | field | value |
 |---|---|
-| output dim | 256 |
-| architecture | graph neural network |
-| training data | scverse ecosystem spatial datasets, human + mouse |
-| tissue coverage | brain, intestine, liver, lymph node, skin — not uniformly pan-cancer |
-| known gaps | TNBC Visium not a confirmed training focus |
-| TNBC status | uncertain — validate embedding UMAP before trusting alignment |
-| input requirement | raw counts preferred; if counts_are_raw: false, resolve encoder_input_decision before dispatch |
+| output dim | 64 (novae_latent) |
+| architecture | CellEmbedder (512-d) -> GAT encoder (64-d) -> SwavHead (training only) |
+| model size | 32M params |
+| training data | image-based ST only: MERSCOPE, Xenium, CosMX - ~78 slides, ~30M cells, 18 tissues |
+| tissue coverage | brain, intestine, liver, lymph node, skin - NOT Visium/VisiumHD |
+| known gaps | trained on subcellular-resolution image-based ST, not spot-based platforms |
+| TNBC status | validated_with_constraints (see validation results below) |
+| input requirement | raw counts preferred; gene symbols (not Ensembl); obsm['spatial'] in microns |
+| L2 normalization | none - raw GAT output (mean norm=2.618, std=0.52). LayerNorm required at MLP input |
+| batch correction | native - suppresses patient/batch signal by design. within/between gap is not a valid QC metric |
+| spatial graph | novae.spatial_neighbors(adata) - Delaunay by default. consider radius cutoff for spot-based data |
 | multimodal capability | natively supports H&E foundation model features as node-level attributes (early fusion); omicstra externalizes integration strategy to the orchestration layer, treating fusion mode as an experimental variable |
 | role in omicstra | primary ST encoder; spatial transcriptomics agent tool |
-| reference | Conan-Guez et al. 2024, bioRxiv |
+| reference | Blampey et al. 2025, Nat. Methods; doi:10.1038/s41592-025-02899-6 |
+| HuggingFace | MICS-Lab/novae-human-0 |
+
+#### TNBC validation results (Wang et al. dataset)
+
+```
+novae_tnbc_status: validated_with_constraints
+spatial_criterion: PASS (mean rho=-0.380, all p~0)
+gap_criterion: not_applicable (batch_correction_active)
+alignment_training_set: [TNBC1_CN1_C1, TNBC3_CN2_C1, TNBC83_CN42_C1]
+excluded: TNBC55_CN28_C1 (hvg_pca_fallback, 196 median genes)
+deprioritized: TNBC68_CN34_D2 (low_gene_count=873, rho=-0.254)
+platform_mismatch: 200um spots vs subcellular training - documented, not blocking
+```
 
 ---
 
@@ -102,8 +124,8 @@ not an encoder — operates on encoder outputs. documented here for provenance.
 | field | value |
 |---|---|
 | shared latent dim | 512 |
-| H&E projection | 1536 -> 512 (2-layer MLP, ReLU, batch norm) |
-| ST projection | 256 -> 512 (2-layer MLP, ReLU, batch norm) |
+| H&E projection | Linear(1536, 512) -> GELU -> Linear(512, 512) |
+| ST projection | LayerNorm(64) -> Linear(64, 512) -> GELU -> Linear(512, 512) |
 | loss | InfoNCE, temperature τ = 0.07, symmetric, averaged across directions |
 | positive pairs | co-registered H&E tile + ST spot from same tissue location |
 | hard negatives | within-slide, different tissue compartments; cross-patient negatives excluded |
@@ -124,7 +146,7 @@ all four must be computed before writing winner.json.
 | InfoNCE contrastive | primary strategy — late interaction MLP projection heads |
 | CCA projection | canonical correlation analysis projection into shared space |
 | late fusion concatenation | concatenate normalized H&E + ST embeddings, no alignment |
-| unaligned concatenation | raw concatenation of H&E (1536-d) + ST (256-d), no normalization |
+| unaligned concatenation | raw concatenation of H&E (1536-d) + ST (64-d) = 1600-d, no normalization |
 
 ---
 

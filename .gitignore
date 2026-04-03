@@ -52,5 +52,3 @@ runs/
 # langsmith / api logs
 *.log
 langsmith_traces/
-
-s41467-024-54145-w.pdf
