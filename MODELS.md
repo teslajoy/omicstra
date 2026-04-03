@@ -53,7 +53,7 @@ by slide noise rather than biology, with no diagnostic signal.
 | training data | image-based ST only: MERSCOPE, Xenium, CosMX - ~78 slides, ~30M cells, 18 tissues |
 | tissue coverage | brain, intestine, liver, lymph node, skin - NOT Visium/VisiumHD |
 | known gaps | trained on subcellular-resolution image-based ST, not spot-based platforms |
-| TNBC status | validated_with_constraints (see validation results below) |
+| TNBC status | see projects/{project_id}/eda_summary.json encoder_validation.novae |
 | input requirement | raw counts preferred; gene symbols (not Ensembl); obsm['spatial'] in microns |
 | L2 normalization | none - raw GAT output (mean norm=2.618, std=0.52). LayerNorm required at MLP input |
 | batch correction | native - suppresses patient/batch signal by design. within/between gap is not a valid QC metric |
@@ -63,17 +63,15 @@ by slide noise rather than biology, with no diagnostic signal.
 | reference | Blampey et al. 2025, Nat. Methods; doi:10.1038/s41592-025-02899-6 |
 | HuggingFace | MICS-Lab/novae-human-0 |
 
-#### TNBC validation results (Wang et al. dataset)
+#### dataset-specific validation
 
-```
-novae_tnbc_status: validated_with_constraints
-spatial_criterion: PASS (mean rho=-0.380, all p~0)
-gap_criterion: not_applicable (batch_correction_active)
-alignment_training_set: [TNBC1_CN1_C1, TNBC3_CN2_C1, TNBC83_CN42_C1]
-excluded: TNBC55_CN28_C1 (hvg_pca_fallback, 196 median genes)
-deprioritized: TNBC68_CN34_D2 (low_gene_count=873, rho=-0.254)
-platform_mismatch: 200um spots vs subcellular training - documented, not blocking
-```
+dataset-specific results (rho, gap, effective rank, routing decisions) are in
+`projects/{project_id}/eda_summary.json` under `encoder_validation.novae`.
+MODELS.md contains only static encoder properties. see eda_summary.json for:
+- spatial autocorrelation results on specific tissues
+- effective rank measurements
+- subarray routing decisions (excluded/deprioritized)
+- MLP design implications
 
 ---
 
@@ -114,6 +112,7 @@ platform_mismatch: 200um spots vs subcellular training - documented, not blockin
 | reference | Sanati 2024, github.com/teslajoy/gpath2vec                                                                                   |
 
 ---
+
 
 ## alignment module
 

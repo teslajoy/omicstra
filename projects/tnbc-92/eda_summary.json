@@ -90,7 +90,86 @@
   "model_tissue_fit": {
     "UNI2-h": {"tissue": "breast_TNBC", "fit": "validated", "reason": "TCGA-BRCA in training"},
     "Virchow2": {"tissue": "breast_TNBC", "fit": "validated", "reason": "MSK breast cases in training"},
-    "Novae": {"tissue": "breast_TNBC", "fit": "uncertain", "reason": "TNBC Visium not confirmed in Novae training data", "validation_required": "embedding UMAP before alignment"}
+    "Novae": {"tissue": "breast_TNBC", "fit": "validated_with_constraints", "reason": "spatial rho PASS, but platform mismatch (200um spots vs subcellular training)"}
+  },
+  "encoder_validation": {
+    "validation_date": "2026-04-03",
+    "subarrays_tested": ["TNBC55_CN28_C1", "TNBC3_CN2_C1", "TNBC68_CN34_D2", "TNBC83_CN42_C1", "TNBC1_CN1_C1"],
+    "novae": {
+      "status": "validated_with_constraints",
+      "spatial_rho_mean": -0.380,
+      "spatial_rho_per_subarray": {
+        "TNBC3_CN2_C1": -0.425, "TNBC68_CN34_D2": -0.254,
+        "TNBC83_CN42_C1": -0.410, "TNBC1_CN1_C1": -0.430
+      },
+      "patient_gap": 0.022,
+      "gap_note": "batch correction active by design - gap not a valid QC metric for Novae",
+      "effective_rank": {"pca_99pct": 11, "shannon_entropy": 13.9, "of_dims": 64},
+      "l2_norm": {"mean": 2.618, "std": 0.52},
+      "alignment_training_set": ["TNBC1_CN1_C1", "TNBC3_CN2_C1", "TNBC83_CN42_C1"],
+      "excluded": {"TNBC55_CN28_C1": "hvg_pca_fallback, 196 median genes"},
+      "deprioritized": {"TNBC68_CN34_D2": "low_gene_count=873, rho=-0.254"},
+      "platform_mismatch": "200um spots vs subcellular training - documented, not blocking",
+      "embeddings_path": "data/embeddings/novae/"
+    },
+    "uni2_raw": {
+      "status": "validated",
+      "spatial_rho_per_subarray": {
+        "TNBC55_CN28_C1": -0.406, "TNBC3_CN2_C1": -0.286,
+        "TNBC68_CN34_D2": -0.242, "TNBC83_CN42_C1": -0.296, "TNBC1_CN1_C1": -0.356
+      },
+      "spatial_rho_mean": -0.317,
+      "patient_gap": 0.138,
+      "effective_rank_note": "~50 (65% variance in 50 PCs of 1536-d)",
+      "patches": 4413,
+      "patch_size": "338x338 HD px -> 224x224 UNI2 input",
+      "embeddings_path": "data/embeddings/uni2_raw/"
+    },
+    "uni2_reinhard": {
+      "status": "validated",
+      "reinhard_target": "TNBC83_CN42_C1",
+      "reinhard_target_selection": "closest to grand mean LAB across alignment training set",
+      "normalization_failures": 0,
+      "per_patch_cosine_sim_vs_raw": {"mean": 0.9315, "std": 0.0723},
+      "spatial_rho_per_subarray": {
+        "TNBC55_CN28_C1": -0.398, "TNBC3_CN2_C1": -0.257,
+        "TNBC68_CN34_D2": -0.239, "TNBC83_CN42_C1": -0.290, "TNBC1_CN1_C1": -0.347
+      },
+      "spatial_rho_mean": -0.306,
+      "patient_gap": 0.132,
+      "gap_change_vs_raw": "-4.3%",
+      "rho_note": "slight decrease across all subarrays - Reinhard removes spatially-correlated stain variation entangled with biological signal",
+      "interpretation": "modest effect on single-institution data. dominant variation is biological, not staining protocol. real test is alignment Recall@K",
+      "embeddings_path": "data/embeddings/uni2_reinhard/"
+    },
+    "pca_hvg": {
+      "status": "validated",
+      "n_hvgs": 2000,
+      "n_common_genes": 15215,
+      "n_components": 50,
+      "variance_explained_50pc": 0.168,
+      "hvg_selection": "scanpy, n_top_genes=2000, batch_key=subarray",
+      "spatial_rho_per_subarray": {
+        "TNBC55_CN28_C1": 0.488, "TNBC3_CN2_C1": 0.256,
+        "TNBC68_CN34_D2": 0.098, "TNBC83_CN42_C1": 0.301, "TNBC1_CN1_C1": 0.261
+      },
+      "spatial_rho_mean": 0.281,
+      "patient_gap": 0.671,
+      "gap_note": "dominated by patient/batch identity - first PCs separate subarrays, not biological structure",
+      "tnbc55_hvg_coverage": "66% of 2000 HVGs expressed",
+      "rho_sign_note": "positive rho (nearby spots more similar) vs negative for UNI2/Novae - PCA-HVG captures gene expression gradients directly",
+      "embeddings_path": "data/embeddings/pca_hvg/"
+    },
+    "design_implications": {
+      "alignment_asymmetry": "UNI2 ~50 effective dims vs Novae ~11. ST projection head does more work expanding sparse signal into 512-d shared space",
+      "mlp_options": {
+        "novae_default": "LayerNorm(64) -> Linear(64, 512) -> GELU -> Linear(512, 512)",
+        "novae_bottleneck": "LayerNorm(64) -> Linear(64, 16) -> GELU -> Linear(16, 512) -> GELU -> Linear(512, 512)",
+        "pca_hvg": "Linear(50, 512) -> GELU -> Linear(512, 512)",
+        "trigger_for_bottleneck": "alignment_recall_at_1 < 0.3 with default"
+      },
+      "reinhard_tension": "biological and technical signal partially entangled in same PCs - cannot perfectly separate"
+    }
   },
   "annotations_available": {
     "molecular_subtype_global": {"n": 94, "values": ["M", "IM", "BL", "MSL", "LAR"]},
