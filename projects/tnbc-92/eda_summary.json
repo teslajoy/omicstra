@@ -188,5 +188,317 @@
   ],
   "resolved_risks": [
     "encoder_input_decision resolved 2026-04-01: raw integer counts found in selection.RData (byArray/{slide}/{subarray}/). rawCountsMatrices name is misleading - contains normalized floats."
-  ]
+  ],
+  "scale_embeddings": {
+    "date": "2026-04-06",
+    "uni2_reinhard_all": {"n_subarrays": 280, "n_spots": 265372, "dim": 1536, "path": "data/embeddings/uni2_reinhard_all/"},
+    "novae_all": {"n_subarrays": 250, "n_spots": 266796, "dim": 64, "path": "data/embeddings/novae_all/", "skipped": 31},
+    "matched": {"n_subarrays": 249, "n_patients": 89},
+    "uni2_combat_all": {"path": "data/embeddings/uni2_reinhard_combat_all/", "date": "2026-04-07"}
+  },
+  "batch_effect_analysis": {
+    "date": "2026-04-07",
+    "n_patients": 89,
+    "n_matched_spots": 265372,
+    "uni2_raw": {"batch_ratio": 0.55, "effective_rank": 40.9, "patient_separability": 0.626, "interpretation": "batch-dominated"},
+    "uni2_combat": {"batch_ratio": 0.00, "effective_rank": 40.1, "patient_separability": 0.041, "interpretation": "batch removed, biology preserved"},
+    "novae": {"batch_ratio": 0.26, "effective_rank": 5.0, "patient_separability": "near_chance", "interpretation": "biology-dominated"},
+    "cross_modal_knn_overlap_k20": {
+      "raw_uni2_overall": "6x above chance (pilot, 3 patients)",
+      "raw_uni2_cross_patient": "0x (random)",
+      "combat_uni2_overall": "3.5x above chance",
+      "combat_uni2_cross_patient": "2.1x above chance"
+    },
+    "asymmetry_confirmed": true,
+    "asymmetry_note": "UNI2 encodes patient identity (56x chance), Novae does not. ComBat on UNI2 only is the correct targeted intervention."
+  },
+  "alignment_findings": {
+    "date": "2026-04-07",
+    "spot_level_within_patient": {"R_at_1": 0.136, "amplification": 1.6, "status": "validated"},
+    "spot_level_cross_patient_raw": {"R_at_1": 0.002, "status": "random"},
+    "spot_level_cross_patient_combat": {"R_at_1": 0.0003, "amplification_over_random": 4.5, "best_epoch": 1, "status": "exhausted"},
+    "combat_uni2_only": "created 2.1x cross-patient K-NN overlap from 0x",
+    "combat_both_modalities": "destroyed Novae signal, no improvement (pilot)",
+    "alignment_unit_decision": "spot level insufficient for cross-patient at 100-200um resolution with 200 cells/spot",
+    "next_unit": "region/archetype - Wang et al. 14 megacluster labels available on Zenodo",
+    "mc_labels_source": "Zenodo doi:10.5281/zenodo.8135721, per-spot MC assignments for all 281 subarrays",
+    "exhausted_options": ["spot_level_cross_patient"],
+    "karpathy_loop_status": "tier 2 complete, pivot to alignment unit change (requires new exp series)"
+  },
+  "normalization_finding": {
+    "date": "2026-04-09",
+    "virchow2": "ImageNet mean/std only via timm create_transform, no stain normalization",
+    "uni2_raw": "ImageNet mean/std only - correct",
+    "uni2_reinhard": "Reinhard applied BEFORE timm transform - may be suboptimal",
+    "uni2_reinhard_combat_all": "Reinhard + ComBat - same concern, used in failed exp02",
+    "source": "community practice: Virchow2/UNI2 trained on diverse multi-institution data, learned stain invariance during pretraining",
+    "implication": "stain normalization removes variation the model was trained to handle, can hurt performance",
+    "action": "Virchow2 extraction uses timm transform only (correct). UNI2 reinhard work may need reanalysis if morphology classification underperforms",
+    "supporting_evidence": "PathoROB Komen et al. 2025 - Virchow2 robustness index 0.88, highest of 20 FMs evaluated"
+  },
+  "biological_signals": {
+    "date": "2026-04-09",
+    "morphology": {
+      "source": "annotBySpot.RDS (94 subarrays, 18 categories, pathologist-validated)",
+      "filtered": "background-dropped if (Nothing+Artefacts+Hole)/total > 0.5",
+      "denominator": "tissue pixels only (background excluded from fraction calc)",
+      "5class_collapse": {
+        "tumor": ["Tumor", "Tumor region", "in situ"],
+        "stroma": ["Stroma cell", "Acellular stroma", "Low TIL stroma"],
+        "immune": ["Lymphocyte", "High TIL stroma", "Lymphoid nodule"],
+        "other": ["Fat tissue", "Vessels", "Necrosis", "Lactiferous duct", "Nerve", "Heterologous elements"],
+        "mixed": "if dominant tissue fraction < 0.5"
+      },
+      "n_spots_total": 95161,
+      "n_spots_dropped_background": 84072,
+      "n_subarrays": 94,
+      "class_distribution": {
+        "tumor": {"n": 20384, "pct": 21.4},
+        "stroma": {"n": 29183, "pct": 30.7},
+        "immune": {"n": 5618, "pct": 5.9},
+        "other": {"n": 11543, "pct": 12.1},
+        "mixed": {"n": 28433, "pct": 29.9}
+      },
+      "imbalance_note": "immune class is 5x rarer than stroma - use stratified sampling and per-class F1 for rank 1a",
+      "path": "data/embeddings/biological_signals/morphology_labels.tsv"
+    },
+    "clinical": {
+      "source": "Clinical.RDS",
+      "n_patients": 94,
+      "spatial_archetype_distribution": {"1": 6, "2": 14, "3": 8, "4": 16, "5": 13, "6": 8, "7": 15, "8": 6, "9": 8},
+      "molecular_subtype_global": {"M": 28, "IM": 25, "BL": 18, "MSL": 12, "LAR": 11},
+      "path": "data/embeddings/biological_signals/clinical_labels.tsv"
+    },
+    "tls_scores": {
+      "source": "30-gene TLS signature (Cabrita et al. 2020 panel) on raw counts from selection.RData",
+      "normalization": "log1p of count-normalized expression, mean across panel genes",
+      "n_spots": 101954,
+      "n_subarrays": 94,
+      "tls_score_stats": {"mean": 0.198, "median": 0.141, "max": 1.454},
+      "all_30_genes_present_per_subarray": true,
+      "path": "data/embeddings/biological_signals/tls_scores.tsv"
+    },
+    "mc_labels_hard": {
+      "source": "clustering/intraPatientClust + Kmeans MC/km14.RDS - Wang et al. megacluster scheme",
+      "method": "intra-patient k-means (k=2..10 selected per patient), then global k-means (k=14) on cluster prototypes",
+      "n_spots": 270136,
+      "n_patients": 94,
+      "n_classes": 14,
+      "cross_patient_stable_by_construction": true,
+      "distribution": {
+        "MC1": 4.5, "MC2": 10.0, "MC3": 8.6, "MC4": 14.6, "MC5": 12.6,
+        "MC6": 5.6, "MC7": 0.6, "MC8": 1.8, "MC9": 9.0, "MC10": 4.4,
+        "MC11": 7.5, "MC12": 10.8, "MC13": 1.9, "MC14": 8.2
+      },
+      "imbalance_note": "MC7 0.6% is 24x rarer than MC4 14.6% - need stratified sampling and per-class F1",
+      "path": "data/embeddings/biological_signals/mc_labels.tsv"
+    },
+    "mc_weights_soft": {
+      "source": "clustering/MC deconv/TNBC{N}.RData - NMF soft decomposition",
+      "method": "non-negative matrix factorization, each spot is mixture of 14 megacluster gene programs",
+      "n_spots": 270310,
+      "n_dims": 14,
+      "interpretation": "per-spot continuous cell-state composition (rich biological signal at sub-spot resolution)",
+      "purity_stats": {
+        "spots_max_weight_above_0.5_pct": 61.5,
+        "spots_max_weight_above_0.3_pct": 96.6,
+        "interpretation": "61.5% of spots have one dominant program, 96.6% have a clear dominant"
+      },
+      "use_case": "rich ST representation for alignment (replaces or complements novae 64-d)",
+      "path": "data/embeddings/biological_signals/mc_weights.tsv"
+    }
+  },
+  "encoder_qc_comparison_2026-04-09": {
+    "method": "patient-stratified linear probe + cross-subarray silhouette + within-subarray silhouette + batch effect ratio against MC labels (14-class) and morphology labels (5-class)",
+    "encoders_tested": ["uni2_raw (pilot, 5 patients only)", "virchow2_niche (280 subarrays, 94 patients)", "novae (250 subarrays, 89 patients)"],
+    "results": {
+      "virchow2_niche": {
+        "dim": 1280,
+        "n_spots": 272839,
+        "within_sil_mc": 0.1200,
+        "cross_sil_mc": -0.1012,
+        "within_sil_morph": 0.0300,
+        "cross_sil_morph": 0.0228,
+        "linear_probe_mc_pct": 23.6,
+        "linear_probe_morph_pct": 57.1,
+        "batch_ratio": 1.089
+      },
+      "novae": {
+        "dim": 64,
+        "n_spots": 259682,
+        "within_sil_mc": 0.1565,
+        "cross_sil_mc": -0.2464,
+        "within_sil_morph": -0.1487,
+        "cross_sil_morph": -0.1242,
+        "linear_probe_mc_pct": 12.1,
+        "linear_probe_morph_pct": 33.0,
+        "batch_ratio": 0.258
+      },
+      "uni2_raw_pilot_only": {
+        "dim": 1536,
+        "n_spots": 3903,
+        "n_patients": 5,
+        "note": "only pilot subarrays extracted at scale, never run on full 280. UNI2_reinhard was extracted but uses banned preprocessing."
+      }
+    },
+    "decision": "Virchow2 niche is primary H&E encoder - 23.6% MC linear probe (3.3x chance) vs Novae 12.1% (1.7x), morph 57.1% vs 33.0%, only encoder with positive cross-subarray morphology silhouette"
+  },
+  "virchow2_normalization_decision": {
+    "date": "2026-04-09",
+    "test": "z-score per subarray (same as Novae test)",
+    "raw_silhouette_mc": -0.1012,
+    "zscored_silhouette_mc": -0.0364,
+    "raw_silhouette_morph": 0.0228,
+    "zscored_silhouette_morph": -0.0002,
+    "raw_linear_probe_mc_pct": 23.6,
+    "zscored_linear_probe_mc_pct": 10.4,
+    "raw_linear_probe_morph_pct": 57.1,
+    "zscored_linear_probe_morph_pct": 48.0,
+    "verdict": "z-score HURTS Virchow2 - cuts linear probe MC accuracy in half (23.6% -> 10.4%)",
+    "interpretation": "Virchow2's per-subarray mean is biologically meaningful, not technical artifact. removing it destroys real signal. opposite of Novae behavior.",
+    "scientific_finding": "Novae z-score helps (+0.11 silhouette), Virchow2 z-score hurts (-13.2% probe). different encoders need empirically validated preprocessing decisions, not assumed.",
+    "supports_pathoROB": "Virchow2 robustness index 0.88 (highest of 20 FMs in PathoROB benchmark) is empirically reproduced here - Virchow2 already encodes cross-subarray morphological structure in raw embedding space",
+    "decision": "Use Virchow2 niche RAW - no z-score, no normalization beyond timm create_transform"
+  },
+  "cca_diagnostic_2026-04-09": {
+    "purpose": "understand what CCA is capturing in baseline before launching alignment training",
+    "test_setup": "20 subarrays subset, per-component CCA + held-out subarray test",
+    "q1_which_st_component_drives_cca": {
+      "method": "fit CCA per subarray with different ST input combinations, average R@1",
+      "results": {
+        "mc_weights_only_14d": 0.225,
+        "novae_only_64d": 0.089,
+        "tls_only_1d": 0.003,
+        "mc_plus_novae_78d": 0.092,
+        "mc_plus_tls_15d": 0.263,
+        "novae_plus_tls_65d": 0.037,
+        "rich_st_full_79d": 0.091
+      },
+      "finding": "mc_weights drive almost all CCA signal. adding novae HURTS (rich ST 79d worse than mc_w 14d alone). novae acts as noise CCA cannot filter."
+    },
+    "q2_within_vs_cross_subarray": {
+      "method": "fit CCA on 19 train subarrays, evaluate on 1 held-out",
+      "within_subarray_mc_weights_only": 0.667,
+      "within_subarray_full_rich_st": 0.724,
+      "cross_subarray_mc_weights_only": 0.000,
+      "cross_subarray_full_rich_st": 0.000,
+      "finding": "CCA's high within-subarray R@1 is COMPLETELY patient-leakage shortcut. cross-subarray collapses to literal zero. all baselines (random ~0.001, late fusion ~0.0025) are essentially random for cross-subarray retrieval."
+    },
+    "implications_for_rank2": [
+      "evaluate cross-subarray (patient-held-out), not within-subarray",
+      "the genuine alignment problem is cross-subarray and is unsolved",
+      "any cross-subarray R@1 > 0.01 from the MLP is a meaningful novel result",
+      "novae adds noise to CCA but may still be useful as within-subarray spatial context"
+    ]
+  },
+  "circular_dependency_caught_2026-04-09": {
+    "issue": "rank2 v1 design used mc_weights in both ST input AND positive pair definition",
+    "consequence": "model would learn to predict its own input, not H&E -> biology mapping",
+    "fix": "separate biological supervision from ST features",
+    "rank2_v2_design": {
+      "h_e_input": "Virchow2 niche 1280d (raw)",
+      "st_input": "novae(64) + pathway_embed(d) + cytotrace(1) + tls(1) - NO mc_weights",
+      "supervision": "soft InfoNCE targets from mc_weight cosine similarity",
+      "principle": "mc_weights teach the model what biological similarity means without being features it can cheat on"
+    }
+  },
+  "rank1a": {
+    "date": "2026-04-09",
+    "task": "linear probe Virchow2 niche (1280-d) -> MC 14-class",
+    "split": "5-fold patient-stratified CV (74-78 train patients, 16-21 test patients per fold)",
+    "n_spots": 27739,
+    "n_classes": 14,
+    "chance": 0.071,
+    "verdict": "PASS with nuance",
+    "accuracy": 0.214,
+    "macro_f1": 0.191,
+    "macro_f1_std": 0.022,
+    "weighted_f1": 0.200,
+    "above_chance": "3.0x",
+    "strong_classes": {"MC6": 0.339, "MC12": 0.327, "MC14": 0.260, "MC13": 0.250, "MC5": 0.250},
+    "moderate_classes": {"MC4": 0.232, "MC10": 0.208, "MC2": 0.200, "MC9": 0.192, "MC3": 0.185, "MC11": 0.175, "MC1": 0.151},
+    "failed_classes": {"MC7": "F1=0.0 (0.6% of spots, rarest)", "MC8": "F1=0.0 (1.8%)"},
+    "interpretation": "linear probe on hard labels underestimates alignment potential - InfoNCE uses soft mc_weights (continuous 14-d) which contain richer signal than argmax labels. MC7/MC8 failure reflects morphological ambiguity of rare programs at linear probe level, not absence of signal.",
+    "decision": "proceed to alignment training (rank2)",
+    "next": "rank2 - InfoNCE alignment Virchow2 niche (1280) vs rich ST (79-d), per-subarray batches, mc_weight cosine positive pairs",
+    "results_path": "runs/tnbc-92/rank1a/results.json"
+  },
+  "committed_alignment_plan": {
+    "date": "2026-04-09",
+    "h_e_encoder": {
+      "model": "Virchow2 niche",
+      "dim": 1280,
+      "preprocessing": "timm create_transform only (ImageNet mean/std), no z-score, no Reinhard, no ComBat",
+      "extraction_method": "k=6 spatial neighbors mean pool of CLS tokens"
+    },
+    "st_representation": {
+      "components": {
+        "mc_weights": {"dim": 14, "preprocessing": "untouched (cross-subarray stable by construction)"},
+        "novae": {"dim": 64, "preprocessing": "z-scored per subarray (recovers +0.11 silhouette)"},
+        "tls_score": {"dim": 1, "preprocessing": "untouched"}
+      },
+      "total_dim": 79
+    },
+    "positive_pair_definition": "(Virchow2 patch[i], rich_ST[j]) where same subarray AND cosine(mc_weights[i], mc_weights[j]) > 0.8",
+    "hard_negative_definition": "(Virchow2 patch[i], rich_ST[k]) where same subarray AND cosine(mc_weights[i], mc_weights[k]) < 0.3",
+    "training_design": "per-subarray batches with biology-driven positive pairs",
+    "evaluation": "test BOTH within-subarray AND cross-subarray retrieval against CCA, late fusion, unaligned baselines. report both.",
+    "validation_gate": "rank1a (linear probe Virchow2 niche -> MC 14-class, patient-stratified 5-fold CV) must achieve macro-F1 > 0.3 before running alignment training"
+  },
+  "novae_decision": {
+    "date": "2026-04-09",
+    "verdict": "retained for within-subarray use only",
+    "filtered_graph_test": {
+      "subarray": "TNBC1_CN1_C1",
+      "test": "removed background-dominated spots before Novae graph construction, re-ran inference",
+      "raw_silhouette_within_subarray": 0.0583,
+      "filtered_silhouette_within_subarray": 0.0580,
+      "delta": -0.0003,
+      "interpretation": "graph quality (artifact spots in neighborhood) is NOT the issue. filtering does not improve geometry."
+    },
+    "z_score_test": {
+      "method": "z-score Novae embeddings within each subarray independently",
+      "raw_silhouette_mc": -0.2464,
+      "zscored_silhouette_mc": -0.1347,
+      "delta_silhouette_mc": "+0.1117",
+      "raw_silhouette_morph": -0.1242,
+      "zscored_silhouette_morph": -0.1074,
+      "linear_probe_mc_raw_pct": 12.1,
+      "linear_probe_mc_zscored_pct": 12.6,
+      "linear_probe_morph_raw_pct": 33.0,
+      "linear_probe_morph_zscored_pct": 31.4,
+      "interpretation": "half of cross-subarray problem (0.111 of 0.246) was per-subarray mean shift, half is genuine geometric inconsistency across cohort. linear probe accuracy unchanged - signal magnitude is platform-limited not normalization-limited."
+    },
+    "within_subarray_silhouette": 0.058,
+    "within_subarray_status": "weak positive structure - real local biological signal",
+    "decision_rationale": "Novae works locally per-subarray but does not produce cross-subarray comparable embeddings. The proposal allows within-subarray evaluation which sidesteps this entirely.",
+    "training_design": "per-subarray batches, within-subarray evaluation",
+    "rich_st_representation": {
+      "mc_weights": {"dim": 14, "source": "clustering/MC deconv NMF soft weights", "role": "primary biological signal, cross-patient stable by construction"},
+      "novae": {"dim": 64, "source": "novae_all/", "role": "within-subarray spatial context, NOT used for cross-subarray comparison"},
+      "tls_score": {"dim": 1, "source": "Cabrita 30-gene TLS signature", "role": "immune organization signal"},
+      "total_dim": 79,
+      "future": "+ gpath2vec pathway scores when available"
+    },
+    "positive_pair_definition": "(Virchow2 patch[i], rich_ST[j]) where same subarray AND cosine(mc_weights[i], mc_weights[j]) > 0.8 - biology-driven not just spatial co-registration",
+    "hard_negative_definition": "(Virchow2 patch[i], rich_ST[k]) where same subarray AND cosine(mc_weights[i], mc_weights[k]) < 0.3 - forces model to distinguish cell programs not just locations",
+    "evaluation_scope": "within-subarray retrieval (R@K, MRR) against CCA/late-fusion/unaligned baselines, per-subarray ARI vs SAs/MCs for H2, per-subarray CCA for H3",
+    "scope_note": "this decision is specific to TNBC-92 (Wang et al. 100um spot platform). Novae trained on Xenium subcellular ST - cross-platform mismatch. other datasets may not need within-subarray restriction."
+  },
+  "zenodo_data_extended_2026-04-09": {
+    "previously_missing": ["clustering", "deconvolution", "classification", "Robjects"],
+    "now_extracted": true,
+    "key_finds": {
+      "clustering/MC deconv/": "per-spot 14-MC soft NMF weights (270k spots) - cell-state level signal",
+      "clustering/intraPatientClust/": "per-spot intra-patient k-means assignments (k=2..10)",
+      "clustering/Kmeans MC/km14.RDS": "intra-cluster -> megacluster mapping (418 prototypes -> 14 MCs)",
+      "clustering/clustPrototypes/": "per-MC gene expression prototypes (for pathway projection)",
+      "deconvolution/": "per-patient cell-type expression prototypes (8 categories: Tumor/Stroma/Lymphocyte/Vessels/etc) - per-patient only, NOT per-spot",
+      "classification/projectedSamples/": "per-patient PCA projection [n_spots x 500] + spot identifiers in subarray.spot_id format",
+      "Robjects/annotsBySpot/": "per-patient morphological annotation matrices",
+      "Robjects/counts/": "per-patient batch-corrected counts",
+      "Robjects/countsNonCorrected/": "per-patient raw counts"
+    },
+    "no_cell_level_st": "no Xenium/MERFISH/CosMx/CODEX in this dataset. cell-state signal comes via NMF soft decomposition (mc_weights), not subcellular ST."
+  }
 }

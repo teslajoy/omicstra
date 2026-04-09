@@ -52,3 +52,5 @@ runs/
 # langsmith / api logs
 *.log
 langsmith_traces/
+scripts/
+docs/papers/
