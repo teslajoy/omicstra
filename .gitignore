@@ -54,3 +54,6 @@ runs/
 langsmith_traces/
 scripts/
 docs/papers/
+knowledge/
+notebooks/embeddings/*.html
+notebooks/embeddings/*.png

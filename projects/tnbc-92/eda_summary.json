@@ -22,7 +22,7 @@
   "gene_id_format": "ensembl_versioned",
   "genome_reference": "GRCh38/hg38 (GENCODE v38)",
   "quantification": "Salmon 0.38",
-  "normalization": "Log(1 + 10000x/Σx)",
+  "normalization": "Log(1 + 10000x/\u03a3x)",
   "batch_correction": "gene-specific coefficient via glmGamPoi",
   "counts_are_raw": false,
   "encoder_input_decision": "use selection.RData - raw integer counts, tissue-filtered spots (1075 spots x 27567 genes after low-expression filtering), median 16492 UMI/spot. rawCountsMatrices TSVs are normalized + batch-corrected despite the name - do not use for Novae.",
@@ -32,17 +32,49 @@
   "naming_warning": "rawCountsMatrices/ contains normalized floats, not raw counts. all.RData = full grid raw counts (1931 spots x 30263 genes). selection.RData = tissue-filtered raw counts (1075 spots x 27567 genes). use selection.RData for Novae.",
   "positive_markers_pass": true,
   "positive_markers": {
-    "MKI67": {"mean": 0.501, "pct_expressing": 31.2, "expected": "proliferation"},
-    "CD3D": {"mean": 0.148, "pct_expressing": 8.9, "expected": "T cell infiltration"},
-    "CD3E": {"mean": 0.123, "pct_expressing": 8.7, "expected": "T cell infiltration"},
-    "ERBB2": {"mean": 1.887, "pct_expressing": 54.7, "expected": "low level, HER2-neg by IHC"},
-    "CD79A": {"mean": 0.056, "pct_expressing": 3.7, "expected": "TLS signature"},
-    "CD37": {"mean": 0.263, "pct_expressing": 17.2, "expected": "TLS signature"}
+    "MKI67": {
+      "mean": 0.501,
+      "pct_expressing": 31.2,
+      "expected": "proliferation"
+    },
+    "CD3D": {
+      "mean": 0.148,
+      "pct_expressing": 8.9,
+      "expected": "T cell infiltration"
+    },
+    "CD3E": {
+      "mean": 0.123,
+      "pct_expressing": 8.7,
+      "expected": "T cell infiltration"
+    },
+    "ERBB2": {
+      "mean": 1.887,
+      "pct_expressing": 54.7,
+      "expected": "low level, HER2-neg by IHC"
+    },
+    "CD79A": {
+      "mean": 0.056,
+      "pct_expressing": 3.7,
+      "expected": "TLS signature"
+    },
+    "CD37": {
+      "mean": 0.263,
+      "pct_expressing": 17.2,
+      "expected": "TLS signature"
+    }
   },
   "negative_markers_pass": true,
   "negative_markers": {
-    "ESR1": {"mean": 0.029, "pct_expressing": 2.6, "expected": "near-zero (triple-negative)"},
-    "PGR": {"mean": 0.011, "pct_expressing": 0.9, "expected": "near-zero (triple-negative)"}
+    "ESR1": {
+      "mean": 0.029,
+      "pct_expressing": 2.6,
+      "expected": "near-zero (triple-negative)"
+    },
+    "PGR": {
+      "mean": 0.011,
+      "pct_expressing": 0.9,
+      "expected": "near-zero (triple-negative)"
+    }
   },
   "spatial_autocorrelation_pass": true,
   "morans_i_summary": {
@@ -52,16 +84,56 @@
     "n_permutations": 999,
     "caveat": "single subarray only - compute median across all 281 for registered report",
     "results": {
-      "COL1A1": {"I": 0.5959, "z": 34.4, "p": 0.0},
-      "CD3D": {"I": 0.4952, "z": 30.8, "p": 0.0},
-      "ERBB2": {"I": 0.4315, "z": 24.8, "p": 0.0},
-      "CD79A": {"I": 0.3889, "z": 25.3, "p": 0.0},
-      "CD37": {"I": 0.3229, "z": 19.7, "p": 0.0},
-      "CD3E": {"I": 0.3181, "z": 19.1, "p": 0.0},
-      "MKI67": {"I": 0.1867, "z": 11.0, "p": 0.0},
-      "MS4A1": {"I": 0.1748, "z": 11.0, "p": 0.0},
-      "PGR": {"I": 0.0376, "z": 2.2, "p": 0.03},
-      "ESR1": {"I": 0.0147, "z": 0.9, "p": 0.36}
+      "COL1A1": {
+        "I": 0.5959,
+        "z": 34.4,
+        "p": 0.0
+      },
+      "CD3D": {
+        "I": 0.4952,
+        "z": 30.8,
+        "p": 0.0
+      },
+      "ERBB2": {
+        "I": 0.4315,
+        "z": 24.8,
+        "p": 0.0
+      },
+      "CD79A": {
+        "I": 0.3889,
+        "z": 25.3,
+        "p": 0.0
+      },
+      "CD37": {
+        "I": 0.3229,
+        "z": 19.7,
+        "p": 0.0
+      },
+      "CD3E": {
+        "I": 0.3181,
+        "z": 19.1,
+        "p": 0.0
+      },
+      "MKI67": {
+        "I": 0.1867,
+        "z": 11.0,
+        "p": 0.0
+      },
+      "MS4A1": {
+        "I": 0.1748,
+        "z": 11.0,
+        "p": 0.0
+      },
+      "PGR": {
+        "I": 0.0376,
+        "z": 2.2,
+        "p": 0.03
+      },
+      "ESR1": {
+        "I": 0.0147,
+        "z": 0.9,
+        "p": 0.36
+      }
     },
     "markers_above_0.3": 6,
     "top_5_above_0.3": 5
@@ -77,46 +149,89 @@
   "batch_correction_needed": false,
   "pca_variance_explained": {
     "PC1": 0.4242,
-    "PC2": 0.1760,
+    "PC2": 0.176,
     "PC3": 0.0771
   },
   "excluded_samples": [
-    {"subarray": "CN26/D1", "reason": "8 selection spots", "patient_id": 51, "patient_usable": true}
+    {
+      "subarray": "CN26/D1",
+      "reason": "8 selection spots",
+      "patient_id": 51,
+      "patient_usable": true
+    }
   ],
   "segmentation_qc_pass": null,
   "cross_modal_registration_pass": true,
   "cross_modal_registration_note": "spot-H&E overlay visually confirmed on CN1/C1",
   "multi_section_alignment_pass": null,
   "model_tissue_fit": {
-    "UNI2-h": {"tissue": "breast_TNBC", "fit": "validated", "reason": "TCGA-BRCA in training"},
-    "Virchow2": {"tissue": "breast_TNBC", "fit": "validated", "reason": "MSK breast cases in training"},
-    "Novae": {"tissue": "breast_TNBC", "fit": "validated_with_constraints", "reason": "spatial rho PASS, but platform mismatch (200um spots vs subcellular training)"}
+    "UNI2-h": {
+      "tissue": "breast_TNBC",
+      "fit": "validated",
+      "reason": "TCGA-BRCA in training"
+    },
+    "Virchow2": {
+      "tissue": "breast_TNBC",
+      "fit": "validated",
+      "reason": "MSK breast cases in training"
+    },
+    "Novae": {
+      "tissue": "breast_TNBC",
+      "fit": "validated_with_constraints",
+      "reason": "spatial rho PASS, but platform mismatch (200um spots vs subcellular training)"
+    }
   },
   "encoder_validation": {
     "validation_date": "2026-04-03",
-    "subarrays_tested": ["TNBC55_CN28_C1", "TNBC3_CN2_C1", "TNBC68_CN34_D2", "TNBC83_CN42_C1", "TNBC1_CN1_C1"],
+    "subarrays_tested": [
+      "TNBC55_CN28_C1",
+      "TNBC3_CN2_C1",
+      "TNBC68_CN34_D2",
+      "TNBC83_CN42_C1",
+      "TNBC1_CN1_C1"
+    ],
     "novae": {
       "status": "validated_with_constraints",
-      "spatial_rho_mean": -0.380,
+      "spatial_rho_mean": -0.38,
       "spatial_rho_per_subarray": {
-        "TNBC3_CN2_C1": -0.425, "TNBC68_CN34_D2": -0.254,
-        "TNBC83_CN42_C1": -0.410, "TNBC1_CN1_C1": -0.430
+        "TNBC3_CN2_C1": -0.425,
+        "TNBC68_CN34_D2": -0.254,
+        "TNBC83_CN42_C1": -0.41,
+        "TNBC1_CN1_C1": -0.43
       },
       "patient_gap": 0.022,
       "gap_note": "batch correction active by design - gap not a valid QC metric for Novae",
-      "effective_rank": {"pca_99pct": 11, "shannon_entropy": 13.9, "of_dims": 64},
-      "l2_norm": {"mean": 2.618, "std": 0.52},
-      "alignment_training_set": ["TNBC1_CN1_C1", "TNBC3_CN2_C1", "TNBC83_CN42_C1"],
-      "excluded": {"TNBC55_CN28_C1": "hvg_pca_fallback, 196 median genes"},
-      "deprioritized": {"TNBC68_CN34_D2": "low_gene_count=873, rho=-0.254"},
+      "effective_rank": {
+        "pca_99pct": 11,
+        "shannon_entropy": 13.9,
+        "of_dims": 64
+      },
+      "l2_norm": {
+        "mean": 2.618,
+        "std": 0.52
+      },
+      "alignment_training_set": [
+        "TNBC1_CN1_C1",
+        "TNBC3_CN2_C1",
+        "TNBC83_CN42_C1"
+      ],
+      "excluded": {
+        "TNBC55_CN28_C1": "hvg_pca_fallback, 196 median genes"
+      },
+      "deprioritized": {
+        "TNBC68_CN34_D2": "low_gene_count=873, rho=-0.254"
+      },
       "platform_mismatch": "200um spots vs subcellular training - documented, not blocking",
       "embeddings_path": "data/embeddings/novae/"
     },
     "uni2_raw": {
       "status": "validated",
       "spatial_rho_per_subarray": {
-        "TNBC55_CN28_C1": -0.406, "TNBC3_CN2_C1": -0.286,
-        "TNBC68_CN34_D2": -0.242, "TNBC83_CN42_C1": -0.296, "TNBC1_CN1_C1": -0.356
+        "TNBC55_CN28_C1": -0.406,
+        "TNBC3_CN2_C1": -0.286,
+        "TNBC68_CN34_D2": -0.242,
+        "TNBC83_CN42_C1": -0.296,
+        "TNBC1_CN1_C1": -0.356
       },
       "spatial_rho_mean": -0.317,
       "patient_gap": 0.138,
@@ -130,10 +245,16 @@
       "reinhard_target": "TNBC83_CN42_C1",
       "reinhard_target_selection": "closest to grand mean LAB across alignment training set",
       "normalization_failures": 0,
-      "per_patch_cosine_sim_vs_raw": {"mean": 0.9315, "std": 0.0723},
+      "per_patch_cosine_sim_vs_raw": {
+        "mean": 0.9315,
+        "std": 0.0723
+      },
       "spatial_rho_per_subarray": {
-        "TNBC55_CN28_C1": -0.398, "TNBC3_CN2_C1": -0.257,
-        "TNBC68_CN34_D2": -0.239, "TNBC83_CN42_C1": -0.290, "TNBC1_CN1_C1": -0.347
+        "TNBC55_CN28_C1": -0.398,
+        "TNBC3_CN2_C1": -0.257,
+        "TNBC68_CN34_D2": -0.239,
+        "TNBC83_CN42_C1": -0.29,
+        "TNBC1_CN1_C1": -0.347
       },
       "spatial_rho_mean": -0.306,
       "patient_gap": 0.132,
@@ -150,8 +271,11 @@
       "variance_explained_50pc": 0.168,
       "hvg_selection": "scanpy, n_top_genes=2000, batch_key=subarray",
       "spatial_rho_per_subarray": {
-        "TNBC55_CN28_C1": 0.488, "TNBC3_CN2_C1": 0.256,
-        "TNBC68_CN34_D2": 0.098, "TNBC83_CN42_C1": 0.301, "TNBC1_CN1_C1": 0.261
+        "TNBC55_CN28_C1": 0.488,
+        "TNBC3_CN2_C1": 0.256,
+        "TNBC68_CN34_D2": 0.098,
+        "TNBC83_CN42_C1": 0.301,
+        "TNBC1_CN1_C1": 0.261
       },
       "spatial_rho_mean": 0.281,
       "patient_gap": 0.671,
@@ -172,12 +296,62 @@
     }
   },
   "annotations_available": {
-    "molecular_subtype_global": {"n": 94, "values": ["M", "IM", "BL", "MSL", "LAR"]},
-    "molecular_subtype_tumor": {"n": 94, "values": ["LAR", "M", "BL"]},
-    "molecular_subtype_stroma": {"n": 94, "values": ["M", "IM", "BL", "MSL", "LAR"]},
-    "TIME_pathologist": {"n": 94, "values": ["SR", "ID", "MR", "FI", "nd"]},
-    "spatial_archetypes": {"n": 94, "values": [1, 2, 3, 4, 5, 6, 7, 8, 9]},
-    "morphological_annotations": {"n_subarrays": 94, "categories": 18}
+    "molecular_subtype_global": {
+      "n": 94,
+      "values": [
+        "M",
+        "IM",
+        "BL",
+        "MSL",
+        "LAR"
+      ]
+    },
+    "molecular_subtype_tumor": {
+      "n": 94,
+      "values": [
+        "LAR",
+        "M",
+        "BL"
+      ]
+    },
+    "molecular_subtype_stroma": {
+      "n": 94,
+      "values": [
+        "M",
+        "IM",
+        "BL",
+        "MSL",
+        "LAR"
+      ]
+    },
+    "TIME_pathologist": {
+      "n": 94,
+      "values": [
+        "SR",
+        "ID",
+        "MR",
+        "FI",
+        "nd"
+      ]
+    },
+    "spatial_archetypes": {
+      "n": 94,
+      "values": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ]
+    },
+    "morphological_annotations": {
+      "n_subarrays": 94,
+      "categories": 18
+    }
   },
   "verdict": "proceed",
   "risks": [
@@ -191,18 +365,50 @@
   ],
   "scale_embeddings": {
     "date": "2026-04-06",
-    "uni2_reinhard_all": {"n_subarrays": 280, "n_spots": 265372, "dim": 1536, "path": "data/embeddings/uni2_reinhard_all/"},
-    "novae_all": {"n_subarrays": 250, "n_spots": 266796, "dim": 64, "path": "data/embeddings/novae_all/", "skipped": 31},
-    "matched": {"n_subarrays": 249, "n_patients": 89},
-    "uni2_combat_all": {"path": "data/embeddings/uni2_reinhard_combat_all/", "date": "2026-04-07"}
+    "uni2_reinhard_all": {
+      "n_subarrays": 280,
+      "n_spots": 265372,
+      "dim": 1536,
+      "path": "data/embeddings/uni2_reinhard_all/"
+    },
+    "novae_all": {
+      "n_subarrays": 250,
+      "n_spots": 266796,
+      "dim": 64,
+      "path": "data/embeddings/novae_all/",
+      "skipped": 31
+    },
+    "matched": {
+      "n_subarrays": 249,
+      "n_patients": 89
+    },
+    "uni2_combat_all": {
+      "path": "data/embeddings/uni2_reinhard_combat_all/",
+      "date": "2026-04-07"
+    }
   },
   "batch_effect_analysis": {
     "date": "2026-04-07",
     "n_patients": 89,
     "n_matched_spots": 265372,
-    "uni2_raw": {"batch_ratio": 0.55, "effective_rank": 40.9, "patient_separability": 0.626, "interpretation": "batch-dominated"},
-    "uni2_combat": {"batch_ratio": 0.00, "effective_rank": 40.1, "patient_separability": 0.041, "interpretation": "batch removed, biology preserved"},
-    "novae": {"batch_ratio": 0.26, "effective_rank": 5.0, "patient_separability": "near_chance", "interpretation": "biology-dominated"},
+    "uni2_raw": {
+      "batch_ratio": 0.55,
+      "effective_rank": 40.9,
+      "patient_separability": 0.626,
+      "interpretation": "batch-dominated"
+    },
+    "uni2_combat": {
+      "batch_ratio": 0.0,
+      "effective_rank": 40.1,
+      "patient_separability": 0.041,
+      "interpretation": "batch removed, biology preserved"
+    },
+    "novae": {
+      "batch_ratio": 0.26,
+      "effective_rank": 5.0,
+      "patient_separability": "near_chance",
+      "interpretation": "biology-dominated"
+    },
     "cross_modal_knn_overlap_k20": {
       "raw_uni2_overall": "6x above chance (pilot, 3 patients)",
       "raw_uni2_cross_patient": "0x (random)",
@@ -214,15 +420,29 @@
   },
   "alignment_findings": {
     "date": "2026-04-07",
-    "spot_level_within_patient": {"R_at_1": 0.136, "amplification": 1.6, "status": "validated"},
-    "spot_level_cross_patient_raw": {"R_at_1": 0.002, "status": "random"},
-    "spot_level_cross_patient_combat": {"R_at_1": 0.0003, "amplification_over_random": 4.5, "best_epoch": 1, "status": "exhausted"},
+    "spot_level_within_patient": {
+      "R_at_1": 0.136,
+      "amplification": 1.6,
+      "status": "validated"
+    },
+    "spot_level_cross_patient_raw": {
+      "R_at_1": 0.002,
+      "status": "random"
+    },
+    "spot_level_cross_patient_combat": {
+      "R_at_1": 0.0003,
+      "amplification_over_random": 4.5,
+      "best_epoch": 1,
+      "status": "exhausted"
+    },
     "combat_uni2_only": "created 2.1x cross-patient K-NN overlap from 0x",
     "combat_both_modalities": "destroyed Novae signal, no improvement (pilot)",
     "alignment_unit_decision": "spot level insufficient for cross-patient at 100-200um resolution with 200 cells/spot",
     "next_unit": "region/archetype - Wang et al. 14 megacluster labels available on Zenodo",
     "mc_labels_source": "Zenodo doi:10.5281/zenodo.8135721, per-spot MC assignments for all 281 subarrays",
-    "exhausted_options": ["spot_level_cross_patient"],
+    "exhausted_options": [
+      "spot_level_cross_patient"
+    ],
     "karpathy_loop_status": "tier 2 complete, pivot to alignment unit change (requires new exp series)"
   },
   "normalization_finding": {
@@ -243,21 +463,55 @@
       "filtered": "background-dropped if (Nothing+Artefacts+Hole)/total > 0.5",
       "denominator": "tissue pixels only (background excluded from fraction calc)",
       "5class_collapse": {
-        "tumor": ["Tumor", "Tumor region", "in situ"],
-        "stroma": ["Stroma cell", "Acellular stroma", "Low TIL stroma"],
-        "immune": ["Lymphocyte", "High TIL stroma", "Lymphoid nodule"],
-        "other": ["Fat tissue", "Vessels", "Necrosis", "Lactiferous duct", "Nerve", "Heterologous elements"],
+        "tumor": [
+          "Tumor",
+          "Tumor region",
+          "in situ"
+        ],
+        "stroma": [
+          "Stroma cell",
+          "Acellular stroma",
+          "Low TIL stroma"
+        ],
+        "immune": [
+          "Lymphocyte",
+          "High TIL stroma",
+          "Lymphoid nodule"
+        ],
+        "other": [
+          "Fat tissue",
+          "Vessels",
+          "Necrosis",
+          "Lactiferous duct",
+          "Nerve",
+          "Heterologous elements"
+        ],
         "mixed": "if dominant tissue fraction < 0.5"
       },
       "n_spots_total": 95161,
       "n_spots_dropped_background": 84072,
       "n_subarrays": 94,
       "class_distribution": {
-        "tumor": {"n": 20384, "pct": 21.4},
-        "stroma": {"n": 29183, "pct": 30.7},
-        "immune": {"n": 5618, "pct": 5.9},
-        "other": {"n": 11543, "pct": 12.1},
-        "mixed": {"n": 28433, "pct": 29.9}
+        "tumor": {
+          "n": 20384,
+          "pct": 21.4
+        },
+        "stroma": {
+          "n": 29183,
+          "pct": 30.7
+        },
+        "immune": {
+          "n": 5618,
+          "pct": 5.9
+        },
+        "other": {
+          "n": 11543,
+          "pct": 12.1
+        },
+        "mixed": {
+          "n": 28433,
+          "pct": 29.9
+        }
       },
       "imbalance_note": "immune class is 5x rarer than stroma - use stratified sampling and per-class F1 for rank 1a",
       "path": "data/embeddings/biological_signals/morphology_labels.tsv"
@@ -265,8 +519,24 @@
     "clinical": {
       "source": "Clinical.RDS",
       "n_patients": 94,
-      "spatial_archetype_distribution": {"1": 6, "2": 14, "3": 8, "4": 16, "5": 13, "6": 8, "7": 15, "8": 6, "9": 8},
-      "molecular_subtype_global": {"M": 28, "IM": 25, "BL": 18, "MSL": 12, "LAR": 11},
+      "spatial_archetype_distribution": {
+        "1": 6,
+        "2": 14,
+        "3": 8,
+        "4": 16,
+        "5": 13,
+        "6": 8,
+        "7": 15,
+        "8": 6,
+        "9": 8
+      },
+      "molecular_subtype_global": {
+        "M": 28,
+        "IM": 25,
+        "BL": 18,
+        "MSL": 12,
+        "LAR": 11
+      },
       "path": "data/embeddings/biological_signals/clinical_labels.tsv"
     },
     "tls_scores": {
@@ -274,7 +544,11 @@
       "normalization": "log1p of count-normalized expression, mean across panel genes",
       "n_spots": 101954,
       "n_subarrays": 94,
-      "tls_score_stats": {"mean": 0.198, "median": 0.141, "max": 1.454},
+      "tls_score_stats": {
+        "mean": 0.198,
+        "median": 0.141,
+        "max": 1.454
+      },
       "all_30_genes_present_per_subarray": true,
       "path": "data/embeddings/biological_signals/tls_scores.tsv"
     },
@@ -286,9 +560,20 @@
       "n_classes": 14,
       "cross_patient_stable_by_construction": true,
       "distribution": {
-        "MC1": 4.5, "MC2": 10.0, "MC3": 8.6, "MC4": 14.6, "MC5": 12.6,
-        "MC6": 5.6, "MC7": 0.6, "MC8": 1.8, "MC9": 9.0, "MC10": 4.4,
-        "MC11": 7.5, "MC12": 10.8, "MC13": 1.9, "MC14": 8.2
+        "MC1": 4.5,
+        "MC2": 10.0,
+        "MC3": 8.6,
+        "MC4": 14.6,
+        "MC5": 12.6,
+        "MC6": 5.6,
+        "MC7": 0.6,
+        "MC8": 1.8,
+        "MC9": 9.0,
+        "MC10": 4.4,
+        "MC11": 7.5,
+        "MC12": 10.8,
+        "MC13": 1.9,
+        "MC14": 8.2
       },
       "imbalance_note": "MC7 0.6% is 24x rarer than MC4 14.6% - need stratified sampling and per-class F1",
       "path": "data/embeddings/biological_signals/mc_labels.tsv"
@@ -310,14 +595,18 @@
   },
   "encoder_qc_comparison_2026-04-09": {
     "method": "patient-stratified linear probe + cross-subarray silhouette + within-subarray silhouette + batch effect ratio against MC labels (14-class) and morphology labels (5-class)",
-    "encoders_tested": ["uni2_raw (pilot, 5 patients only)", "virchow2_niche (280 subarrays, 94 patients)", "novae (250 subarrays, 89 patients)"],
+    "encoders_tested": [
+      "uni2_raw (pilot, 5 patients only)",
+      "virchow2_niche (280 subarrays, 94 patients)",
+      "novae (250 subarrays, 89 patients)"
+    ],
     "results": {
       "virchow2_niche": {
         "dim": 1280,
         "n_spots": 272839,
-        "within_sil_mc": 0.1200,
+        "within_sil_mc": 0.12,
         "cross_sil_mc": -0.1012,
-        "within_sil_morph": 0.0300,
+        "within_sil_morph": 0.03,
         "cross_sil_morph": 0.0228,
         "linear_probe_mc_pct": 23.6,
         "linear_probe_morph_pct": 57.1,
@@ -380,8 +669,8 @@
       "method": "fit CCA on 19 train subarrays, evaluate on 1 held-out",
       "within_subarray_mc_weights_only": 0.667,
       "within_subarray_full_rich_st": 0.724,
-      "cross_subarray_mc_weights_only": 0.000,
-      "cross_subarray_full_rich_st": 0.000,
+      "cross_subarray_mc_weights_only": 0.0,
+      "cross_subarray_full_rich_st": 0.0,
       "finding": "CCA's high within-subarray R@1 is COMPLETELY patient-leakage shortcut. cross-subarray collapses to literal zero. all baselines (random ~0.001, late fusion ~0.0025) are essentially random for cross-subarray retrieval."
     },
     "implications_for_rank2": [
@@ -413,11 +702,28 @@
     "accuracy": 0.214,
     "macro_f1": 0.191,
     "macro_f1_std": 0.022,
-    "weighted_f1": 0.200,
+    "weighted_f1": 0.2,
     "above_chance": "3.0x",
-    "strong_classes": {"MC6": 0.339, "MC12": 0.327, "MC14": 0.260, "MC13": 0.250, "MC5": 0.250},
-    "moderate_classes": {"MC4": 0.232, "MC10": 0.208, "MC2": 0.200, "MC9": 0.192, "MC3": 0.185, "MC11": 0.175, "MC1": 0.151},
-    "failed_classes": {"MC7": "F1=0.0 (0.6% of spots, rarest)", "MC8": "F1=0.0 (1.8%)"},
+    "strong_classes": {
+      "MC6": 0.339,
+      "MC12": 0.327,
+      "MC14": 0.26,
+      "MC13": 0.25,
+      "MC5": 0.25
+    },
+    "moderate_classes": {
+      "MC4": 0.232,
+      "MC10": 0.208,
+      "MC2": 0.2,
+      "MC9": 0.192,
+      "MC3": 0.185,
+      "MC11": 0.175,
+      "MC1": 0.151
+    },
+    "failed_classes": {
+      "MC7": "F1=0.0 (0.6% of spots, rarest)",
+      "MC8": "F1=0.0 (1.8%)"
+    },
     "interpretation": "linear probe on hard labels underestimates alignment potential - InfoNCE uses soft mc_weights (continuous 14-d) which contain richer signal than argmax labels. MC7/MC8 failure reflects morphological ambiguity of rare programs at linear probe level, not absence of signal.",
     "decision": "proceed to alignment training (rank2)",
     "next": "rank2 - InfoNCE alignment Virchow2 niche (1280) vs rich ST (79-d), per-subarray batches, mc_weight cosine positive pairs",
@@ -433,9 +739,18 @@
     },
     "st_representation": {
       "components": {
-        "mc_weights": {"dim": 14, "preprocessing": "untouched (cross-subarray stable by construction)"},
-        "novae": {"dim": 64, "preprocessing": "z-scored per subarray (recovers +0.11 silhouette)"},
-        "tls_score": {"dim": 1, "preprocessing": "untouched"}
+        "mc_weights": {
+          "dim": 14,
+          "preprocessing": "untouched (cross-subarray stable by construction)"
+        },
+        "novae": {
+          "dim": 64,
+          "preprocessing": "z-scored per subarray (recovers +0.11 silhouette)"
+        },
+        "tls_score": {
+          "dim": 1,
+          "preprocessing": "untouched"
+        }
       },
       "total_dim": 79
     },
@@ -452,7 +767,7 @@
       "subarray": "TNBC1_CN1_C1",
       "test": "removed background-dominated spots before Novae graph construction, re-ran inference",
       "raw_silhouette_within_subarray": 0.0583,
-      "filtered_silhouette_within_subarray": 0.0580,
+      "filtered_silhouette_within_subarray": 0.058,
       "delta": -0.0003,
       "interpretation": "graph quality (artifact spots in neighborhood) is NOT the issue. filtering does not improve geometry."
     },
@@ -474,9 +789,21 @@
     "decision_rationale": "Novae works locally per-subarray but does not produce cross-subarray comparable embeddings. The proposal allows within-subarray evaluation which sidesteps this entirely.",
     "training_design": "per-subarray batches, within-subarray evaluation",
     "rich_st_representation": {
-      "mc_weights": {"dim": 14, "source": "clustering/MC deconv NMF soft weights", "role": "primary biological signal, cross-patient stable by construction"},
-      "novae": {"dim": 64, "source": "novae_all/", "role": "within-subarray spatial context, NOT used for cross-subarray comparison"},
-      "tls_score": {"dim": 1, "source": "Cabrita 30-gene TLS signature", "role": "immune organization signal"},
+      "mc_weights": {
+        "dim": 14,
+        "source": "clustering/MC deconv NMF soft weights",
+        "role": "primary biological signal, cross-patient stable by construction"
+      },
+      "novae": {
+        "dim": 64,
+        "source": "novae_all/",
+        "role": "within-subarray spatial context, NOT used for cross-subarray comparison"
+      },
+      "tls_score": {
+        "dim": 1,
+        "source": "Cabrita 30-gene TLS signature",
+        "role": "immune organization signal"
+      },
       "total_dim": 79,
       "future": "+ gpath2vec pathway scores when available"
     },
@@ -486,7 +813,12 @@
     "scope_note": "this decision is specific to TNBC-92 (Wang et al. 100um spot platform). Novae trained on Xenium subcellular ST - cross-platform mismatch. other datasets may not need within-subarray restriction."
   },
   "zenodo_data_extended_2026-04-09": {
-    "previously_missing": ["clustering", "deconvolution", "classification", "Robjects"],
+    "previously_missing": [
+      "clustering",
+      "deconvolution",
+      "classification",
+      "Robjects"
+    ],
     "now_extracted": true,
     "key_finds": {
       "clustering/MC deconv/": "per-spot 14-MC soft NMF weights (270k spots) - cell-state level signal",
@@ -500,5 +832,83 @@
       "Robjects/countsNonCorrected/": "per-patient raw counts"
     },
     "no_cell_level_st": "no Xenium/MERFISH/CosMx/CODEX in this dataset. cell-state signal comes via NMF soft decomposition (mc_weights), not subcellular ST."
+  },
+  "virchow2_cell_vs_niche_interp_2026-04-10": {
+    "source_notebook": "notebooks/embeddings/virchow2_cell_vs_niche_interp.ipynb",
+    "n_spots": 272839,
+    "n_patients": 94,
+    "encoders_compared": [
+      "virchow2_cell",
+      "virchow2_niche"
+    ],
+    "qc_numbers_ref": "data/embeddings/biological_signals/encoder_qc_cell_vs_niche.json",
+    "pc_concept_lock": {
+      "niche_pc1": {
+        "var_expl": 0.171,
+        "eta2_mc": 0.393,
+        "eta2_patient": 0.54
+      },
+      "niche_pc4": {
+        "var_expl": 0.058,
+        "eta2_mc": 0.234,
+        "eta2_patient": 0.54
+      },
+      "niche_pc5": {
+        "var_expl": 0.052,
+        "eta2_mc": 0.073,
+        "eta2_patient": 0.614
+      },
+      "niche_pc6": {
+        "var_expl": 0.047,
+        "eta2_mc": 0.155,
+        "eta2_patient": 0.541
+      },
+      "observation": "top-5 mc-locked PCs == top-5 patient-locked PCs. mc signal and patient architecture share the same linear subspace."
+    },
+    "patient_ablation_niche": {
+      "procedure": "fit PCA(50) on niche, rank by eta2_patient, project out top-k, recompute batch_ratio + lp_mc",
+      "results": [
+        {
+          "k_pcs_removed": 0,
+          "batch_ratio": 1.089,
+          "lp_mc": 0.222
+        },
+        {
+          "k_pcs_removed": 2,
+          "batch_ratio": 0.987,
+          "lp_mc": 0.186
+        },
+        {
+          "k_pcs_removed": 5,
+          "batch_ratio": 0.843,
+          "lp_mc": 0.157
+        },
+        {
+          "k_pcs_removed": 10,
+          "batch_ratio": 0.785,
+          "lp_mc": 0.121
+        },
+        {
+          "k_pcs_removed": 20,
+          "batch_ratio": 0.503,
+          "lp_mc": 0.109
+        }
+      ],
+      "reference_cell": {
+        "batch_ratio": 0.585,
+        "lp_mc": 0.19
+      },
+      "outcome": "entangled - batch_ratio only drops below cell at k=20, at which point lp_mc has collapsed from 3.1x to 1.5x chance. no knee. linear residualization cannot separate signals."
+    },
+    "biological_interpretation": "RECONCILED FRAMING: 'niche encodes patient identity' and 'niche encodes MC program' are the same statement, not two. in TNBC, a patient's TME architecture IS their MC program mixture. PC1 captures e.g. 'immune-rich MC3+MC7 patient' vs 'tumor-dominant MC4+MC11 patient' - that single direction is simultaneously patient ID and MC identity because in this biology they are defined by each other. the entanglement is biological fact, not noise contamination to remove. linear residualization fails because there is nothing separate to project out.",
+    "rank2_decision": "linear residualization dead. three options: (1) cell encoder - lp_mc 0.190, br 0.585, honest, lower ceiling, patient less dominant; (2) niche + domain-adversarial GRL - nonlinear separation of within-vs-between patient variation, paper-worthy; (3) niche + within-subarray eval only - limited scope, patient shortcut persists. defaulting to (2). paper motivation is 'prevent InfoNCE patient shortcut', NOT 'remove batch effect'. cell encoder is honest fallback baseline.",
+    "paper_hook": "PC1 carries 17% variance simultaneously encoding both MC and patient identity - regime where domain-adversarial methods are designed to operate.",
+    "do_not_redo": [
+      "do not re-run linear residualization hoping for a different k - curve is monotone entangled",
+      "do not use niche cross-subarray retrieval as rank 2 eval without adversarial debiasing",
+      "whitespace/stain probing is not the bottleneck - do not pursue before adversarial experiment"
+    ],
+    "real_problem": "the problem is NOT patient signal contamination. the problem is that within-subarray InfoNCE uses patient identity as a shortcut: two spots from the same patient share TME architecture, so the model matches them by patient without learning cross-modal morphology->program alignment. this is why CCA within-sub R@1=0.667 collapsed to 0.000 cross-subarray.",
+    "what_adversarial_does": "NOT 'remove patient signal to expose MC signal' (they are the same signal). YES 'force the shared space to encode what differentiates spots within a patient's TME, not between patients'. within-patient variation is where genuine cross-modal signal lives. GRL finds the nonlinear subspace orthogonal to the dominant patient-architecture axis."
   }
 }
