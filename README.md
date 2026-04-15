@@ -42,7 +42,7 @@ layer 2: karpathy loop (outer optimization)
 
 program.md defines search space, constraints, stopping criteria.
 
-embedding dimensions: UNI2 1536d - Novae 256d -> shared 512d
+embedding dimensions: Virchow2 1280d (primary) / UNI2 1536d (alternative) - Novae GNN 64d (novae_latent) -> shared 512d
 
 alignment strategies (experimental variable):
 ```

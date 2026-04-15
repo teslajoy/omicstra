@@ -45,9 +45,10 @@ layer 2: karpathy loop (outer optimization)
 
 ## embedding dimensions
 
-- UNI2: 1536d (Virchow2 as swap: 1280d)
+- Virchow2: 1280d (primary H&E encoder, picked via encoder_qc_comparison_2026-04-09 on MC linear probe)
+- UNI2: 1536d (alternative H&E encoder, pluggable swap)
 - Novae GNN: 64d (novae_latent, raw GAT output - LayerNorm at MLP input required)
-- shared space: 512d
+- shared space: 512d (CONCH convention; ST info bottleneck is Novae's 64d, not shared width)
 
 ---
 
@@ -108,7 +109,7 @@ do not compare debug metrics to full run metrics.
 | routing | Claude Sonnet 4.6 |
 | synthesis | Claude Opus 4.6 |
 | tracing | LangSmith (observability only) |
-| H&E encoder | UNI2 1536d (Virchow2 1280d as swap) |
+| H&E encoder | Virchow2 1280d (primary) / UNI2 1536d (alternative) |
 | ST encoder | Novae GNN 64d (novae_latent) |
 | pathway embeddings | gpath2vec |
 | alignment | contrastive MLP + cross-attention bridge |
