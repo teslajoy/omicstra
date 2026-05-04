@@ -135,7 +135,7 @@ read `MODALITY_TEMPLATE.md`:
 
 ## seed cohort
 
-[Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) - 92 TNBC patients, co-registered Visium ST + H&E WSI.
+[Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) - 92 TNBC patients, co-registered ST + H&E WSI. platform: original Spatial Transcriptomics (Stahl et al. 2016, KTH/Spatial Transcriptomics AB, acquired by 10x Genomics 2018) - 1934 spots/array, 100um diameter, 200um center-to-center. not 10x Visium.
 
 | resource | url |
 |---|---|

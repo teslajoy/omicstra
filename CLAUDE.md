@@ -6,7 +6,7 @@ this file provides guidance to Claude Code when working with code in this reposi
 
 omicstra is a multi-agent MCP server for cross-modal reasoning in spatial biology. it aligns embeddings from H&E histopathology (UNI2/Virchow2) and spatial transcriptomics (Novae GNN) into a shared 512d space, then exposes cross-modal retrieval and evaluation through the Model Context Protocol.
 
-seed dataset: 92 TNBC patients from Wang et al. 2024 (co-registered Visium ST + H&E WSI, Zenodo doi:10.5281/zenodo.8135721).
+seed dataset: 92 TNBC patients from Wang et al. 2024 (co-registered ST + H&E WSI, Zenodo doi:10.5281/zenodo.8135721). platform: original Spatial Transcriptomics (Stahl et al. 2016, KTH/Spatial Transcriptomics AB, acquired by 10x Genomics 2018) - 1934 spots/array, 100um diameter, 200um center-to-center. not 10x Visium (5000 spots, 55um).
 
 ---
 
@@ -14,7 +14,7 @@ seed dataset: 92 TNBC patients from Wang et al. 2024 (co-registered Visium ST + 
 
 - do not propose alignment, contrastive learning, retrieval evaluation, or agent routing until EDA.md is satisfied
 - `projects/{project_id}/eda_summary.json` must exist and pass before any pipeline work
-- Novae GNN training data does not strongly overlap with TNBC Visium — embedding quality on this tissue is empirical, not an assumption
+- Novae GNN training data (10x Visium, 55um spots) does not strongly overlap with TNBC ST (original ST platform, 100um spots) — embedding quality on this tissue is empirical, not an assumption
 - UMAP inspection of Novae embeddings is part of EDA, not optional
 - if Novae underperforms, fall back to PCA on HVGs as ST baseline before blaming alignment
 - see MODELS.md for tissue-model compatibility matrix
@@ -86,7 +86,7 @@ early vs late interaction is an experimental variable, not an assumption.
 every run must beat all three on Recall@1 before writing winner.json:
 
 - random retrieval
-- spatial-NN (Visium coordinate nearest neighbor)
+- spatial-NN (ST coordinate nearest neighbor)
 - unaligned concat (L2-norm UNI2 + Novae, no projection)
 
 a run that does not beat all three baselines is not a winner.
