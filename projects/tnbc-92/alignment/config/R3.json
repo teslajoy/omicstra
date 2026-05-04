@@ -1,0 +1,19 @@
+{
+  "run_id": "R3",
+  "loss": "barlow",
+  "fusion": "late",
+  "projection": "mlp",
+  "supervision": "none",
+  "st_features": ["novae_niche", "gpath2vec_niche"],
+  "shared_dim": 512,
+  "barlow_lambda": 5e-3,
+  "dropout": 0.3,
+  "lr": 5e-4,
+  "weight_decay": 1e-3,
+  "epochs": 50,
+  "patience": 10,
+  "seed": 42,
+  "val_frac": 0.15,
+  "test_frac": 0.15,
+  "device": "cpu"
+}
