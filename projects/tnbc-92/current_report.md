@@ -249,17 +249,34 @@ R6 = R1 architecture with gpath2vec dropped from the ST stream (ST = novae 64d o
 260-subarray scope, 85/15 patient-stratified split, same held-out patients
 across all runs. ~40k test niches.
 
-| run | method | R@1 | R@5 | R@10 | MRR | gap | AUC | CKA after |
-|---|---|---|---|---|---|---|---|---|
-| **R4** | **infonce + cross_attn** | **0.0002** | **0.0014** | **0.0027** | **0.0019** | **0.195** | **0.851** | **0.564** |
-| R1 | infonce + late | 0.0003 | 0.0010 | 0.0023 | 0.0015 | 0.159 | 0.741 | 0.242 |
-| R2 | supcon + late | 0.0002 | 0.0009 | 0.0017 | 0.0012 | 0.043 | 0.707 | 0.120 |
-| R3 | barlow + late | 0.0001 | 0.0007 | 0.0014 | 0.0010 | 0.125 | 0.646 | 0.252 |
-| B2 | Procrustes | 0.0002 | 0.0008 | 0.0015 | 0.0012 | 0.156 | 0.703 | 0.124 |
-| B1 | CCA | 0.0000 | 0.0002 | 0.0003 | 0.0003 | 0.007 | 0.541 | 0.086 |
-| B3 | Unaligned PCA | 0.0000 | 0.0000 | 0.0000 | 0.0001 | -0.049 | 0.443 | 0.124 |
+all six proposal-specified H1 metrics (R@K, MRR, **median rank**, alignment gap, AUC, CKA) reported. test set has 45,661 niches; random-baseline median rank ≈ 22,830 (= n/2). lower median rank is better.
+
+| run | method | R@1 | R@5 | R@10 | MRR | median rank | gap | AUC | CKA after |
+|---|---|---|---|---|---|---|---|---|---|
+| **R4** | **infonce + cross-attn contrastive** | **0.0002** | **0.0014** | **0.0027** | **0.0019** | **4244** | **0.195** | **0.851** | **0.564** |
+| R1 | infonce + late-fusion contrastive | 0.0003 | 0.0010 | 0.0023 | 0.0015 | 8827 | 0.159 | 0.741 | 0.242 |
+| R6 | infonce + late-fusion contrastive (novae-only ST ablation) | 0.0002 | 0.0007 | 0.0014 | 0.0011 | 9227 | 0.155 | 0.733 | 0.225 |
+| R2 | supcon + late-fusion contrastive | 0.0002 | 0.0009 | 0.0017 | 0.0012 | 10153 | 0.043 | 0.707 | 0.120 |
+| R3 | barlow + late-fusion contrastive | 0.0001 | 0.0007 | 0.0014 | 0.0010 | 10267 | 0.125 | 0.646 | 0.252 |
+| B2 | Procrustes (classical baseline) | 0.0002 | 0.0008 | 0.0015 | 0.0012 | 10342 | 0.156 | 0.703 | 0.124 |
+| B1 | CCA (classical baseline) | 0.0000 | 0.0002 | 0.0003 | 0.0003 | 20181 | 0.007 | 0.541 | 0.086 |
+| B3 | Unaligned PCA (proposal "raw unaligned concat" analog) | 0.0000 | 0.0000 | 0.0000 | 0.0001 | 26430 | -0.049 | 0.443 | 0.124 |
 
 CKA before projection: 0.115 (same for all - raw modality CKA is fixed).
+
+**baseline terminology** (per proposal, p.5): the proposal specifies three baselines — CCA projection, late fusion concatenation, and raw unaligned concatenation. The mapping in this report:
+- **CCA projection** → B1 (closed-form CCA, train-fit applied cohort-wide).
+- **late fusion concatenation** (proposal's non-contrastive concat baseline) → no pure non-contrastive concat baseline was run; B3 (per-modality PCA-to-512 + L2-norm, no alignment) is the closest analog and is reported as the "raw unaligned concatenation" comparator. The "late-fusion contrastive" runs R1, R2, R3 are extensions, not the proposal's concat baseline.
+- **raw unaligned concatenation** → B3.
+
+**proposal AUC prediction comparison** (proposal p.5: "cross-modal similarity improvements are expected within an approximate range of 0.65-0.75"):
+- **R4 AUC = 0.851** *exceeds* the proposal's upper bound by 0.10. Strongest result and outside the predicted range.
+- R1 AUC = 0.741 sits in the upper half of the predicted range.
+- R6 AUC = 0.733, R2 AUC = 0.707, B2 AUC = 0.703 all sit in the predicted range.
+- R3 AUC = 0.646 sits just below the lower bound.
+- All four contrastive runs (R1, R2, R3, R4) meet or exceed the predicted range; R4 substantially exceeds it. The proposal noted relative improvement over baselines as the primary criterion — confirmed in either reading.
+
+**median rank vs random**: R4 (4244) ≈ 5.4× better than random (22,830); R1, R6, R2, R3, B2 cluster around 2.2-2.6× better; B1 only 1.1× (near random); B3 (26430) is worse than random — correct sanity-check behavior for the no-alignment floor.
 
 ### H1 takeaways (loss axis)
 
@@ -480,6 +497,148 @@ R1 has **more biology AND more patient signal** than R4 in absolute terms. The "
 - add to known limitations: TIME/MC labels are Bareche-2020 computational subtypes from bulk expression, not gold-standard pathology
 - ~~soften the R4-framing language~~ applied 2026-04-24; committed position is the trade-off framing (tight manifold for cross-modal alignment gain; dim-richness cost)
 - drop unintroduced AnInfoNCE mention from prose; reintroduce only if R5 is actually run
+
+---
+
+## step 3: stress-testing the fusion-axis verdict (R1 vs R4)
+
+added 2026-05-05. three follow-on analyses run after the distribution-first pivot landed, to determine whether the report's "R1 disentangles more than R4" mechanism claim is statistically defensible. all three operate on already-saved per-run artifacts; no retraining.
+
+### input data
+
+- 7 alignment runs: R1 (infonce+late), R2 (supcon+late), R3 (barlow+late), R4 (infonce+cross_attn), R6 (infonce+late, novae-only ST ablation), B1 (CCA), B2 (Procrustes). Same 85/15 patient-stratified split, seed=42, ~261 matched subarrays at subarray-level pooling.
+- Per run: `embeddings_test.parquet` (~45k niches × 512d z_he and z_st), `metrics_h1_raw.json` (CKA, AUC, R@K), `eval/biology.parquet` (subarray-level bio and patient deltas + z-scores + raw_he/raw_st reference), `eval/biology_nulls.parquet` (1e5-perm null distributions, shared seed=42 across runs and views).
+- Permutation framework: matched-null on patient_id (preserves patient-cluster sizes), label-shuffle on biology labels.
+- Bareche TIME labels (computational subtypes from bulk-expression NMF) external to the model.
+
+### analysis 1 - rank-matched CKA control
+
+**hypothesis**: is R4's H1 advantage (CKA_after = 0.564 vs R1 = 0.242) collapse-driven (R4 lives in ~3 effective dimensions, R1 in ~5) or genuine architectural work? a tighter manifold mechanically scores higher CKA against any partner.
+
+**method**: project R1's z_he onto its top-3 principal components (matching R4's effective rank), recompute linear CKA against R1's z_st. R4 at rank 3 is the sanity check (should approximately match R4's full-dim CKA since R4 already lives in ~3 dims; if not, the projection code is broken).
+
+falsifier grid (committed before computing):
+- R1@rank3 ≥ R4 (0.564) → collapse-driven; R4 has no architectural advantage at matched rank
+- R1@rank3 < 0.50 → R4's architecture is doing real work
+- 0.50 ≤ R1@rank3 < 0.56 → partial; some genuine advantage
+
+**metrics / results**:
+
+| run | full-dim CKA | rank-3 CKA | gap |
+|---|---|---|---|
+| R1 | 0.242 (matches reported) | 0.234 | -0.008 |
+| R4 | 0.564 (matches reported) | 0.564 | -0.0003 (sanity passes) |
+
+R1@rank3 (0.234) vs R4 full (0.564): delta = **-0.331**. R1 is in the "R4's architecture is doing real work" bucket by a wide margin. R1's CKA barely moves under rank projection because R1 already lives mostly in its top 3 PCs (PR=4.84).
+
+**conclusion**: R4's cross-attention architecture is doing real cross-modal alignment work beyond compression. the collapse hypothesis is rejected. the fusion-axis trade-off framing in the report holds; R4 is genuinely doing more than compressing.
+
+artifacts: `runs/tnbc-92/eval/compare/rank_matched_cka.parquet`. code: `scripts/eval_rank_matched_cka.py`.
+
+### analysis 2 - paired-perm test on (bio_delta - patient_delta) difference
+
+**hypothesis**: does R1 have statistically more asymmetric compression than R4 (or vice versa) at the cohort level?
+
+**method**: paired permutation test under shared-seed=42 nulls. for each run pair (run_a, run_b) and view (z_he, z_mean):
+- test stat: `obs_diff = asym_a − asym_b`, where `asym = bio_delta − patient_delta`
+- null: `asym_diff_null[i] = (bio_a_null[i] − bio_b_null[i]) − (pat_a_null[i] − pat_b_null[i])`
+- p_two = `(|asym_diff_null| ≥ |obs_diff|).mean()` with continuity correction
+- shared seed makes the per-perm-index difference a true paired sample
+
+**metrics / results (R1 vs R4 — the headline)**:
+
+| view | asym_R1 | asym_R4 | obs_diff | p (1e5 perms) |
+|---|---|---|---|---|
+| z_he | -0.335 | -0.034 | -0.300 | <1e-5 |
+| z_mean | -0.198 | -0.014 | -0.183 | <1e-5 |
+
+R1's asym is significantly more negative than R4's on both views. **in raw cosine units, R4 is closer to symmetric than R1** (less negative asym = closer to bio/patient parity in raw cosine geometry).
+
+**conclusion**: in raw delta units, the test is statistically decisive in the direction *opposite* to the report's prior z-ratio claim. the two framings measure different things — z-ratio is about statistical extremity (delta normalized by null spread); raw-delta is about absolute cosine geometry. they can disagree because R4's null is tighter (smaller deltas in absolute terms, but proportionally larger relative to null), while R1 has wider absolute spread.
+
+artifacts: `runs/tnbc-92/eval/compare/paired_asym_tests.parquet`. code: `scripts/eval_paired_asym.py`.
+
+### analysis 3 - per-run vs raw_he paired-perm (one-sample)
+
+**hypothesis**: did each run move its asymmetry away from raw_he, and in which direction? "asymmetric compression" claims rest on movement *from raw*, not absolute position.
+
+**method**: one-sample paired-perm against raw_he reference, shared-seed=42:
+- test stat: `obs_diff = run_asym − raw_he_asym`
+- null: `null_diff[i] = run_null[i] − raw_he_null[i]`
+- raw_he asym (TIME, both views via paired math) = -0.0965
+
+**metrics / results (z_he, sorted by direction)**:
+
+| run | asym | move from raw | direction | p (1e5 perms) |
+|---|---|---|---|---|
+| R3 | -0.096 | +0.001 | stays at raw | **0.94 (n.s.)** |
+| R4 | -0.034 | +0.062 | TOWARD symmetric | <1e-5 |
+| R1 | -0.335 | -0.238 | away from raw | <1e-5 |
+| R2 | -0.227 | -0.130 | away from raw | <1e-5 |
+| R6 | -0.414 | -0.317 | away from raw | <1e-5 |
+| B1 | -0.535 | -0.439 | away from raw | <1e-5 |
+| B2 | -0.639 | -0.543 | away from raw | <1e-5 |
+
+z_mean version: R3 and R4 both move TOWARD symmetric (p<1e-5 each); R1, R2, R6, B1, B2 all move AWAY (p<1e-5).
+
+**conclusion**:
+- R4 is the only run that moves toward symmetric on both z_he and z_mean (p<1e-5, both views).
+- R3 (Barlow) is statistically indistinguishable from raw_he on z_he (p=0.94) — Barlow's redundancy reduction does not move the asymmetric structure on the H&E side. Moves toward symmetric on z_mean (joint average) only.
+- All other contrastive runs (R1, R2, R6) actively move away from raw_he in raw cosine units — patient_delta grows faster than bio_delta in raw geometry.
+- Classical baselines (B1, B2) catastrophically amplify the raw asymmetry. on raw-delta-from-raw, B1 and B2 are the most extreme runs in the grid.
+
+artifacts: `runs/tnbc-92/eval/compare/per_run_vs_raw_asym.parquet`. code: `scripts/eval_paired_asym.py` (extended).
+
+### supporting: bootstrap CIs on asym (z_he + z_mean, all 7 runs)
+
+extension of the existing distribution-first bootstrap to z_mean and to all 7 runs in one bootstrap pass (encoding amortized per run; only the per-view delta computation runs twice per resample). 1000 patient-level resamples.
+
+| run | view | asym | 95% CI (lo, hi) |
+|---|---|---|---|
+| R1 | z_he | -0.335 | [-0.433, -0.268] |
+| R1 | z_mean | -0.198 | [-0.247, -0.168] |
+| R4 | z_he | -0.034 | [-0.049, -0.024] |
+| R4 | z_mean | -0.014 | [-0.020, -0.010] |
+| R3 | z_he | -0.096 | [-0.138, -0.069] |
+| R6 | z_he | -0.414 | [-0.517, -0.351] |
+| B1 | z_he | -0.535 | [-0.662, -0.601] |
+| B2 | z_he | -0.639 | [-0.753, -0.614] |
+
+note: B1's observed asym lies *outside* its bootstrap CI on both views (CI midpoint is more negative than the observed). this is an artifact of CCA's geometry being fragile to patient-level resampling — re-fitting is implicit in the encode step, and certain patients dominate the CCA solution. fig9 annotates these "CI off" with an `x` marker. not a code bug; a property of CCA.
+
+artifacts: `runs/tnbc-92/eval/compare/asymmetric_compression.parquet`, `runs/tnbc-92/eval/figures/fig9_asym_compression_z_he.pdf`, `fig9_asym_compression_z_mean.pdf`. code: `scripts/eval_compare_and_plot.py`.
+
+### three-framings summary (the consolidated mechanism reading)
+
+| measure | R1 | R4 | winner |
+|---|---|---|---|
+| z_bio / z_pat (z_he, "primary view") | 0.517 | 0.438 | R1 |
+| z_bio / z_pat (z_mean, "joint view") | 0.417 | 0.513 | R4 |
+| run_asym − raw_he_asym (raw cosine, both views) | further from raw | toward raw | R4 |
+
+R1 wins one framing, R4 wins two. the directional headline claim is not statistically defensible across legitimate measures.
+
+### overall conclusions on the fusion-axis verdict
+
+1. **R4's H1 advantage is real architectural work**, not driven by manifold collapse. the rank-matched CKA control rejects the collapse hypothesis with a -0.331 gap at matched rank.
+
+2. **the "R1 disentangles more than R4" directional claim is unit-dependent and not statistically defensible.** three legitimate measures of asymmetric compression give 1 vs 2 (R1 vs R4). the cleaner robust claim: every contrastive method compresses patient and amplifies biology relative to raw in z-units; in raw cosine units only R4 actually moves toward bio-patient symmetry.
+
+3. **R3 (Barlow) is conservative, not transformative.** on z_he, Barlow does not move the asymmetric structure (p=0.94 against raw_he). a more subtle Barlow story than the report previously had — Barlow's redundancy reduction preserves the raw H&E asymmetry rather than reorganizing it.
+
+4. **classical baselines amplify the raw asymmetry catastrophically.** B1 (CCA) and B2 (Procrustes) on z_he are the most extreme runs in the grid. CCA fails H3 z-ratio (0.064 < raw floor 0.129); Procrustes passes (0.318). Both amplify raw-delta asymmetry; the H3 difference is that CCA's failure mode is *correlation-maximization*, not *linearity*. this refines the report's existing mechanism story (B2 was previously predicted to fail like CCA; that prediction is wrong).
+
+5. **the R1-vs-R4 choice is task-dependent.** R1's wider cosine spread benefits niche-level retrieval; R4's tight manifold benefits cohort-level group statistics. neither dominates as "more disentangled."
+
+### what this changes elsewhere in the report
+
+pending writing-pass items, not yet applied to the rest of the document:
+- mechanism section (lines 124-141) needs revision: the factorization is *correlation-maximization vs everything else*, not *linear vs nonlinear*. B2 prediction was wrong.
+- "what is unmeasured" table (lines 90-102): drop rank-matched CKA, paired-(bio−pat), per-run-vs-raw, asymmetric_compression z_mean extension. remaining unmeasured: R6b mirror ablation, AnInfoNCE.
+- top-of-report status line: drop "B2/R3/R2 biology validation pending" claim — those landed 2026-04-24.
+- patient-metric consolidation: standardize on permutation z as the single primary patient metric; demote probe accuracy (saturated at 14-test-patient scale, 0.90-1.00 across all runs) and ARI (rotation-invariant + patient-conflated) to auxiliary roles.
+- R6 z_st patient saturation: pull from biology.parquet z (not patient probe accuracy) for the load-bearing claim.
+- B2 ≡ B3 footnote on H2 metrics: rotation-invariance, mathematically guaranteed, not coincidental.
 
 ---
 

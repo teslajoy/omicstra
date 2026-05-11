@@ -58,3 +58,7 @@ knowledge/
 notebooks/embeddings/*.html
 notebooks/embeddings/*.png
 docs/TODO*
+
+docs/tnbc92_summary.pdf
+docs/tnbc92_three_hypotheses.pdf
+projects/tnbc-92/proposal_deviations.md
