@@ -1,0 +1,26 @@
+{
+  "run_id": "R4_v3",
+  "loss": "infonce",
+  "fusion": "cross_attn",
+  "projection": "mlp",
+  "supervision": "none",
+  "st_features": [
+    "novae_niche",
+    "gpath2vec_niche"
+  ],
+  "shared_dim": 512,
+  "tau": 0.07,
+  "tau_target": 0.1,
+  "barlow_lambda": 0.005,
+  "dropout": 0.3,
+  "lr": 0.0005,
+  "weight_decay": 0.001,
+  "epochs": 50,
+  "patience": 10,
+  "seed": 42,
+  "val_frac": 0.15,
+  "test_frac": 0.15,
+  "subset_n_subarrays": null,
+  "device": "cpu",
+  "niches_dir": "data/embeddings/niches_v3"
+}

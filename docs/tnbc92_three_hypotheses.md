@@ -281,7 +281,7 @@ learned contrastive alignment captures cross-modal structure that classical meth
 
 ---
 
-## page 10 · H2 · structure preservation
+## page 10 · H2 · structurekill it preservation
 
 **Q**: does the shared embedding preserve biological compartment structure beyond either modality alone? if alignment compresses everything onto a generic shared axis without preserving the per-niche biological program, the embedding has cross-modal coupling (H1) but no interpretability.
 
