@@ -2,7 +2,7 @@
 
 a multi-agent MCP server for cross-modal reasoning in spatial biology. modality-specialized components are orchestrated with LangGraph; foundation model encoders are pluggable; integration strategy is a configurable experimental dimension, not a fixed pipeline choice.
 
-the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) using H&E morphology (UNI2) and spatial transcriptomics (Novae) on breast cancer tissue.
+the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) using H&E morphology (Virchow2 primary, UNI2 swap) and spatial transcriptomics (Novae GNN).
 
 `active development` `ResearchHub Foundation grant` `OHSU Knight Cancer Institute` `MIT`
 
@@ -129,7 +129,7 @@ omicstra/
 
 ## extending to a new modality
 
-read `MODALITY_TEMPLATE.md`:
+`MODALITY_TEMPLATE.md` is the contract a new modality agent (single-cell, protein, electron microscopy, etc.) must satisfy: a frozen foundation-model encoder, a niche-aggregation step, a clean ST/H&E-equivalent feature parquet shape, and the construct-validity guards the eval agent enforces. each modality adds one row to the alignment grid; the orchestrator's routing table and the karpathy-loop search space pick it up automatically.
 
 ---
 
@@ -139,7 +139,7 @@ read `MODALITY_TEMPLATE.md`:
 
 | resource | url |
 |---|---|
-| processed data | [doi:10.5281/zenodo.8135721](https://doi.org/10.5281/zenodo.8135721) |
+| processed data | [doi:10.5281/zenodo.14204217](https://doi.org/10.5281/zenodo.14204217) (mc-labels release also at [doi:10.5281/zenodo.8135721](https://doi.org/10.5281/zenodo.8135721)) |
 | original analysis code | [BCTL-Bordet/ST](https://github.com/BCTL-Bordet/ST) |
 
 ---
