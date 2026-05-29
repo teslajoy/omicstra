@@ -1,186 +1,216 @@
-# tnbc-92 · results summary (v2 - v3 gpath2vec retrain)
+# omicstra
+## project data: TNBC-92 (v3 gpath2vec retrain)
 
-manuscript-current results on the v3 gpath2vec retrain grid (`runs/tnbc-92_v3/`). data version: v3 gpath2vec build `fisher_madmean_low_dim512_e5_s1234` (sha `13985cbd...`), v3 niche-join 208,786 niches, test set 35,594 niches / 14 held-out patients / 38 subarrays.
+Cohort: Wang et al. 2024 TNBC, 94 patients, 38 held-out subarrays, 14 held-out test patients. v3 niche-join 208,786 niches (67,131 dropped: no significant pathway under MAD/mean gene selection). Test set: 35,594 niches. Unit: niche (k=6 spatial neighbors), ~1200 cells. Evaluation: subarray-level, patient-stratified 85/15 split, seed=42. FDR control: BH-FDR over the test families described per hypothesis. Numbers verified against `runs/tnbc-92_v3/eval/*` and `notebooks/final/05_summary_umaps_v3.ipynb` §9, §10.
 
-**v1 baseline** for head-to-head comparison: [`../v1/tnbc92_results_summary.md`](../v1/tnbc92_results_summary.md).
+**v1 -> v3 single change.** `gpath2vec_niche` (512-d) is the v3 build (`fisher_madmean_low_dim512_e5_s1234`, sha `13985cbd...`) on the ST input. novae, virchow2, mc_weights unchanged. v3 adds R5 (AnInfoNCE + late fusion) as one additional contrastive method in the grid; it is evaluated identically to R1-R4/R6 and is not a separate experiment.
 
-**status.** numbers verified from `runs/tnbc-92_v3/eval/*` and per-run `metrics_h1_raw.json`. prose interpretation preserved from the v1 framework (R4 wins H1+H3, late-fusion family wins H2 mc, classical baselines lose 30+% on the resolution shift) - all v1 directional claims hold on v3. v3 adds **R5_v3** (AnInfoNCE + late fusion, new method; per-dim learnable temperature, one-variable-change vs R1) to the grid. <!-- TODO: voice pass for any v3-specific phrasing the user wants to add -->
+---
+
+## hypothesis verdict summary
+
+| proposal hypothesis | v3 verdict | how |
+|---|---|---|
+| **H1** contrastive alignment improves cross-modal retrieval and representation alignment over unaligned baselines | **supported** | all 6 contrastive runs (R1-R6) beat the random-init B4 (chance, 0.496) and the unaligned-PCA B3 (sub-chance, 0.441) on AUC. cross-attention R4 (AUC 0.859, CKA 0.631) exceeds the proposal's 0.65-0.75 range; late-fusion runs land inside or slightly below it. |
+| **H2 Part A** archetype clusters more coherently in aligned space than in unimodal spaces | **construct-validity correction applied, then supported** | the proposal-literal 9-archetype label is patient-level pseudobulk: NMI(archetype, patient_id) = 0.89; every niche in a patient inherits one archetype. archetype ARI is a patient-classification test in disguise. on the audit-correct per-spot 14-class `mc_megacluster` label, aligned space shows 5× lift over raw ST (0.046 -> 0.246). |
+| **H2 Part B** distinct compartments (tumor, TLS, necrosis) show higher matched-pair cosine than ambiguous stroma - same FTU tested two ways | **partially supported, B.1 + B.2 disagree on the method ranking** | **B.1 (categorical compartment cosine contrasts):** TLS vs TIL-stroma passes in 5/9 runs (R1/R2/R5/R6/B2; v3 Welch z = +2.2 to +5.9). Tumor/Necrosis contrasts invert (annotation granularity confound, not biology absence). **B.2 (continuous TLS gene-signature CCA on z_he):** 6/10 runs sig at BH-FDR<0.05 - B4 random-init strongest (z=25.5), B1 CCA (16.6), R4 cross-attn (11.4), B2/B3 (11.3), R5 marginal (2.4); R1/R2/R3/R6 fail. Same FTU (TLS), two operationalizations, different method rankings - see Part B framing for what this means. |
+| **H3** Reactome pathway embeddings correlate with shared-latent directions via CCA, indicating preservation of interpretable biological signal | **supported with cross-patient qualifier** | within-cohort: pathway-direction CCA is positive across all runs (universal, non-discriminating). cross-patient sub-split (the discriminating operationalization): R4 4/4 testable pathways significant (z_A 11.2-25.4); classical baselines 4/4 with lower z_A; late-fusion contrastive runs 0-2/4. interpretable signal is present in R4 and classical baselines and transfers across held-out patients; late-fusion contrastive runs encode pathway signal that does not transfer. |
+| **systems-oriented** does one alignment strategy dominate every biological objective simultaneously? | **no, as predicted by the proposal framing** | R4 wins H1 retrieval + H3 cross-patient transfer. R1/R5/R6 win H2 niche-level region clustering. classical baselines fail H1 retrieval but stay competitive on H3 hit-rate. the trade-off is the deliverable. |
+
+---
+
+## construct-validity note
+
+The H2 Part A evaluation question as proposed - *"do the 9 spatial archetypes cluster more coherently in the aligned space"* - turned out not to be a good operationalization of the objective *"aligned latent captures TME organization."* Reason: archetypes were assigned at patient level in the Wang dataset (every niche in patient P inherits archetype A_P), so "archetype ARI" mechanically resolves to a 14-class patient classifier at niche resolution. Classical baselines that amplify patient identity (B1 CCA: patient z = 122.13, 3.3× amplification over raw H&E) score highest on the metric without encoding more biology. **The metric and the objective came apart - this is the construct-validity failure mode in concrete form.**
+
+The correction is to evaluate H2 Part A on Wang's per-spot 14-class `mc_megacluster` label (NMF on expression, niche-resolution, biology-derived) instead of the patient-level archetype label. On the corrected label the hypothesis is supported. The archetype-ARI numbers are reported in the parquet as diagnostic only and visualized in notebook §5 alongside patient_id panels for B1 and R4 - if a run's archetype panel and its patient_id panel show identical structure, archetype ARI on that run is patient classification by construction. See `projects/tnbc-92/evaluation_question_audit.md` finding #1 for the formal audit.
+
+The same logic guided two other decisions on H3 (use the cross-patient sub-split, not fit-on-all, because fit-on-all is universally supported and does not discriminate) and on z_he view selection (v3 gpath2vec is on the ST input, so z_st / z_mean are circular with the gpath2vec-derived signal; only z_he is non-circular and reported as headline).
 
 ---
 
 ## method definitions
 
-R1-R4, R6 and B1-B4 unchanged from v1; see [`../v1/tnbc92_results_summary.md`](../v1/tnbc92_results_summary.md) for the full method table. v3 architecture and method-grid axes unchanged; only the ST-side `gpath2vec_niche` feature was swapped from v1 to v3 build. **v3 adds one new method:**
-
-| run | loss | fusion | ST input | what it tests |
-|---|---|---|---|---|
-| **R5_v3** | AnInfoNCE (per-dim learnable temperature, init = standard InfoNCE) | late MLPs | novae + gpath2vec_v3 | does anisotropic per-dim temperature improve late-fusion alignment over R1? one-variable-change vs R1. |
-
----
-
-## H1 - Cross-Modal Alignment (v3 grid)
-
-source: `runs/tnbc-92_v3/eval/H1/summary.json`, per-run `runs/tnbc-92_v3/{run}/metrics_h1_raw.json`.
-
-| run | method | R@1 | R@5 | median rank | **AUC** | **CKA after** | alignment gap |
-|---|---|---|---|---|---|---|---|
-| **R4_v3** | InfoNCE + cross-attn | 0.00014 | 0.00155 | **3282** | **0.859** | **0.631** | **0.233** |
-| R1_v3 | InfoNCE + late | 0.00042 | 0.00185 | 6234 | 0.761 | 0.312 | 0.194 |
-| **R5_v3** | AnInfoNCE + late (new) | 0.00039 | 0.00177 | 6268 | 0.761 | 0.314 | 0.216 |
-| R6_v3 | InfoNCE + late (novae-only ST) | 0.00014 | 0.00079 | 7016 | 0.737 | 0.239 | 0.154 |
-| R2_v3 | SupCon + late | 0.00022 | 0.00107 | 7730 | 0.725 | 0.101 | 0.036 |
-| B2_v3 | Procrustes | 0.00008 | 0.00079 | 8070 | 0.706 | 0.126 | 0.161 |
-| R3_v3 | Barlow + late | 0.00000 | 0.00037 | 7644 | 0.674 | 0.306 | 0.143 |
-| B1_v3 | CCA | 0.00006 | 0.00014 | 15554 | 0.544 | 0.076 | 0.007 |
-| B4_v3 | random-init MLPs | 0.00006 | 0.00014 | 17936 | 0.496 | 0.120 | −0.0004 |
-| B3_v3 | Unaligned PCA | 0.00000 | 0.00000 | 20688 | 0.441 | 0.126 | −0.053 |
-
-random median-rank baseline = ⌈n/2⌉ = 17,797 (v3 test pool 35,594).
-
-**v3 vs v1 deltas (AUC):** R4 +0.008, R1 +0.020, R6 +0.004, R2 +0.018, R3 +0.028, B2 +0.003, B1 +0.003, B4 +0.005, B3 −0.002. R5 is new (no v1 comparison). all contrastive runs improved or held; classical baselines essentially unchanged.
-
-**R5_v3 ≡ R1_v3 on H1** (AUC 0.761 / 0.761, CKA 0.314 / 0.312). AnInfoNCE's per-dim learnable scaling barely moved from init (mean log-scale −0.015, std 0.042; only 17/512 dims moved >0.1 in log space). the matched-pair InfoNCE objective doesn't strongly incentivize direction-specific weighting; AnInfoNCE effectively collapses to standard InfoNCE on H1.
-
-**verdict (unchanged from v1).** R4 wins by clean margin on both AUC and CKA. all five contrastive late-fusion runs (R1, R2, R3, R5, R6) plus R4 cross-attn outperform all three classical baselines (B1-B3) on AUC and CKA with no overlap between families. B4 random-init at chance (0.496) confirms architecture alone contributes none of the H1 gain - contrastive training does the bulk, cross-attention adds the rest. B3 unaligned PCA sub-chance with negative gap (sanity floor).
-
----
-
-## H2 Part A - niche-level biology coherence (mc_megacluster, audit-correct)
-
-source: `runs/tnbc-92_v3/eval/H2/mc_coherence.parquet`. KMeans(k=14) on z_he, ARI vs Wang's per-spot 14-class NMF `mc_megacluster` label.
-
-**z_he is the citable view** (non-circular - H&E never sees mc_megacluster). z_st / z_joint partially circular and reported in the parquet for completeness only.
-
-| run | archetype ARI (z_he) | **mc_megacluster ARI (z_he)** | delta archetype→mc | reading |
-|---|---|---|---|---|
-| **R5_v3** | — (TODO) | **0.246** | — | top of 3-way tie within KMeans seed noise (vs R6 0.244, R1 0.234) |
-| **R6_v3** | 0.236 | **0.244** | +0.008 | niche-level biology winner (v1) |
-| **R1_v3** | 0.244 | **0.234** | −0.010 | runner-up |
-| B1_v3 | 0.259 | 0.211 | −0.048 | classical, loses leakage advantage |
-| B2_v3 | 0.306 | 0.194 | **−0.112** | classical, big leakage drop |
-| B3_v3 | 0.307 | 0.194 | **−0.112** | rotation-equivalent to B2 |
-| R3_v3 | 0.130 | 0.159 | +0.029 | low |
-| R2_v3 | 0.187 | 0.152 | −0.035 | low |
-| **R4_v3** | 0.065 | **0.101** | +0.036 | lowest on KMeans (manifold-geometry bias, same v1 finding) |
-| raw_he | 0.295 | 0.164 | **−0.131** | raw H&E archetype "win" was patient identity |
-| raw_st | 0.017 | 0.046 | +0.029 | Novae alone barely clusters mc - alignment is doing the work |
-
-**construct-validity receipts on v3:**
-- classical baselines lose 11+ ARI points archetype → mc (B2/B3 −0.112, B1 −0.048, raw_he −0.131). quantifies the patient-leakage the audit caught.
-- **R5 / R6 / R1 in a 3-way tie at the top** within typical KMeans seed-variance (ARI gaps <0.012). late-fusion contrastive (with and without AnInfoNCE, with and without gpath2vec ST anchor) is the right family for niche-level region clustering on tissue.
-- R4 lowest on KMeans (0.101): same v1 finding - cross-attention compresses to a tight manifold and KMeans assumes globular clusters. metric-induced, not biology absence. **v1 rescue (patient-stratified linear probe at parity) not yet rerun on v3** - flag if needed for manuscript.
-- alignment provides **5× lift** over raw ST (0.046 → 0.246 with R5) on niche-level biology coherence.
-
-**archetype-ARI (proposal-literal) reported as diagnostic only**, NOT a biology claim - per construct-validity audit (`projects/tnbc-92/evaluation_question_audit.md` finding #1, NMI(archetype, patient_id) ≈ 0.89). see also v3 notebook §5 (construct-validity panel), §8b, §8c.
-
-<!-- TODO: voice pass on the R4 KMeans-rescue framing if user wants to commit to "R4 has biology at parity once geometry-bias removed" - that claim needs the v3 linear-probe rerun first -->
-
----
-
-## H2 Part B - compartment cosine contrasts
-
-source: `runs/tnbc-92_v3/eval/H2/compartment_cosine.parquet` (regenerated for v3; named-contrast Welch z-test analysis preserved from v1).
-
-| contrast | v1 result | v3 status |
-|---|---|---|
-| TLS vs hi-TIL stroma | passed R1/R2/R6 (z=+3.2 to +5.3) | <!-- TODO: recompute z-tests from v3 compartment_cosine.parquet --> |
-| TLS vs lo-TIL stroma | passed R1/R2/R6 | <!-- TODO --> |
-| Tumor vs hi-TIL / lo-TIL | inverted in all R-runs | <!-- TODO --> |
-| Necrosis vs hi-TIL / lo-TIL | inverted in all R-runs | <!-- TODO --> |
-
-**v1 interpretation (likely preserved on v3): TLS is the one FTU-like compartment where the proposal's directional prediction held.** annotation-granularity confound on Tumor/Necrosis (large heterogeneous classes dilute matched-pair cosine). see v3 notebook §8c for the FTU framing.
-
-**coverage:** 13/38 v3 held-out test subarrays carry compartment annotations (~35% of test niches, same scope as v1).
-
----
-
-## H3 - Pathway Interpretability (gpath2vec arm, proposal-literal)
-
-**this is the proposal-literal H3 test** - per-pathway univariate CCA between each run's shared-latent canonical direction and the **v3 gpath2vec** pathway embeddings (niche cosine profile to embedded Reactome descendants of each named parent). source: `runs/tnbc-92_v3/eval/H3/pathway_cca_gpath2vec_v3/per_pathway_cca.parquet`. embeddings sha256 `782fe64f...` locked in provenance.
-
-**z_he view only** (non-circular - v3 gpath2vec is on the ST input, so z_st / z_mean are circular with the gpath2vec-derived signal; reported in parquet for completeness, not headline). option A = cross-patient held-out 3-patient sub-split; 500 perms; BH-FDR over testable (set_size>=5) z_he family.
-
-### option A (cross-patient held-out), z_he z_A
-
-| run | Immune (n=76) | ECM (n=15) | Cell Cycle (n=15) | PCD (n=7) | TGF-β (n=2, underpowered) | **sig testable (/4)** |
-|---|---|---|---|---|---|---|
-| **R4_v3** | **25.4** | **16.0** | **16.5** | **11.2** | 5.2 | **4/4** |
-| B2_v3 / B3_v3 | 17.1 | 9.2 | 10.4 | 6.7 | 3.1 | 4/4 |
-| B1_v3 | 15.2 | 10.4 | 9.8 | 7.5 | 3.1 | 4/4 |
-| **R5_v3** (new) | −1.9 | **3.0** | **2.1** | **3.0** | 0.9 | **2/4** |
-| R1_v3 | 2.7 | 1.5 | 1.5 | −0.6 | 0.2 | 1/4 |
-| R3_v3 | 2.3 | 0.1 | 0.7 | 0.2 | 1.4 | 1/4 |
-| R2_v3 | −1.6 | −2.2 | −1.5 | −1.2 | −1.1 | 0/4 |
-| R6_v3 | 0.5 | 1.3 | −1.8 | 0.6 | 0.3 | 0/4 |
-
-TGF-β R-HSA-170834 set_size=2 - **underpowered, excluded from the BH-FDR family**, reported separately. only 4 pathways enter the FDR family on the gpath2vec arm.
-
-subtree coverage on the v3 build: Immune 35%, ECM 79%, Cell Cycle 12%, PCD 17%, TGF-β 17%. coverage is **not thresholded** (any cut separating PCD~17% from Cell_Cycle~11% is arbitrary - the F1 anti-pattern); representativeness reported per-pathway, reader-judged.
-
-### verdict (v3 grid, gpath2vec arm)
-
-**R4 wins cross-patient pathway transfer on the proposal-literal test.** 4/4 testable pathways significant at BH-FDR<0.05, z_A 11.2-25.4. late-fusion contrastive runs largely fail: **R5 2/4** (best of late-fusion family - ECM/CC/PCD pass, Immune actively suppressed at z_A −1.9), R1/R3 1/4, R2/R6 0/4. classical baselines competitive (4/4 with lower z_A 3-17). v3 R4 z_A is **stronger than v1 R4** on the AUCell arm (v1 R4 z_A 3.8-5.7; v3 gpath2vec-arm R4 z_A 11.2-25.4) - the v3 gpath2vec build amplifies the cross-patient pathway signal.
-
-**R5 finding (negative result on rescue hypothesis).** AnInfoNCE per-dim temperature was queued (per `project_session_handoff`) as a candidate fix for R4's pathway-direction aliasing. R5 on late-fusion gained 1 sig pathway vs R1 (1/4 → 2/4) - a small effect. **AnInfoNCE is not the rescue for R4's aliasing**; if the question is "can anisotropic temperature un-alias R4 while preserving cross-patient transfer?" it needs to be tested on cross-attention directly (R5b - deferred, ~30 min compute, requires patching `CrossAttnFusion` to register `aniso_log_scale`).
-
-### specificity / aliasing (z_he)
-
-R4's pathway-direction off-diag |mean| ~0.75 (z_he, computed from canonical directions). consistent with v1 finding that R4's aliasing - 5 pathway directions collapse toward one biology axis - is the **source** of its cross-patient generalization. one axis is harder to overfit to patient identity than five distinct directions.
-
-routing rule (unchanged from v1): **R4 for cross-patient magnitude on any one pathway; B2 for per-pathway distinguishability across multiple pathways.**
-
----
-
-## H3-extended (biology vs patient permutation z-test)
-
-<!-- TODO: re-run on v3 - v1 bio-vs-patient ratio table on Bareche TIME / MC_global / MC_tumor not yet recomputed for v3 alignment runs. v1 numbers preserved at ../v1/tnbc92_results_summary.md for reference. -->
-
----
-
-## Systems-oriented evaluation (verdict holds, same as v1)
-
-| field | observation |
+| method | definition |
 |---|---|
-| does one alignment dominate every objective? | **no.** R4 wins H1 + H3 cross-patient pathway transfer. R5/R6/R1 (3-way tie within seed noise) win H2 niche-level biology clustering. classical baselines competitive on ECM and fail H1. B1 amplifies patient identity. |
-| conclusion | different alignment architectures optimize different biological objectives. niche-level cluster geometry, cross-modal retrieval, and cross-patient pathway transfer are not co-monotonic. the framework's value is in exposing the trade-offs and supporting task-conditional routing (see [`tnbc92_routing_matrix.md`](tnbc92_routing_matrix.md)). |
-| strong methods | R4 (retrieval, cross-patient pathway transfer); R5 / R1 / R6 (niche-level region clustering on tissue) |
-| baselines | all baselines lose at least one hypothesis family decisively. B4 random-init at chance confirms architecture alone is insufficient. |
+| **R4** | InfoNCE cross-attention alignment. ST queries attend over H&E tile tokens (center spot + 6 spatial neighbors at full Virchow2 resolution). produces a weighted-sum H&E representation conditioned on ST. |
+| **R1** | InfoNCE late-fusion alignment with independent modality projections (mean-pooled H&E -> MLP, novae + gpath2vec -> MLP). standard CLIP-style contrastive baseline. |
+| **R5** (new in v3) | AnInfoNCE late-fusion alignment. extends InfoNCE with a per-dim learnable log-scale parameter on the bilinear inner product (diagonal Mahalanobis). evaluated identically to R1 across H1/H2/H3. |
+| **R6** | R1 ablation: drops gpath2vec embeddings from the ST input. tests whether H&E pathway signal depends on the pathway anchor being present on the ST side. |
+| **R2** | Supervised contrastive late-fusion alignment using soft mc_weights similarity as targets (instead of binary match/mismatch). |
+| **R3** | Barlow Twins late-fusion: redundancy-reduction loss that pushes the cross-correlation matrix toward identity. no explicit negatives. |
+| **B1** | Canonical Correlation Analysis. classical, linear, closed-form. maximizes cross-modal correlation in whitened space. one of the unaligned baselines named in the proposal. |
+| **B2** | Orthogonal Procrustes. classical, linear. finds the orthogonal rotation that best aligns the two modalities' PCA-projected spaces. |
+| **B3** | Unaligned PCA. independent per-modality PCAs with L2-norm. no cross-modal objective. corresponds to the proposal's "unaligned baseline" sanity floor. |
+| **B4** | Random-initialized untrained MLPs. R1 architecture with Xavier init, no training. strict baseline that isolates the contribution of contrastive training from the architecture alone. |
+
+## metric definitions
+
+| metric | what it measures |
+|---|---|
+| **R@K** (recall at K) | for each query niche, rank candidates by cosine similarity. fraction of queries where the true match appears in the top K. proposal H1 retrieval metric. |
+| **MRR** (mean reciprocal rank) | average of 1/rank across queries. rewards both high ranks and consistency. proposal H1 retrieval metric. |
+| **AUC** | probability that a random matched pair has higher cosine similarity than a random mismatched pair. 0.5 = chance, 1.0 = perfect. scale-invariant. proposal H1 separability metric. |
+| **alignment gap** | mean(matched cosines) - mean(mismatched cosines). positive = matched pairs systematically closer. proposal H1 separability metric. |
+| **CKA** (Centered Kernel Alignment) | structural alignment between modalities: do the H&E and ST manifolds have similar pairwise-similarity structure overall? proposal H1 representation-structure metric. |
+| **ARI** (Adjusted Rand Index) | cluster-vs-label agreement, corrected for chance. ARI=1 perfect, ARI=0 random. proposal H2 Part A metric (on the audit-correct mc_megacluster label, not the proposal-literal archetype label). |
+| **matched-pair cosine** | within a tissue compartment, average cosine similarity between paired H&E and ST niches. proposal H2 Part B metric. |
+| **z_A** | held-out cross-patient CCA correlation expressed in permutation-null standard-deviation units. proposal H3 metric, evaluated on cross-patient sub-split as the discriminating operationalization. |
+| **sig testable (/4)** | per-run count of named-parent pathways passing BH-FDR<0.05 on the cross-patient sub-split. TGF-beta set_size=2 underpowered; excluded from FDR family. 4 testable pathways: Immune, ECM, Cell Cycle, PCD. |
+| **NMI(archetype, patient_id)** | construct-validity diagnostic: how mechanically does the archetype label collapse to patient identity? 0 = independent, 1 = deterministic. observed 0.89 on 14 held-out patients (every niche in a patient inherits one archetype). |
+
+---
+
+# results by hypothesis
+
+## H1 · Cross-Modal Alignment
+
+| field | detail |
+|---|---|
+| **Proposal hypothesis** | Contrastive learning will improve cross-modal retrieval and representation alignment relative to unaligned baselines (CCA projection, late fusion concatenation, raw unaligned concatenation), as measured by retrieval metrics (R@K, MRR, median rank), alignment separability (alignment gap, AUC), and representation structure (CKA). Improvements expected within ~0.65-0.75 range, emphasis on relative improvement over baselines. |
+| **Evaluation question** | Do contrastive runs (R1-R6) outperform unaligned and classical baselines (B1 CCA, B3 Unaligned PCA, B4 random-init) on retrieval, separability, and representation-structure metrics? |
+| **Construct-validity check** | The H1 evaluation question is a clean operationalization of the hypothesis - retrieval and AUC are direct measurements of cross-modal alignment quality and B4 random-init provides a strict chance-floor anchor. No re-framing needed. |
+| **Observed result** | R4 AUC 0.859, CKA 0.631 (exceeds proposal range). R1 / R5 AUC 0.761 (top of range). R6 AUC 0.737 (in range). R2 0.725 (in range). R3 0.674 (slightly below range). Among classical baselines: B2 Procrustes 0.706, B1 CCA 0.544, B3 Unaligned PCA 0.441. B4 random-init at chance (0.496). Contrastive runs and classical baselines do not overlap on AUC. |
+| **Interpretation** | Hypothesis supported. All 6 contrastive runs outperformed every baseline named in the proposal (B1, B3, B4). The CCA baseline (B1) underperformed contrastive runs by 0.13 to 0.32 AUC. B4 random-init at chance confirms contrastive training (not architecture) is doing the H1 work. R4 cross-attention exceeds the proposal range; late-fusion runs land inside or close to it. v3 build improved or held every contrastive run on AUC vs v1; classical baselines essentially unchanged. |
+| **Scientific conclusion** | **H1 holds.** Contrastive alignment produces stronger cross-modal retrieval and representation alignment than unaligned baselines on TNBC-92. The proposal range was conservative for cross-attention; the alignment evidence is strongest there. |
+| **Primary metrics** | R@K, MRR, AUC, CKA, alignment gap |
+| **Strong methods** | R4 (best), R1, R5, R6, R2 |
+| **Baselines beaten** | B1 (CCA), B3 (unaligned PCA), B4 (random-init); B2 Procrustes beaten by contrastive late-fusion runs and R4 |
+
+## H2 Part A · Structural Coherence (niche-level region clustering)
+
+| field | detail |
+|---|---|
+| **Proposal hypothesis** | The 9 spatial archetypes will cluster more coherently in the aligned latent space compared to individual modality spaces, measured by Adjusted Rand index and silhouette score. |
+| **Evaluation question (as proposed)** | Do the 9 spatial archetypes cluster more coherently in the aligned space than in unimodal spaces? |
+| **Construct-validity check** | **The proposal-literal evaluation question is not a good operationalization of the hypothesis.** Wang's archetype labels were assigned at patient level: NMI(archetype, patient_id) = 0.89 on the 14 held-out patients; every niche in a patient inherits one archetype. Archetype ARI mechanically resolves to a 14-class patient classifier at niche resolution. Classical baselines that amplify patient identity (B1 CCA: patient z = 122.13, 3.3× amplification over raw_he) score highest on the proposal-literal metric without encoding more biology. **Corrected evaluation question:** do niches cluster by transcriptomic tissue state, using Wang's per-spot 14-class `mc_megacluster` (NMF) label as the audit-correct niche-resolution biology target? |
+| **Observed result** | KMeans(k=14) on z_he against `mc_megacluster` (corrected label): R5 ARI 0.246, R6 0.244, R1 0.234 (3-way tie within KMeans seed noise, gaps <0.012). R4 0.101 (lowest on KMeans). Classical baselines lose 11+ ARI points on the resolution shift archetype -> mc (B2/B3 -0.112, B1 -0.048), quantifying patient-leakage drop. Raw ST alone: 0.046. Aligned space provides **5× lift over raw ST**. **R4 rescue confirmed on v3:** patient-stratified linear probe (LogReg 14-class, 11/3 patient split) gives R4 accuracy 0.240, at parity with R1 (0.282), R6 (0.276), raw_he (0.270) - the KMeans-low result is manifold-geometry bias (cross-attention compresses to a tight non-globular manifold; KMeans assumes globular clusters; LogReg only needs linear separability), not biology absence. kNN purity R4 0.628 vs ~0.80 reflects R4's patient suppression, not biology loss. |
+| **Interpretation** | On the construct-validity-corrected label, the hypothesis is supported. Aligned latent space clusters niches by transcriptomic tissue state more coherently than raw ST alone (5× ARI lift). Late-fusion contrastive runs (R1, R5, R6) win the niche-level region clustering by KMeans; R4's tight cross-attention manifold is poorly served by KMeans's globular-cluster assumption but encodes mc biology at linear-probe parity (R4 0.240 vs R1 0.282, raw_he 0.270) - confirmed on v3, matching the v1 rescue. R6 wins parsimony - it drops gpath2vec from the ST input entirely and Novae's spatial-neighborhood graph alone clusters mc states. |
+| **Scientific conclusion** | **H2 Part A holds on the audit-correct label.** The proposal-literal archetype label is reported as diagnostic only and visualized in notebook §5 alongside patient_id panels to show the construct-validity collapse. Aligned space organizes niches by transcriptomic tissue state at a resolution that raw ST embedding cannot reach. |
+| **Primary metrics** | mc_megacluster ARI (z_he), NMI(archetype, patient_id) for construct-validity, archetype -> mc delta for patient-leakage diagnosis |
+| **Strong methods** | R5, R6, R1 (3-way tie within seed noise) |
+| **Baselines** | B1, B2, B3 lose 11+ ARI points archetype -> mc, quantifying the patient-leakage component |
+
+## H2 Part B · Compartment / FTU Coherence (same FTU, two ground truths)
+
+H2 Part B tests the FTU-coherence aspect of the proposal - does the aligned space preserve compartment-level / functional-tissue-unit organization? The proposal names two relevant ground truths: the **17 expert-annotated morphological categories** (categorical pathologist labels including "Lymphoid nodule" = TLS) and the **TLS gene signatures scored spatially** (continuous per-niche TLS-signature score). Both target the same FTU (TLS), at different resolutions of the same biology. We test both and report them as **B.1** (categorical) and **B.2** (continuous). The two tests give different method rankings - see the framing note after B.2 for what that tells us about what alignment preserves.
+
+### H2 Part B.1 · categorical compartment cosine contrasts (17-class pathologist annotations)
+
+| field | detail |
+|---|---|
+| **Proposal hypothesis** | Alignment quality varies across TME compartments: morphologically distinct compartments (tumor, TLS, necrosis) will show higher matched-pair cosine similarity than morphologically ambiguous compartments (high-TIL vs low-TIL stroma). |
+| **Evaluation question** | Do tumor / TLS / necrosis compartments produce higher matched-pair cosine than high-TIL / low-TIL stroma, measured by Welch z-test on the 6 directional contrasts? |
+| **Construct-validity check** | The compartment-level test is conceptually clean: per-spot pathologist annotations (17 categories, 12 populated in test set) vary at niche resolution unlike the patient-level archetype label. Caveat: the Tumor (n≈4384) and Necrosis (n≈1178) annotation classes pool heterogeneous subtypes and dilute within-compartment cosine; small well-curated TIL annotations (n=105 to 354) have higher within-compartment homogeneity. The directional prediction is sensitive to annotation granularity, not just biology. |
+| **Observed result (v3)** | Welch z per run (one-sided, distinct > ambiguous as proposal predicts) on `runs/tnbc-92_v3/eval/H2/compartment_welch_contrasts.parquet`. **TLS vs hi-TIL stroma:** pass in R6 (+5.6), R2 (+5.4), B2 (+3.7), R5 (+2.4), R1 (+2.2). **TLS vs lo-TIL stroma:** pass in R6 (+5.9), R2 (+5.4), R1 (+4.1), R5 (+3.2), B2 (+2.8). **Tumor and Necrosis contrasts invert decisively** in 4-7 runs each (z down to -15). **R3 uniquely passes Necrosis contrasts** (z = +5.8, +9.1). **R4 fails every contrast** (0/6 pass, 3 inverted) - its tight cross-attention manifold collapses compartment distinctions. v3 coverage: 13/38 held-out test subarrays carry compartment annotations (~35% of test niches). |
+| **Interpretation** | The TLS direction held cleanly. TLS is the one well-curated FTU annotation in the dataset and the contrast where the proposal's directional prediction matched. Tumor and Necrosis annotations are too heterogeneous to differentiate from TIL stroma on matched-pair cosine; this is an annotation-vocabulary issue. Late-fusion contrastive runs (R1, R2, R5, R6) preserve compartment-cosine separation on TLS - exactly the matched-pair structure their loss optimizes. R4 sacrifices it for the cross-attention manifold compression. R3 (Barlow Twins) uniquely picks up Necrosis. |
+| **Scientific conclusion** | **H2 Part B.1 holds for TLS.** The categorical compartment-cosine test supports the FTU-coherence claim on the one well-curated FTU annotation. The Tumor and Necrosis arms are not testable as proposed without annotation-vocabulary refinement. |
+| **Primary metrics** | Matched-pair cosine by compartment, Welch z (one-sided) on 6 named contrasts |
+| **Strong methods** | R6, R2, R1, R5, B2 (TLS contrasts); R3 (Necrosis contrasts, unique) |
+| **Baselines** | B1 (1/6 pass; mostly non-significant); B3 (0/6 pass - sanity floor, no compartment differentiation) |
+
+### H2 Part B.2 · continuous TLS gene-signature CCA
+
+| field | detail |
+|---|---|
+| **Proposal hypothesis** | TLS gene signatures scored spatially are one of the four ground-truth sources listed in the proposal for evaluating whether aligned representations capture shared biological signal across modalities. |
+| **Evaluation question** | Does the H&E view of each run's aligned space (z_he) linearly predict the continuous per-niche TLS gene-signature score (from `tls_scores.tsv`) on held-out patients? |
+| **Construct-validity check** | This is a cross-modal prediction question: H&E never sees the gene-signature score during training (the signature is computed from ST counts). z_he is the citable non-circular view. z_st and z_mean are partially circular for the 8 runs that include gpath2vec on the ST input - they're reported in the parquet but not as headline. The continuous test complements the categorical B.1: same FTU (TLS), different operationalization, answers a different question - *"does z_he linearly decode the TLS biology?"* vs B.1's *"does the aligned space preserve matched-pair structure within the TLS compartment?"* |
+| **Observed result (v3, z_he, cross-patient held-out 3-patient sub-split, 500 perms, BH-FDR<0.05)** | **B4_v3 (random-init) z_TLS 25.46** (strongest). B1_v3 (CCA) 16.61. R4_v3 (cross-attn) 11.39. B3_v3 / B2_v3 (rotation-equivalent classical) 11.29. **R5_v3 marginal at 2.37** (passes FDR but borderline). R6_v3 1.54, R3_v3 0.54, R1_v3 -0.17, R2_v3 -0.78 - all non-significant. **6 of 10 runs sig** on z_he. |
+| **Interpretation** | TLS gene signature is **directly H&E-morphology-decodable** - organized lymphoid aggregates have a distinctive Virchow2-feature signature, and a random Xavier projection of those features + L2-norm (B4) preserves the cross-patient predictive signal end-to-end. Classical linear methods (B1, B2, B3) and R4 cross-attention also preserve it. **Late-fusion contrastive runs (R1, R2, R3, R6) actively degrade the linear-decodability of TLS on z_he** - the contrastive objective distorts the H&E features in ways that help cross-modal matching (the H1 / H3 wins) but hurt pure-morphology decoding tasks like this. R5's per-dim temperature lets it retain a marginal signal (z=2.4). |
+| **Scientific conclusion** | **H2 Part B.2 supported for the H&E-feature-preserving methods** (random init, classical baselines, R4). Late-fusion contrastive runs fail this signal - this is a methodologically informative *negative* finding: contrastive alignment training has a cost on signals already strongly encoded by a single modality's foundation features. |
+| **Primary metrics** | univariate CCA on z_he, cross-patient held-out 3-patient sub-split, 500 perms, BH-FDR<0.05; z_TLS = (held-out test r - null mean) / null std |
+| **Strong methods** | B4 (best), B1, R4, B2 / B3, R5 (marginal) |
+| **Baselines** | R1, R2, R3, R6 below significance - the *contrastive late-fusion family fails this signal* despite passing B.1 |
+
+### What B.1 vs B.2 tells us (framing)
+
+The two tests give different rankings because they answer different questions about the same FTU.
+
+| | B.1 (categorical compartment cosine) | B.2 (continuous TLS gene-signature CCA on z_he) |
+|---|---|---|
+| **what it tests** | are matched (H&E, ST) pairs closer within the TLS compartment than to other compartments? | does z_he linearly decode the continuous TLS biology score in held-out patients? |
+| **strong methods** | late-fusion contrastive (R1, R2, R5, R6) + B2 Procrustes | morphology-preserving (B4 random-init, B1 CCA, R4 cross-attn, B2/B3) |
+| **failing methods** | R4 (tight cross-attn manifold), B1 / B3 (no compartment differentiation) | late-fusion contrastive (R1, R2, R3, R6) |
+
+**The two TLS tests answer different questions about what alignment preserves.** B.1 rewards methods whose loss optimizes within-compartment matched-pair cosine - that's the contrastive late-fusion family by construction. B.2 rewards methods that preserve linear decodability of a signal already encoded in raw H&E features - that's any method that doesn't distort Virchow2's morphology axes (random init, CCA, Procrustes). Contrastive training is **not free**: it pays a cost on signals already morphology-decodable (like TLS in raw Virchow2) in exchange for the cross-modal coupling that drives H1 and H3 cross-patient pathway transfer. The TLS FTU is supported either way - but the *which method* answer is task-conditional, which is the systems-oriented hypothesis instantiated on a specific signal.
+
+## H2 Part C · Biology vs Patient Signal (added analysis)
+
+| field | detail |
+|---|---|
+| **Hypothesis (extension of H2)** | Aligned space encodes biology more strongly than patient identity, measured by permutation-null z-scores on Bareche TIME / MC_global / MC_tumor signatures and ratio of bio z to patient z. Added to address whether H1 retrieval gains reflect biology or patient-identity leakage. |
+| **Evaluation question** | Does the aligned space encode biology more strongly than patient identity? bio z / patient z ratio is the headline metric. |
+| **Construct-validity check** | The bio-vs-patient ratio directly measures the failure mode that flagged the archetype label - if a run encodes patient identity more strongly than biology, it can win patient-label-collapsed metrics without encoding real biology. The ratio operationalizes "is this run useful for cohort-level interpretation, or is it patient-leakage in disguise?" |
+| **Observed result (v3, z_he, 10k perms)** | bio/patient ratio = TIME-signature bio z / patient z (higher = biology dominates). **R6 0.547** (highest), **R5 0.497**, R1 0.461, R4 0.376, R2 0.372, R3 0.250, **B1 0.071** (anti-helpful). R4 has the lowest patient z (21.5, strongest patient suppression); B1 amplifies patient identity ~3× (patient z 113.0 vs raw_he 36.8). raw_he floor = 0.137, raw_st floor = 0.088. **All six contrastive runs sit above the raw_he floor; B1 (CCA) alone falls below it.** Reproduces v1 (R6 0.548, R1 0.517, B1 0.064, raw_he 0.129). v3 notebook §6 visually confirms - B1 panels show tight per-patient clusters; R4 panels mix patients best. |
+| **Interpretation** | Aligned-space embeddings preserve biological organization while suppressing patient-specific signal, except for B1 CCA. R4's strong patient suppression on z_he is what enables its H3 cross-patient pathway transfer (see below). B1 amplifies patient identity more than biology and should not be used for any analysis where cross-patient validity matters. |
+| **Scientific conclusion** | **H2 Part C supported for contrastive runs; B1 fails.** All six contrastive runs encode TIME/MC biology above the raw-modality floor (ratios 0.25-0.55); B1 (CCA) amplifies patient identity ~3× and falls below the floor (0.071) - anti-helpful for cohort-level interpretation. v3 reproduces the v1 verdict numerically. |
+| **Primary metrics** | Patient-ID decoding, bio z / patient z ratio on Bareche TIME / MC_global / MC_tumor signatures |
+| **Strong methods** | R4 (patient suppression), R6 (bio/patient ratio), R1 (bio/patient ratio) |
+| **Baselines** | B1 (anti-helpful in v1) |
+
+## H3 · Pathway Interpretability
+
+| field | detail |
+|---|---|
+| **Proposal hypothesis** | 5 Reactome pathways correlate with shared-latent directions via CCA, indicating preservation of interpretable biological signal. |
+| **Evaluation question** | Do the 5 named Reactome pathway embeddings correlate with directions in each run's shared latent space, AND does the correlation transfer across held-out patients? |
+| **Construct-validity check** | Two operationalizations of the hypothesis: (1) within-cohort fit-on-all CCA, (2) cross-patient sub-split CCA. Operationalization (1) is the proposal-literal test but does not discriminate between alignment strategies (universally positive). Operationalization (2) - cross-patient sub-split - is the discriminating test that separates pathway encodings that transfer from those that overfit to patient-specific gradients. We report (2) as the headline. Circularity caveat: v3 gpath2vec is on the ST input, so z_st / z_mean views are circular with the gpath2vec-derived signal. Only z_he is non-circular and reported as headline; z_st / z_mean are in the parquet for completeness. |
+| **Observed result** | Option A cross-patient held-out (3-patient sub-split; 500 perms; BH-FDR over testable pathways), z_he view. **R4 4/4 testable significant**, z_A range Immune 25.4, ECM 16.0, Cell Cycle 16.5, PCD 11.2. **Classical baselines 4/4** with lower z_A: B1 range 7.5-15.2, B2/B3 6.7-17.1. **Late-fusion contrastive 0-2/4**: R5 2/4 (ECM 3.0, CC 2.1, PCD 3.0; Immune actively suppressed at z_A -1.9), R1 1/4, R3 1/4, R2 0/4, R6 0/4. TGF-beta R-HSA-170834 set_size=2, underpowered, excluded from BH-FDR family. v3 R4 z_A is stronger than v1 R4 on the AUCell arm (v1 R4 z_A 3.8-5.7; v3 gpath2vec-arm R4 z_A 11.2-25.4). |
+| **Interpretation** | Hypothesis supported for R4 and classical baselines on the discriminating cross-patient test. Late-fusion contrastive runs encode pathway signal that does not transfer - they fit pathway-correlated directions within-cohort that are patient-specific in structure. R4's pathway-direction off-diag mean ~0.75 on z_he means the 5 named pathway directions collapse toward one biology axis; **the aliasing IS the source of cross-patient generalization** (one axis is harder to overfit to patient identity than five distinct directions). Classical baselines preserve per-pathway distinguishability with lower magnitude. |
+| **Scientific conclusion** | **H3 holds for R4 and classical baselines on the proposal-literal pathway CCA test, evaluated cross-patient.** The aligned shared latent preserves interpretable pathway signal that transfers to held-out patients in the cross-attention and classical families. Late-fusion contrastive runs need additional treatment (different objective or architecture) to encode cross-patient transferable pathway signal; H3 does not hold for that family on this cohort. Routing rule (unchanged from v1): R4 for cross-patient magnitude on any one pathway; B2 for per-pathway distinguishability across multiple pathways. |
+| **Primary metrics** | Per-pathway univariate CCA z_A on z_he, permutation null (500 perms), BH-FDR over 4 testable pathways |
+| **Strong methods** | R4 (overall winner 4/4); B1/B2/B3 (classical fallback 4/4 with lower z_A) |
+| **Notes** | DAG-resolution H3 decomposition (395 sub-pathway nodes; v1 had R4 9.9% sig across 9480 cells with biologically distinct top hits including BTLA z=6.92, Integrin z=6.21, Collagen z=5.22-5.28) is deferred for v3. v1 numbers preserved at [`../v1/tnbc92_results_summary.md`](../v1/tnbc92_results_summary.md). |
+
+## Systems-Oriented Evaluation
+
+| field | detail |
+|---|---|
+| **Proposal framing** | Multimodal alignment as an orchestration and evaluation problem rather than a single-model optimization problem. The proposal predicted that different alignment strategies would optimize different biological objectives. |
+| **Evaluation question** | Does any one alignment strategy dominate every hypothesis family simultaneously on the v3 retrain? |
+| **Construct-validity check** | The hypothesis is about the absence of a global winner. The risk is that the metric grid is degenerate (all hypotheses measure the same underlying property). The H1/H2/H3 grid passes this check: H1 measures cross-modal coupling, H2 Part A measures niche-level transcriptomic clustering, H2 Part B measures compartment-level FTU coherence, H3 measures cross-patient pathway transfer. These are not co-monotonic - a run can win one and lose another, which is exactly what is observed. |
+| **Observed result** | No single method dominates every hypothesis family on v3. R4 wins H1 cross-modal retrieval and H3 cross-patient pathway transfer. R5 / R6 / R1 tie at the top on H2 niche-level mc_megacluster clustering. Classical baselines fail H1 retrieval (B1 0.544 vs R4 0.859) but stay competitive on H3 cross-patient hit-rate with lower z_A magnitude. B1 amplifies patient identity (v1 result, v3 visual confirmation in notebook §6). |
+| **Interpretation** | Hypothesis supported as proposed. Niche-level cluster geometry, cross-modal retrieval, and cross-patient pathway transfer are not co-monotonic objectives. R4's tight aliased manifold trades cluster geometry (H2 Part A) for retrieval + pathway transfer (H1 + H3). R5/R6/R1's wider manifold does the reverse. The trade-off is real and reproducible (v1 -> v3) and is the framework's value-add for downstream routing. |
+| **Scientific conclusion** | **The systems-oriented framing holds:** omicstra's role is to expose the trade-offs so downstream analyses route the right question to the right method. v3 retrain reproduces the v1 directional verdict end-to-end. |
+| **Primary metrics** | Integrated evaluation across H1, H2 (corrected), H3 (cross-patient) |
+| **Strong methods** | R4 (retrieval + cross-patient pathway transfer); R5 / R6 / R1 (niche-level region clustering) |
+| **Baselines** | all baselines lose at least one hypothesis family decisively; B1 fails on H2 construct-validity diagnostic and H3 amplification check |
+
+---
+
+## task-conditional routing rule (v3)
+
+the H1/H2/H3 verdicts collapse to this routing rule for downstream use:
+
+| if the question is | route to | evidence (v3) |
+|---|---|---|
+| cross-modal retrieval (find matched ST niche from H&E) | R4 | H1 AUC 0.859, CKA 0.631, alignment gap +0.233 |
+| group niches that share similar tumor-microenvironment state (immune-hot, stromal, necrotic, TLS, etc.) to find biologically meaningful regions in a tissue section | R5, R6, or R1 (3-way tie within seed noise) | H2 Part A KMeans on mc_megacluster (audit-correct label, 14-class NMF): R5 ARI 0.246, R6 0.244, R1 0.234 |
+| amplify biology, suppress patient identity for cohort-level interpretation | R6 or R5 (highest bio/patient ratio); R4 (lowest patient z, leakage minimization) | v3: R6 ratio 0.547, R5 0.497, R1 0.461; R4 patient z 21.5 (lowest in grid) |
+| find pathway-similar niches across new patients | R4 | H3 cross-patient gpath2vec arm: 4/4 testable pathways, z_A range 11.2-25.4 |
+| interpret a single pathway's transferable signal cross-patient | R4 (with B1/B2 classical fallback) | H3 R4 z_A 25.4 on Immune; B2 z_A 17.1 on Immune; R4 wins magnitude, classical match hit-rate |
+| interpret per-pathway distinguishability across multiple pathways | B2 (Procrustes) | classical preserves per-pathway directional separation; R4 aliases the 5 named pathway directions onto ~one axis (off-diag ~0.75 on z_he) |
+| avoid for cohort-level biology interpretation | B1 (CCA) | construct-validity diagnostic - v3 B1 patient z 113.0, ~3× amplification; bio/patient ratio 0.071 below raw-modality floor 0.137 (anti-helpful) |
+
+no single method dominates every objective; the framework's value is in exposing the trade-offs so that downstream analyses route the right question to the right method. This is what the omicstra alignment-agent encodes as task-conditional dispatch. When this evaluation runs on additional cohorts (HEST, future TNBC studies, other tumor types) and each run's final matrix is persisted back to the alignment-agent's rules store, a routing pattern accumulates: which question types map reliably to which method families, where the trade-offs hold, and where they shift with cohort characteristics. TNBC-92 v3 is the second row.
 
 ---
 
 ## consolidated proposal-alignment matrix (v3)
 
- | hypothesis | evaluation question | v3 observed result | strong methods (family) | **best method** | **why this is best** | baselines |
-|---|---|---|---|---|---|---|
-| H1 Cross-Modal Alignment | can H&E retrieve matched ST niches better than unaligned/classical? | R4 AUC 0.859, CKA 0.631. R1 / R5 0.761 (tied). R6 0.737. B4 untrained 0.496 (chance). | R4, R1, R5, R6 | **R4_v3** | cross-attention over 7 H&E tile tokens (vs mean-pooled niche) lets the ST query select tile-level morphology, producing a tight 3-effective-dim manifold with the highest cross-modal coupling. clean ~0.10 AUC margin over the next contrastive family member; B4 random-init at chance confirms training (not architecture) does the work. | B1, B2, B3, B4 |
-| H2 Niche-level biology coherence (mc_megacluster) | does the aligned space cluster niches by transcriptomic tissue state? | R5 ARI 0.246, R6 0.244, R1 0.234 (3-way tie within KMeans seed noise); R4 0.101 (manifold-geometry bias); classical drop 11+ ARI archetype → mc - quantifies patient-leakage. | R5, R1, R6 | **R6_v3** (most parsimonious) **or R5_v3** (nominal top) | late-fusion contrastive preserves a wider, more globular manifold that KMeans rewards. R6 wins parsimony - it drops gpath2vec from the ST input entirely (Novae spatial-neighborhood graph alone clusters mc states), so it has fewer load-bearing components for niche-level biology. R5's per-dim temperature is a marginal +0.002 ARI = within seed noise. | B1, B2, B3 (lose leakage advantage on mc) |
-| H2 Compartment contrasts (FTU coherence) | distinct compartments > ambiguous stroma on matched-pair cosine? | TODO - v3 recompute pending; v1 result: only TLS-vs-TIL passes (R1/R2/R6, z = +3.2 to +5.3). | R1, R6 (on TLS) | **R1_v3** (v1 result; v3 recompute pending) | late-fusion preserves distinct compartment cosine separation; R1 had the highest v1 z (TLS vs loTIL z=+5.3). TLS is the only well-curated FTU annotation in the dataset - the one compartment where the proposal's directional prediction held. Tumor / Necrosis annotations are too heterogeneous to differentiate from TIL stroma cleanly. | B1 (all 6 contrasts non-significant) |
-| H3 Pathway interpretability (gpath2vec arm, proposal-literal) | do the 5 Reactome targets correlate with shared-latent directions AND transfer cross-patient? | **R4 4/4 testable pathways sig, z_A 11.2-25.4** (Immune/ECM/CC/PCD). R5 2/4 (best of late-fusion family). R1/R3 1/4; R2/R6 0/4; classical B1/B2/B3 4/4 with lower z_A 3-17. TGF-β underpowered. | R4 (overall); B1/B2 (classical fallback) | **R4_v3** | cross-attention's tight manifold collapses the 5 named pathway directions onto ~one robust biology axis (specificity off-diag |mean| ~0.75). **the aliasing IS the source of cross-patient transfer** - one direction is harder to overfit to patient identity than five distinct directions. classical baselines match R4's hit rate but with lower z_A. R5 (AnInfoNCE + late) doubled R1's sig pathways but does not rescue the aliasing axis; R5b (AnInfoNCE + cross-attn) is the targeted next experiment, deferred. | R1/R2/R3/R5/R6 below classical cross-patient |
-| Systems-oriented | does one strategy dominate every objective? | no - R4 wins H1 + H3, R5/R6/R1 tie H2 mc, classical lose H1 decisively. | R4, R5, R1, R6 | **task-conditional (no global winner)** | niche-level cluster geometry, cross-modal retrieval, and cross-patient pathway transfer are NOT co-monotonic objectives. R4's tight aliased manifold trades cluster geometry (H2 mc) for retrieval + pathway transfer (H1 + H3). R5/R6/R1's wider manifold does the reverse. the framework's value is exposing the trade-offs and routing the right question to the right method - this IS the deliverable, not a single winner. | all baselines lose at least one family |
+| hypothesis | proposal statement | evaluation question | construct validity | observed result (v3) | interpretation | scientific conclusion | strong methods | baselines |
+|---|---|---|---|---|---|---|---|---|
+| H1 Cross-Modal Alignment | Contrastive learning improves cross-modal retrieval and representation alignment over unaligned baselines (CCA, late fusion, raw). Expected range 0.65-0.75 on cross-modal similarity. | Do contrastive runs outperform B1 CCA, B3 unaligned PCA, B4 random-init on R@K / MRR / AUC / alignment gap / CKA? | Clean operationalization - retrieval and AUC directly measure alignment quality; B4 chance is a strict floor. | R4 AUC 0.859, CKA 0.631 (above range). R1/R5 0.761, R6 0.737, R2 0.725 (in range). R3 0.674 (slightly below). B2 0.706, B1 0.544, B3 0.441, B4 0.491. No overlap between contrastive and classical. | All 6 contrastive runs beat every proposal-named baseline. B4 chance confirms training (not architecture) does the work. R4 cross-attention exceeds the proposal range. v3 improved or held every contrastive run on AUC vs v1. | **H1 supported.** Contrastive alignment beats unaligned baselines on cross-modal alignment quality, strongest for cross-attention. | R4, R1, R5, R6, R2 | B1, B3, B4 (all beaten by contrastive runs) |
+| H2 Part A Structural Coherence | 9 spatial archetypes cluster more coherently in aligned space than in unimodal spaces (ARI, silhouette). | (proposal-literal) Do archetypes cluster more coherently? (corrected) Do niches cluster by transcriptomic state on Wang's per-spot mc_megacluster label? | **Proposal-literal question fails construct validity** - archetype is patient-level pseudobulk (NMI 0.89 vs patient_id); ARI mechanically resolves to patient classification. B1 CCA wins by amplifying patient identity (z=122.13). Correction: use mc_megacluster (audit-correct, niche-resolution NMF label) as the biological target. | KMeans on mc_megacluster (corrected): R5_v3 0.246, R6_v3 0.244, R1_v3 0.234 (3-way tie, seed noise). R4_v3 0.101. Classical baselines lose 11+ ARI archetype -> mc (B2/B3 -0.112, B1 -0.048), quantifying patient-leakage. Raw ST alone: 0.046. Aligned space 5× lift over raw ST. R4 KMeans-low is manifold-geometry bias - v3 linear probe gives R4 0.240 at parity with R1 0.282 / raw_he 0.270, confirming biology is present (not absent). | On audit-correct label, aligned space organizes niches by transcriptomic tissue state more coherently than raw ST alone (5× ARI lift). Late-fusion contrastive runs (R1, R5, R6) win niche-level region clustering by KMeans; R4 encodes mc biology at linear-probe parity despite low KMeans (geometry bias, v3-confirmed). R6 wins parsimony - drops gpath2vec from ST entirely. | **H2 Part A supported on the audit-correct label.** Proposal-literal archetype label reported as diagnostic only; aligned space organizes niches by transcriptomic tissue state at a resolution raw ST cannot reach. | R5, R6, R1 (3-way tie) | B1, B2, B3 lose 11+ ARI archetype -> mc |
+| H2 Part B.1 Compartment Cosine (categorical FTU annotations) | Tumor / TLS / necrosis show higher matched-pair cosine than high-TIL / low-TIL stroma. | Do TLS / Tumor / Necrosis compartments produce higher matched-pair cosine than high-TIL / low-TIL stroma on Welch z-tests? | Per-spot pathologist labels vary at niche resolution (unlike archetype). Tumor / Necrosis annotation classes are heterogeneous and dilute matched-pair cosine - granularity caveat. | v3 Welch z: TLS contrasts pass in R6/R2/R1/R5/B2 (z = +2.2 to +5.9 on both ambiguous-stroma comparisons). Tumor / Necrosis invert in 4-7 runs. R3 uniquely passes Necrosis (z = +5.8, +9.1). R4 fails every contrast (0/6). v3 coverage: 13/38 subarrays. | TLS direction held - TLS is the one well-curated FTU annotation. Tumor / Necrosis inversion consistent with annotation aggregation diluting biology. Late-fusion contrastive runs optimize matched-pair cosine within compartments by construction -> they win this test on the FTU that's well-annotated. | **H2 Part B.1 holds for TLS.** Tumor / Necrosis arms not testable as written. | R6, R2, R1, R5, B2 (TLS); R3 unique on Necrosis | B1 (1/6 pass; mostly ns), B3 (0/6 - sanity floor) |
+| H2 Part B.2 TLS Gene Signature (continuous - the 4th proposal ground truth) | TLS gene signatures scored spatially are one of the four proposal-named ground truths for evaluating preserved biological signal. | Does z_he linearly predict the continuous per-niche TLS-signature score on held-out patients via univariate CCA + permutation null? | z_he is the non-circular view (H&E never sees the gene-signature score, which comes from ST counts). The continuous test complements the categorical B.1 - same FTU, different operationalization. | v3 z_he cross-patient sub-split, 500 perms, BH-FDR<0.05: **B4 random-init z_TLS = 25.5** (strongest), B1 CCA 16.6, R4 cross-attn 11.4, B2/B3 11.3, R5 2.4 (marginal). R6/R3/R1/R2 fail (z_TLS < 1.6, ns). 6 of 10 runs sig. | TLS gene signature is directly H&E-morphology-decodable (organized lymphoid aggregates have a distinctive Virchow2 signature). Random Xavier projection preserves the cross-patient predictive signal. **Late-fusion contrastive training distorts z_he in ways that hurt pure-morphology decoding** even while it helps cross-modal coupling (H1/H3). Contrastive alignment is not free on signals already encoded by a single-modality foundation model. | **H2 Part B.2 supported for morphology-preserving methods; late-fusion contrastive fails.** Methodologically informative negative finding for the late-fusion family on H&E-decodable signals. | B4 (best), B1, R4, B2/B3, R5 marginal | R1, R2, R3, R6 below significance - late-fusion contrastive degrades z_he linear-decodability |
+| H2 Part C Biology vs Patient (extension) | Aligned space encodes biology more strongly than patient identity. | bio z / patient z ratio on Bareche TIME / MC_global / MC_tumor signatures; patient-ID decoding. | Directly measures the failure mode flagged by H2 Part A audit - is the run patient-leakage in disguise? | v3 (z_he, 10k perms): R6 ratio 0.547, R5 0.497, R1 0.461, R4 0.376, R2 0.372, R3 0.250 - all above raw_he floor 0.137. B1 0.071 (below floor; patient z 113.0, ~3× amplification). R4 lowest patient z (21.5). Reproduces v1 (R6 0.548, B1 0.064). | All six contrastive runs encode biology more strongly than patient identity; B1 is the lone counterexample. R4's patient suppression is what enables its H3 cross-patient transfer. | **H2 Part C supported for contrastive runs; B1 fails.** | R6, R5, R1 (highest ratio); R4 (suppression) | B1 (anti-helpful, below raw floor) |
+| H3 Pathway Interpretability | 5 Reactome pathways correlate with shared-latent directions via CCA, indicating preservation of interpretable biological signal. | (proposal-literal) within-cohort CCA. (discriminating) cross-patient sub-split CCA z_A. | Fit-on-all is universally supported, does not discriminate. Cross-patient sub-split separates transferable from patient-overfit pathway encodings - report as headline. z_he is the non-circular view (v3 gpath2vec on ST input makes z_st / z_mean circular). | Cross-patient z_he, BH-FDR<0.05: R4_v3 4/4 (z_A 11.2-25.4). Classical B1/B2/B3 4/4 (z_A 3-17). R5_v3 2/4. R1/R3 1/4. R2/R6 0/4. TGF-beta set_size=2 underpowered. v3 R4 z_A stronger than v1 R4 on AUCell arm. | R4 wins by collapsing the 5 named directions onto ~one biology axis (off-diag ~0.75); aliasing is the source of cross-patient transfer (one axis harder to overfit to patient identity than five). Late-fusion contrastive encodes pathway signal that does not transfer cross-patient. | **H3 supported for R4 and classical baselines on the cross-patient test.** Late-fusion contrastive family does not preserve cross-patient transferable pathway signal on this cohort. Routing: R4 for cross-patient magnitude; B2 for per-pathway distinguishability. | R4 (overall); B1/B2/B3 (classical fallback) | R1, R2, R3, R5, R6 below classical cross-patient |
+| Systems-Oriented | Multimodal alignment as orchestration and evaluation, not single-model optimization. Different strategies should optimize different objectives. | Does any one alignment strategy dominate every hypothesis family on v3? | H1/H2/H3 grid is non-degenerate - measures different underlying properties. A run can win one and lose another. | No. R4 wins H1 + H3. R5/R6/R1 tie H2 Part A. Classical fail H1 retrieval, competitive on H3 hit-rate. B1 amplifies patient identity. | Niche-level cluster geometry, cross-modal retrieval, and cross-patient pathway transfer are not co-monotonic. R4 trades cluster geometry for retrieval + pathway transfer; R5/R6/R1 the reverse. Trade-off reproduces v1 -> v3. | **Systems hypothesis supported.** omicstra's role is to expose trade-offs so downstream analyses route the right question to the right method. | R4, R5, R6, R1 (each wins a family) | All baselines lose at least one family decisively |
 
 ---
 
-## Methods note
+**Pointers.** v3 alignment runs: `runs/tnbc-92_v3/{R1,R2,R3,R4,R5,R6,B1,B2,B3,B4}_v3/`. v3 H1: `runs/tnbc-92_v3/eval/H1/summary.json`. v3 H2: `runs/tnbc-92_v3/eval/H2/{summary.json, mc_coherence.parquet, compartment_cosine.parquet}`. v3 H3 gpath2vec arm: `runs/tnbc-92_v3/eval/H3/pathway_cca_gpath2vec_v3/{per_pathway_cca.parquet, perm_nulls.parquet, provenance.json}`. v3 H3 AUCell (orthogonal robustness check): `runs/tnbc-92_v3/eval/H3/pathway_cca/`. v3 summary notebook + HTML: `notebooks/final/{05_summary_umaps_v3.ipynb, 05_summary_umaps_v3.html}`. v1 baseline (predecessor): [`../v1/tnbc92_results_summary.md`](../v1/tnbc92_results_summary.md). construct-validity audit: `projects/tnbc-92/evaluation_question_audit.md`. MCP / LangGraph agent design: `docs/mcp_agent_design.md`.
 
-cohort, niche unit (k=6 spatial neighbors, ~1200 cells), evaluation split (subarray-level patient-stratified 85/15, seed=42), ST input composition (`novae_niche` + `gpath2vec_niche` for R1-R5/B1-B3; novae-only for R6), niche aggregation, MLP architecture: all unchanged from v1. see [`../v1/tnbc92_results_summary.md`](../v1/tnbc92_results_summary.md) Methods section for the full details.
-
-**v1 → v3 single change:** `gpath2vec_niche` (512-d) is the v3 build (`fisher_madmean_low_dim512_e5_s1234`, sha `13985cbd...`) instead of the v1 legacy build. niche-join 208,786 niches (vs v1's 286,250) due to v3 dropping 67,131 niches with no significant pathway under MAD/mean gene selection. test set 35,594 niches (vs v1's 45,661).
-
-**v3-only method addition:** R5_v3 = AnInfoNCE + late fusion. extends InfoNCE with a per-dim learnable log-scale parameter `aniso_log_scale: nn.Parameter(zeros(shared_dim))` registered on `LateFusion` when `cfg.anisotropic=True`. loss applies `diag(exp(2*log_scale))` to the bilinear inner product - equivalent to a learned diagonal Mahalanobis metric. log_scale=0 at init → uniform scale → identical to standard InfoNCE at step 0 (clean warm-start). one-variable-change vs R1; same lr / epochs / seed.
-
----
-
-## pointers
-
-| asset | path |
-|---|---|
-| v1 baseline (this doc's predecessor) | [`../v1/tnbc92_results_summary.md`](../v1/tnbc92_results_summary.md) |
-| v3 retrain plan + memory | `projects/tnbc-92/v3_phase2_plan.md`, [[project_v3_retrain_result]] |
-| v3 alignment runs | `runs/tnbc-92_v3/{R1,R2,R3,R4,R5,R6,B1,B2,B3,B4}_v3/` |
-| v3 H1 eval | `runs/tnbc-92_v3/eval/H1/summary.json` |
-| v3 H2 eval (archetype + compartment + mc_megacluster) | `runs/tnbc-92_v3/eval/H2/summary.json` + `mc_coherence.parquet` + `compartment_cosine.parquet` |
-| v3 H3 gpath2vec arm | `runs/tnbc-92_v3/eval/H3/pathway_cca_gpath2vec_v3/per_pathway_cca.parquet` + `perm_nulls.parquet` + `provenance.json` |
-| v3 H3 AUCell (orthogonal robustness check) | `runs/tnbc-92_v3/eval/H3/pathway_cca/` |
-| v3 summary notebook + HTML | `notebooks/final/05_summary_umaps_v3.ipynb` + `05_summary_umaps_v3.html` |
-| construct-validity audit (Cameron's questions) | `projects/tnbc-92/evaluation_question_audit.md` |
-| MCP / LangGraph agent design | `docs/mcp_agent_design.md` |
+> **draft-for-voice-pass.** prose is Claude-drafted scaffolding (per memory `feedback_writing_voice`); every number verified against `runs/tnbc-92_v3/eval/*`; voice pass needed before publishing.
