@@ -156,7 +156,7 @@ omicstra/
 | routing | Claude Sonnet 4.6 |
 | synthesis | Claude Opus 4.6 |
 | tracing | LangSmith - observability only |
-| H&E foundation model | UNI2 - Virchow2 as swap |
+| H&E foundation model | Virchow2 (primary, 1280-d) - UNI2 as swap (1536-d) |
 | ST foundation model | Novae GNN |
 | pathway | gpath2vec + biological pathway embeddings |
 | alignment | contrastive MLP + cross-attention bridge |

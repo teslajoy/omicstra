@@ -14,7 +14,7 @@ seed dataset: 92 TNBC patients from Wang et al. 2024 (co-registered ST + H&E WSI
 
 - do not propose alignment, contrastive learning, retrieval evaluation, or agent routing until EDA.md is satisfied
 - `projects/{project_id}/eda_summary.json` must exist and pass before any pipeline work
-- Novae GNN training data (10x Visium, 55um spots) does not strongly overlap with TNBC ST (original ST platform, 100um spots) — embedding quality on this tissue is empirical, not an assumption
+- Novae GNN training data (MERSCOPE, Xenium, CosMX - image-based ST, subcellular resolution) does not overlap with TNBC ST (original ST platform, 100um spots) — embedding quality on this tissue is empirical, not an assumption
 - UMAP inspection of Novae embeddings is part of EDA, not optional
 - if Novae underperforms, fall back to PCA on HVGs as ST baseline before blaming alignment
 - see MODELS.md for tissue-model compatibility matrix

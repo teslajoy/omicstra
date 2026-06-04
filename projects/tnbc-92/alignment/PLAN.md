@@ -26,7 +26,7 @@ niche-level, 260 matched subarrays, 85/15 patient-stratified split, seed 42.
 | B2 | classical linear alignment (Procrustes + PCA) | - | - | H1 baseline |
 | B3 | unaligned per-modality PCA + L2-norm | - | - | H1 baseline / geometric null |
 
-4 trained + 3 classical. R1 is shared across all three hypotheses. B1/B2 are classical linear-alignment baselines, not alternative projections alongside MLP. R5 (early fusion) is deferred - in a two-stream setup "early fusion" is architecturally ambiguous (Novae-native early fusion would require re-running Novae with H&E graph attributes, a separate experiment). Fusion axis is {late, cross_attn}; H2 uses R1 vs R4.
+6 trained + 4 classical/control (v3 grid). R1 is shared across all three hypotheses. B1/B2 are classical linear-alignment baselines; B3 is unaligned PCA sanity floor; B4 is random-init R1 architecture (chance anchor). R5 in v3 = AnInfoNCE + late fusion (per-dim learnable temperature on InfoNCE), evaluated identically to R1 across H1/H2/H3. R6 = InfoNCE + late + novae-only ST (gpath2vec ablation). Fusion axis is {late, cross_attn}; H2 uses R1/R5/R6 vs R4. Original "R5 = early fusion (deferred)" framing is superseded - architecturally-ambiguous early-fusion is parked indefinitely; v3 R5b (AnInfoNCE + cross-attention) is the rescue-test slot if R4 aliasing needs further probing.
 
 ## supervision distinction
 

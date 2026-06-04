@@ -1,5 +1,12 @@
 # program.md - tnbc-92 alignment search space
 
+> **status note (2026-06-02)**: this file documents the **rank2-era plan** (pre-v3 alignment grid). the architecture spec below (shared_dim 256, st_dim 65 = novae + tls only, soft-mc_w-InfoNCE loss, GELU/Dropout 0.3, lr 5e-4, 256d MLPs, Linear(1280, 256)) reflects an **earlier design that was superseded** during the v1 -> v3 buildout. **for current architecture and search space, see**:
+> - `docs/v2/tnbc92_methods.md` §1 (10-run v3 grid: R1 InfoNCE/R2 SupCon/R3 Barlow/R4 cross-attn/R5 AnInfoNCE/R6 novae-only + B1 CCA/B2 Procrustes/B3 Unaligned PCA/B4 random-init)
+> - `docs/v2/tnbc92_provenance.md` (config + artifact lineage)
+> - `MODELS.md` (current alignment-module dims: shared 512, ST 576 = novae 64 ⊕ gpath2vec 512, MLPBlock with BatchNorm+L2-norm)
+>
+> the hard constraints (no ComBat, no Reinhard pre-FM, no mc_weights in ST input, cross-subarray eval, niche atomic unit) **all still hold in v3** - they were locked in at this stage and have not been amended. preserved below for project history.
+
 ## status
 
 2026-04-09 update: niche-level alignment with circular dependency fix.

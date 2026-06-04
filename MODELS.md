@@ -83,11 +83,11 @@ MODELS.md contains only static encoder properties. see eda_summary.json for:
 |---|---|
 | output dim | configurable (default 10-128) |
 | type | variational autoencoder for scRNA-seq / ST |
-| tissue coverage | tissue-agnostic — trained per dataset, not pretrained |
+| tissue coverage | tissue-agnostic - trained per dataset, not pretrained |
 | input requirement | raw counts preferred; can handle normalized |
 | use case | fallback ST encoder when spatial_autocorrelation_pass: false or Novae embeddings collapse |
 | reference | Lopez et al. 2018 |
-| note | not in original proposal — added during EDA as empirical fallback |
+| note | not in original proposal - added during EDA as empirical fallback |
 
 ### PCA on HVGs (baseline)
 
@@ -107,7 +107,7 @@ MODELS.md contains only static encoder properties. see eda_summary.json for:
 | type | gene-set to pathway-level embedding vectors encoding enrichment strength and inter-pathway network topology                  |
 | source | Reactome functional interactions w upper / lower level pathways                                                              |
 | target pathways (H3) | TGF-β Signaling, Immune System, Extracellular Matrix Organization, Cell Cycle, Programmed Cell Death                         |
-| use case | H3 evaluation — correlate pathway embeddings with shared latent dimensions via CCA; generate pathway-morphology spatial maps |
+| use case | H3 evaluation - correlate pathway embeddings with shared latent dimensions via CCA; generate pathway-morphology spatial maps |
 | contingency | if spot-level embeddings too noisy, aggregate to spatial neighborhood level (k=15 neighbors)                                 |
 | reference | Sanati 2024, github.com/teslajoy/gpath2vec                                                                                   |
 
@@ -118,20 +118,21 @@ MODELS.md contains only static encoder properties. see eda_summary.json for:
 
 ### InfoNCE contrastive alignment (2-layer MLP projection heads)
 
-not an encoder — operates on encoder outputs. documented here for provenance.
+not an encoder - operates on encoder outputs. documented here for provenance.
 
 | field | value |
 |---|---|
 | shared latent dim | 512 |
-| H&E projection | Linear(1536, 512) -> GELU -> Linear(512, 512) |
-| ST projection | LayerNorm(64) -> Linear(64, 512) -> GELU -> Linear(512, 512) |
+| H&E projection (primary, Virchow2) | LayerNorm(1280) -> Linear(1280, 512) -> ReLU -> BatchNorm1d -> Dropout(0.3) -> Linear(512, 512) -> L2-norm |
+| H&E projection (swap, UNI2) | LayerNorm(1536) -> Linear(1536, 512) -> ReLU -> BatchNorm1d -> Dropout(0.3) -> Linear(512, 512) -> L2-norm |
+| ST projection | LayerNorm(576) -> Linear(576, 512) -> ReLU -> BatchNorm1d -> Dropout(0.3) -> Linear(512, 512) -> L2-norm; 576-d = novae(64) ⊕ gpath2vec(512); R6 ablation uses 64-d (novae only) |
 | loss | InfoNCE, temperature τ = 0.07, symmetric, averaged across directions |
 | positive pairs | co-registered H&E tile + ST spot from same tissue location |
 | hard negatives | within-slide, different tissue compartments; cross-patient negatives excluded |
 | training | batch size 256, max 100 epochs, early stopping on validation cosine similarity (patience=10) |
 | split | 85/15 train/test, stratified by patient |
 | contingency | if below expected range, increase to 3-layer MLP with curriculum learning |
-| precedent | CONCH (Lu et al. 2024) — InfoNCE for pathology image + clinical text, 14 downstream tasks; Lazard et al. 2025 — contrastive alignment in unimodal histopathology |
+| precedent | CONCH (Lu et al. 2024) - InfoNCE for pathology image + clinical text, 14 downstream tasks; Lazard et al. 2025 - contrastive alignment in unimodal histopathology |
 | references | Oord et al. 2018 arXiv:1807.03748; Lu et al. 2024 Nat. Med. 30, 863-874; Lazard et al. 2025 arXiv:2508.05084 |
 
 ---
@@ -142,7 +143,7 @@ all four must be computed before writing winner.json.
 
 | baseline | description |
 |---|---|
-| InfoNCE contrastive | primary strategy — late interaction MLP projection heads |
+| InfoNCE contrastive | primary strategy - late interaction MLP projection heads |
 | CCA projection | canonical correlation analysis projection into shared space |
 | late fusion concatenation | concatenate normalized H&E + ST embeddings, no alignment |
 | unaligned concatenation | raw concatenation of H&E (1536-d) + ST (64-d) = 1600-d, no normalization |
@@ -153,7 +154,7 @@ all four must be computed before writing winner.json.
 
 | tissue | UNI2-h / Virchow2 (H&E) | Novae (ST) | verdict |
 |---|---|---|---|
-| breast (TNBC, ER+) | validated | uncertain | seed cohort — validate Novae UMAP first |
+| breast (TNBC, ER+) | validated | uncertain | seed cohort - validate Novae UMAP first |
 | colon / CRC | validated | validated (intestine in training) | safer combination |
 | brain / GBM | validated | validated (brain in training) | safer combination |
 | lung | validated | uncertain | validate Novae |
