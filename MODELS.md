@@ -12,7 +12,23 @@ by slide noise rather than biology, with no diagnostic signal.
 
 ## foundation model encoders
 
-### UNI2-h (H&E histopathology)
+### Virchow2 (H&E histopathology, primary)
+
+| field | value |
+|---|---|
+| output dim | 1280 |
+| architecture | ViT-H/14 (DINOv2, 3.1M WSIs) |
+| model size | 632M params |
+| training data | 3.1M slides, Memorial Sloan Kettering |
+| tissue coverage | broad pan-cancer, MSK case mix weighted toward adult solid tumors |
+| known gaps | non-cancer tissue, rare cancers, pediatric |
+| TNBC status | supported - MSK breast cases in training |
+| robustness (PathoROB) | Pareto-optimal (with Atlas): RI=0.848 (TCGA), 0.806 (Camelyon), 0.955 (Tolkach). most robust SSL model tested. Komen et al. 2025 |
+| L2 normalization | none - raw CLS tokens |
+| role in omicstra | **primary H&E encoder**; histology agent tool. selected over UNI2-h via encoder_qc_comparison on MC linear-probe accuracy. used at niche-level (mean of 7 spot tiles) by 9 runs and tile-level (un-pooled 7-tile-token matrix) by R4's cross-attention bridge |
+| reference | Vorontsov et al. 2024, arXiv:2408.00738 |
+
+### UNI2-h (H&E histopathology, swap)
 
 | field | value |
 |---|---|
@@ -25,23 +41,8 @@ by slide noise rather than biology, with no diagnostic signal.
 | TNBC status | supported - TCGA-BRCA in training |
 | robustness (PathoROB) | mid-tier: RI=0.836 (TCGA), 0.544 (Camelyon), 0.923 (Tolkach). after ComBat+Reinhard: 0.870, 0.931, 0.963. encodes center signatures in early PCs. Komen et al. 2025 |
 | L2 normalization | none - raw CLS tokens |
-| role in omicstra | primary H&E encoder; histology agent tool |
+| role in omicstra | drop-in swap for the H&E encoder via pluggable agent tool interface. used for H1 encoder sensitivity ablations |
 | reference | Chen et al. 2024, Nat. Med. 30, 850-862 |
-
-### Virchow2 (H&E histopathology, ablation)
-
-| field | value |
-|---|---|
-| output dim | 1280 |
-| architecture | ViT-H/14 (DINOv2, 3.1M WSIs) |
-| model size | 632M params |
-| training data | 3.1M slides, Memorial Sloan Kettering |
-| tissue coverage | broad pan-cancer, MSK case mix weighted toward adult solid tumors |
-| known gaps | non-cancer tissue, rare cancers, pediatric |
-| TNBC status | supported - MSK breast cases in training |
-| robustness (PathoROB) | Pareto-optimal (with Atlas): RI=0.848 (TCGA), 0.806 (Camelyon), 0.955 (Tolkach). most robust SSL model tested. Komen et al. 2025 |
-| role in omicstra | drop-in ablation encoder via pluggable agent tool interface (H1 encoder sensitivity). robustness-motivated: if UNI2-h alignment shows center-driven clustering, Virchow2 swap is justified |
-| reference | Vorontsov et al. 2024, arXiv:2408.00738 |
 
 ### Novae GNN (spatial transcriptomics)
 
@@ -99,26 +100,35 @@ MODELS.md contains only static encoder properties. see eda_summary.json for:
 | input requirement | normalized counts |
 | use case | minimum viable ST baseline for ablation; fallback if Novae and scVI both fail |
 
-### gpath2vec (pathway embeddings)
+### gpath2vec (niche-level pathway-context embeddings, in-project)
 
-| field | value                                                                                                                        |
-|---|------------------------------------------------------------------------------------------------------------------------------|
-| output dim | configurable                                                                                                                 |
-| type | gene-set to pathway-level embedding vectors encoding enrichment strength and inter-pathway network topology                  |
-| source | Reactome functional interactions w upper / lower level pathways                                                              |
-| target pathways (H3) | TGF-β Signaling, Immune System, Extracellular Matrix Organization, Cell Cycle, Programmed Cell Death                         |
-| use case | H3 evaluation - correlate pathway embeddings with shared latent dimensions via CCA; generate pathway-morphology spatial maps |
-| contingency | if spot-level embeddings too noisy, aggregate to spatial neighborhood level (k=15 neighbors)                                 |
-| reference | Sanati 2024, github.com/teslajoy/gpath2vec                                                                                   |
+| field | value |
+|---|---|
+| output dim | 512 (locked at the v3 build) |
+| type | metapath2vec embedding of a heterogeneous niche↔pathway graph, where edges encode TF-restricted Fisher enrichment significance |
+| build (v3, sha-locked) | `fisher_madmean_low_dim512_e5_s1234` |
+| step 1 - feature selection | per niche, identify variable genes by MAD/mean ratio |
+| step 2 - TF restriction | intersect with the 1,658 PathwayCommons "controls-expression-of" transcription factors. this is a TF-readable view, not all-gene |
+| step 3 - enrichment | Fisher exact test per (niche × Reactome pathway) at the "low" Reactome level (680 pathways) |
+| step 4 - threshold | BH-FDR < 0.05 |
+| step 5 - graph + weight | heterogeneous niche↔pathway graph; edge iff significant, weight = (1 - fdr_bh) |
+| step 6 - embedding | metapath2vec random walks on the weighted graph -> 512-d niche embeddings and 512-d pathway embeddings in the same space |
+| systematically captures | pathways with TF-readable enrichment - NF-kB cascades, IFN response, hormone receptor signaling, immune transcriptional programs, MYC/TGF-β downstream transcription |
+| systematically misses | pathways driven by structural / effector / secreted gene families with no TF members - collagen assembly, antibody heavy/light chains, MMP secretion, some ECM components |
+| role in omicstra | concatenated with novae (64-d) into the 576-d ST input for all alignment runs except R6 (novae-only ablation). also drives H3 pathway-CCA evaluation |
+| comparison signal | AUCell on full pathway gene sets (rank-based, no TF filter) - orthogonal scoring used to interrogate gpath2vec "is this biology vs TF-readout artifact" |
+| reference | Sanati 2024, github.com/teslajoy/gpath2vec |
 
 ---
 
 
 ## alignment module
 
-### InfoNCE contrastive alignment (2-layer MLP projection heads)
+not an encoder - operates on encoder outputs. documented here for provenance. two interaction modes:
 
-not an encoder - operates on encoder outputs. documented here for provenance.
+### late interaction - independent 2-layer MLP projection heads
+
+used by R1, R2, R3, R5, R6 and by the random-init control B4. the H&E side mean-pools the 7 tile vectors per niche into one 1280-d vector before the MLP.
 
 | field | value |
 |---|---|
@@ -126,27 +136,45 @@ not an encoder - operates on encoder outputs. documented here for provenance.
 | H&E projection (primary, Virchow2) | LayerNorm(1280) -> Linear(1280, 512) -> ReLU -> BatchNorm1d -> Dropout(0.3) -> Linear(512, 512) -> L2-norm |
 | H&E projection (swap, UNI2) | LayerNorm(1536) -> Linear(1536, 512) -> ReLU -> BatchNorm1d -> Dropout(0.3) -> Linear(512, 512) -> L2-norm |
 | ST projection | LayerNorm(576) -> Linear(576, 512) -> ReLU -> BatchNorm1d -> Dropout(0.3) -> Linear(512, 512) -> L2-norm; 576-d = novae(64) ⊕ gpath2vec(512); R6 ablation uses 64-d (novae only) |
-| loss | InfoNCE, temperature τ = 0.07, symmetric, averaged across directions |
-| positive pairs | co-registered H&E tile + ST spot from same tissue location |
-| hard negatives | within-slide, different tissue compartments; cross-patient negatives excluded |
+| InfoNCE loss (R1, R6) | temperature τ = 0.07, symmetric, averaged across directions |
+| SupCon variant (R2) | soft mc_weights similarity as positive-pair targets |
+| Barlow Twins variant (R3) | redundancy-reduction loss, no explicit negatives |
+| AnInfoNCE variant (R5) | R1 + per-dimension learnable temperature on the bilinear similarity (diagonal Mahalanobis) |
+| positive pairs | co-registered H&E niche + ST niche at the same niche_id |
+| hard negatives | within-batch in-batch other niches; cross-patient negatives excluded |
 | training | batch size 256, max 100 epochs, early stopping on validation cosine similarity (patience=10) |
-| split | 85/15 train/test, stratified by patient |
-| contingency | if below expected range, increase to 3-layer MLP with curriculum learning |
-| precedent | CONCH (Lu et al. 2024) - InfoNCE for pathology image + clinical text, 14 downstream tasks; Lazard et al. 2025 - contrastive alignment in unimodal histopathology |
-| references | Oord et al. 2018 arXiv:1807.03748; Lu et al. 2024 Nat. Med. 30, 863-874; Lazard et al. 2025 arXiv:2508.05084 |
+| split | patient-stratified train / val / test - 14 test patients with zero patient leakage |
+
+### early interaction - cross-attention bridge
+
+used by R4 only. the H&E side keeps the 7 tile vectors un-pooled and exposes them as separate tokens for cross-attention.
+
+| field | value |
+|---|---|
+| H&E input | (7, 1280) matrix - 7 Virchow2 tile vectors per niche, un-pooled |
+| ST query | the same 576-d ST input as the late-interaction runs, projected to a 512-d query Q |
+| keys / values | Virchow2 tiles linearly projected to K, V of shape (7, 512) |
+| attention | scaled dot-product: w = softmax(Q · Kᵀ / √512); fused H&E vector = Σ wᵢ Vᵢ |
+| loss | InfoNCE, symmetric, τ = 0.07 (same as R1) |
+| trainable params | ~4M |
+| intuition | a weighted average of the 7 tiles where the weights are learned from the ST signal - preserves local within-niche morphological heterogeneity that mean-pooling erases |
+
+### references
+
+CONCH (Lu et al. 2024) - InfoNCE for pathology image + clinical text, 14 downstream tasks; Lazard et al. 2025 - contrastive alignment in unimodal histopathology. Oord et al. 2018 arXiv:1807.03748; Lu et al. 2024 Nat. Med. 30, 863-874; Lazard et al. 2025 arXiv:2508.05084.
 
 ---
 
 ## H1 baselines
 
-all four must be computed before writing winner.json.
+every alignment run is evaluated against these four baselines on cross-modal retrieval. a run must beat all four with non-overlapping 95% CIs on Recall@1 / AUC before it can be written to winner.json.
 
-| baseline | description |
-|---|---|
-| InfoNCE contrastive | primary strategy - late interaction MLP projection heads |
-| CCA projection | canonical correlation analysis projection into shared space |
-| late fusion concatenation | concatenate normalized H&E + ST embeddings, no alignment |
-| unaligned concatenation | raw concatenation of H&E (1536-d) + ST (64-d) = 1600-d, no normalization |
+| id | baseline | description |
+|---|---|---|
+| **B1** | CCA (closed-form, linear) | canonical correlation analysis. the proposal-named classical baseline. patient-amplifier when used directly on these features |
+| **B2** | Procrustes (closed-form, orthogonal rotation) | per-modality PCA to shared_dim, then best orthogonal rotation aligning the two PCA spaces |
+| **B3** | Unaligned PCA (no cross-modal training) | independent per-modality PCAs with L2-norm. the proposal-named "unaligned" sanity floor |
+| **B4** | Random-init MLP (zero training) | R1's architecture with Xavier init and no training. the chance anchor - isolates contrastive training's contribution from the architecture itself |
 
 ---
 
