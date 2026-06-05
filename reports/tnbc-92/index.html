@@ -99,6 +99,7 @@ nav{position:sticky;top:0;background:var(--bg);border-bottom:0.5px solid var(--b
   <a class="pl on" href="#framing">framing</a>
   <a class="pl" href="#proposal-check">proposal vs results</a>
   <a class="pl" href="#architecture">architecture</a>
+  <a class="pl" href="#metrics">metrics</a>
   <a class="pl" href="#h1">H1: retrieval</a>
   <a class="pl" href="#h2">H2: biology</a>
   <a class="pl" href="#h2-annotations">H2: annotation taxonomy</a>
@@ -302,7 +303,118 @@ nav{position:sticky;top:0;background:var(--bg);border-bottom:0.5px solid var(--b
   </tbody>
 </table>
 
-<div class="good" style="font-size:12px"><strong>Why R4 wins H1 and H3.</strong> R4 is the only run where the H&amp;E side keeps spot-level detail (7 tile tokens instead of mean-pooled niche), and cross-attention lets the ST embedding actively select which tile features matter rather than averaging them away. That preserved within-niche structure is what enables H1's 0.859 AUC (cleanest matched-pair ranking) and H3's cross-patient pathway transfer (4/4 named pathways significant, top sub-pathway z=6.92 for BTLA). Late-fusion runs mean-pool the 7 tiles before alignment - that pooling is where the within-niche detail is lost.</div>
+<div class="card" style="background:var(--gb);border:0.5px solid var(--green);margin-top:.75rem">
+  <div class="lbl" style="color:var(--gt);margin-bottom:.4rem">winner architecture - R4 cross-attention end-to-end</div>
+  <div style="font-size:12px;color:var(--text);line-height:1.55">
+    <strong>H&amp;E side (Virchow2 foundation model, frozen, 632M params, pretrained on 3M slides at MSK Paige).</strong> For each niche (center spot + 6 spatial neighbors = 7 spots), Virchow2 produces a 1280-d CLS embedding per spot. R4 keeps these <strong>7 spot embeddings as separate tile tokens</strong>, stacked into a (7, 1280) matrix - it does <em>not</em> mean-pool them like the other runs.
+    <br><br>
+    <strong>ST side (Novae GNN + gpath2vec).</strong> Novae (frozen, image-based-ST-pretrained 32M-param GAT, MICS-Lab) produces a 64-d latent per spot, mean-pooled across the 7 spots and z-scored per subarray. gpath2vec (built in-project - see "How gpath2vec was built" below) produces a 512-d niche-level pathway-context vector. The two are <strong>concatenated</strong> into a 576-d ST input vector.
+    <br><br>
+    <strong>Cross-attention bridge.</strong> The ST vector is projected to a 512-d query Q. The 7 Virchow2 tile tokens are linearly projected to keys K (7, 512) and values V (7, 512). Standard scaled-dot-product attention computes weights w = softmax(Q · Kᵀ / √512), then produces the fused H&amp;E vector as Σ wᵢ Vᵢ - a <em>weighted average of the 7 tiles where the weights are learned from the ST signal</em>. The weighted H&amp;E vector and the projected ST vector are L2-normalized and aligned via symmetric InfoNCE (temperature τ=0.07). ~4M trainable params total.
+    <br><br>
+    <strong>Why this wins H1 + H3.</strong> Mean-pooling the 7 tiles (every other run) discards within-niche morphological detail. R4's cross-attention lets the ST embedding <em>select</em> which tile spots carry the matched signal - preserving the local heterogeneity that mean-pooling erases. That preserved structure is what enables H1's 0.859 AUC (cleanest matched-pair ranking) and H3's cross-patient pathway transfer (4/4 testable pathways significant, top sub-pathway z=6.92 for BTLA at the DAG level). R4 also produces a tighter, lower-effective-rank shared space - which is why it loses H2-A KMeans (no globular clusters to fit) while still encoding mc biology at linear-probe parity (LP accuracy 0.240 vs raw H&amp;E 0.270).
+  </div>
+</div>
+
+<h3>How gpath2vec was built (v3 build)</h3>
+<p>gpath2vec is what we wrote in-project to encode "which Reactome biological processes are active in each niche" as a 512-d vector. It is what the ST side aligns against on the alignment side - so understanding how it was built is load-bearing for interpreting H3 cross-patient pathway transfer results.</p>
+
+<div class="card">
+  <div class="lbl" style="margin-bottom:.4rem">v3 build: <code>fisher_madmean_low_dim512_e5_s1234</code> - six steps</div>
+  <ol style="margin:0 0 0 1.3rem;font-size:12px;color:var(--text);line-height:1.6">
+    <li><strong>Per-niche variable-gene selection.</strong> For each of 286,250 niches, identify the top-variable genes by <strong>MAD/mean ratio</strong> (Median Absolute Deviation divided by mean expression - captures genes that vary across spots while controlling for absolute magnitude).</li>
+    <li><strong>TF restriction.</strong> Restrict the variable-gene universe to the 1,658 PathwayCommons-curated transcription factors. This makes gpath2vec a <strong>transcriptional-regulatory view of pathway activity</strong>, not a generic gene-expression view.</li>
+    <li><strong>Fisher exact test per (niche, pathway).</strong> Test whether each niche's TF-restricted variable set is significantly enriched in each Reactome pathway's gene set. 189.7M niche × pathway tests across 680 Reactome pathways at the "low" hierarchy level.</li>
+    <li><strong>BH-FDR thresholding.</strong> Benjamini-Hochberg FDR &lt; 0.05 -&gt; <strong>1,954,421 significant niche-pathway pairs</strong> (~1.03% of all tests pass).</li>
+    <li><strong>Heterogeneous graph construction.</strong> Two edge types: (a) <strong>niche↔pathway edges</strong> for each significant Fisher pair, weight = <code>1 - fdr_bh</code> (so an edge with fdr=0.05 gets weight 0.95, an edge with fdr=0.001 gets weight 0.999); (b) <strong>pathway↔pathway edges</strong> from the Reactome hierarchy (parent-child relations), unweighted. The hierarchy backbone lets random walks travel between related pathways via the ontology rather than only through shared niches.</li>
+    <li><strong>metapath2vec random walks.</strong> Train metapath2vec (word2vec variant for heterogeneous graphs) for 5 epochs, embedding dimension 512, seed 1234. Output: 512-d vector per niche (215,388 niches with at least one Fisher-significant pathway edge) <strong>and</strong> 512-d vector per pathway (1,157 R-HSA pathway nodes) - both in the same vector space, so cosine similarity is meaningful between any niche and any pathway.</li>
+  </ol>
+</div>
+
+<div class="note" style="margin-top:.6rem"><strong>What gpath2vec captures (and what it misses).</strong> Niches that share Fisher-significant TF-mediated pathway memberships land close together in the 512-d embedding. The TF restriction is a deliberate choice: gpath2vec catches pathways where TF activity drives enrichment (immune checkpoint signaling, IFN response, NF-κB cascades, hormone receptor signaling, MYC/TGF-β downstream transcription) and misses pathways driven by non-TF gene families (collagen secretion, MMP enzymes, immunoglobulin heavy/light chains in plasma cells). This is why H2-B.2 (TLS gene-signature CCA) shows late-fusion contrastive degradation - the TLS signal is partly carried by immunoglobulin gene expression, which is downstream of TF activity but not itself TF-encoded.</div>
+</div>
+
+<hr>
+
+<!-- METRICS IN PLAIN ENGLISH -->
+<div id="metrics" class="anc">
+<h2>Metrics in plain English</h2>
+<p>Every test in the report below uses one of these metrics. Definitions in plain language plus what a "good" value looks like.</p>
+
+<h3>H1 - retrieval and structural agreement (5 metrics)</h3>
+<table class="atbl">
+  <thead><tr><th style="width:14%">metric</th><th style="width:48%">what it measures (plain English)</th><th style="width:22%">how we compute it here</th><th style="width:16%">what a good value looks like</th></tr></thead>
+  <tbody>
+    <tr><td><strong>R@K</strong><br><span style="font-size:10px;color:var(--text3)">Recall at K</span></td>
+        <td style="font-size:11px;color:var(--text2)">For each H&amp;E niche query, rank all 35,594 ST niches by cosine similarity. R@K = fraction of queries where the <em>true matched</em> ST niche appears in the top K. R@1 = exact-match retrieval; R@10 = match shows up in the top 10.</td>
+        <td style="font-size:11px;color:var(--text2)">35,594 query × 35,594 candidate ranking via cosine on L2-normalized z_he and z_st</td>
+        <td style="font-size:11px;color:var(--text2)">at this scale, R@1 ~10⁻⁴ for all methods - exact niche retrieval is near-floor. R@K useful as a relative ranking, not absolute</td></tr>
+    <tr><td><strong>MRR</strong><br><span style="font-size:10px;color:var(--text3)">Mean Reciprocal Rank</span></td>
+        <td style="font-size:11px;color:var(--text2)">Average of 1/rank across all queries. If the true match is always at position 1, MRR = 1.0. At position 10, MRR = 0.1. Captures how high on average the true match ranks.</td>
+        <td style="font-size:11px;color:var(--text2)">same ranking as R@K, take 1/rank per query and average</td>
+        <td style="font-size:11px;color:var(--text2)">like R@K, magnitudes are small at 35k scale; useful as cross-method comparison</td></tr>
+    <tr><td><strong>AUC</strong><br><span style="font-size:10px;color:var(--text3)">area under ROC</span></td>
+        <td style="font-size:11px;color:var(--text2)">Pick a random matched (H&amp;E, ST) niche pair and a random mismatched pair. AUC = probability the matched pair has higher cosine similarity than the mismatched pair. 0.5 = chance ordering, 1.0 = perfect ordering.</td>
+        <td style="font-size:11px;color:var(--text2)">sklearn <code>roc_auc_score</code> on labels (matched=1, sampled mismatched=0) × cosines. 35,594 positives, 355,940 negatives</td>
+        <td style="font-size:11px;color:var(--text2)">0.5 = chance, &gt;0.7 useful, &gt;0.85 strong. R4 hits 0.859 [0.857, 0.862]</td></tr>
+    <tr><td><strong>alignment gap</strong></td>
+        <td style="font-size:11px;color:var(--text2)">Mean cosine of matched (H&amp;E, ST) niche pairs minus mean cosine of mismatched pairs. Positive = matched pairs are systematically closer than mismatched pairs.</td>
+        <td style="font-size:11px;color:var(--text2)">mean(diag(z_he · z_stᵀ)) - mean(off-diag(z_he · z_stᵀ))</td>
+        <td style="font-size:11px;color:var(--text2)">positive better; R4 +0.233 vs B3 -0.053 (matched anti-correlated)</td></tr>
+    <tr><td><strong>CKA</strong><br><span style="font-size:10px;color:var(--text3)">Centered Kernel Alignment</span></td>
+        <td style="font-size:11px;color:var(--text2)">Measures whether the <em>pairwise-similarity structure</em> of the H&amp;E manifold matches the pairwise-similarity structure of the ST manifold. If both modalities place the same niches close together, CKA is high.</td>
+        <td style="font-size:11px;color:var(--text2)">linear-kernel CKA on centered z_he and z_st (Frobenius-norm form: ‖z_heᵀ z_st‖² / (‖z_heᵀ z_he‖ · ‖z_stᵀ z_st‖))</td>
+        <td style="font-size:11px;color:var(--text2)">0 = unrelated structure, 1 = identical structure. Raw concat ~0.12, R4 post-alignment 0.631</td></tr>
+  </tbody>
+</table>
+
+<h3>H2 - biology preservation (5 metrics)</h3>
+<table class="atbl">
+  <thead><tr><th style="width:14%">metric</th><th style="width:48%">what it measures (plain English)</th><th style="width:22%">how we compute it here</th><th style="width:16%">what a good value looks like</th></tr></thead>
+  <tbody>
+    <tr><td><strong>ARI</strong><br><span style="font-size:10px;color:var(--text3)">Adjusted Rand Index</span></td>
+        <td style="font-size:11px;color:var(--text2)">Run KMeans (k=14, seed=42) on z_he. This assigns each of the 35,594 test niches to one of 14 predicted clusters. Then compare those KMeans assignments against Wang's mc_megacluster ground-truth labels (also 14 classes) niche-by-niche. ARI scores how well the two partitions match - corrected for the agreement you would expect from random label assignment. ARI=1 means the KMeans clusters and mc labels are identical (up to permutation), ARI=0 means random, ARI&lt;0 means worse than random.</td>
+        <td style="font-size:11px;color:var(--text2)">KMeans(k=14, n_init=10, seed=42) on z_he -&gt; <code>adjusted_rand_score(mc_megacluster, kmeans_labels)</code> on the test set</td>
+        <td style="font-size:11px;color:var(--text2)">raw ST baseline 0.046 - 5x lift to 0.246 is the H2-A signal. Patient-level bootstrap CI &gt; 0 confirms it's not noise</td></tr>
+    <tr><td><strong>linear probe accuracy</strong></td>
+        <td style="font-size:11px;color:var(--text2)">Train a simple linear classifier on the embedding to predict a label (mc_megacluster). Output = held-out classification accuracy. Tests whether biology is <em>linearly recoverable</em> even when it doesn't form globular clusters.</td>
+        <td style="font-size:11px;color:var(--text2)">sklearn <code>LogisticRegression</code> (lbfgs, C=1, 14-class) on z_he with patient-stratified 11/3 train/test split, StandardScaler on inputs</td>
+        <td style="font-size:11px;color:var(--text2)">R4 0.240 within range of R1 0.282, raw H&amp;E 0.270. Linear probe rescues R4 where KMeans fails</td></tr>
+    <tr><td><strong>matched-pair cosine + Welch z</strong></td>
+        <td style="font-size:11px;color:var(--text2)">For each pathologist-annotated compartment (TLS, Tumor, Necrosis, hi-TIL, lo-TIL), compute the mean cosine of matched (H&amp;E, ST) pairs within that compartment. Welch z-test compares two compartments: is the cosine higher in one than the other?</td>
+        <td style="font-size:11px;color:var(--text2)">unpooled-variance z-test on per-pair cosine aggregates between distinct and ambiguous compartments</td>
+        <td style="font-size:11px;color:var(--text2)">z &gt; +2 = passes (distinct &gt; ambiguous as predicted). z &lt; -2 = inverts. TLS contrasts hit +2.2 to +5.9 in R6/R2/R1</td></tr>
+    <tr><td><strong>univariate CCA z_TLS</strong></td>
+        <td style="font-size:11px;color:var(--text2)">Find the 1-dimensional direction in z_he that maximally correlates with the per-niche TLS gene-signature score on held-out patients. Then z-score this correlation against a 500-permutation null.</td>
+        <td style="font-size:11px;color:var(--text2)">least-squares canonical direction on z_he vs Wang's <code>tls_scores.tsv</code> (continuous), cross-patient 11/3, 500-perm null, BH-FDR. z_TLS = (observed - null_mean) / null_std</td>
+        <td style="font-size:11px;color:var(--text2)">z &gt; 1.96 = sig at α=0.05. B4 random-init z=25.5 means raw Virchow2 features already carry the signal; late-fusion z &lt; 1.6 = degraded</td></tr>
+    <tr><td><strong>bio z / patient z ratio</strong></td>
+        <td style="font-size:11px;color:var(--text2)">Two separate permutation-based z-scores: how strongly does the embedding separate niches by <em>biology</em> (Bareche TIME label) vs by <em>patient identity</em> (patient_id)? The ratio tells you whether biology dominates or patient confound dominates.</td>
+        <td style="font-size:11px;color:var(--text2)">matched-null permutation z on same-vs-different-label cosine deltas (10k perms) for TIME bio signature and for patient_id; ratio = bio_z / patient_z</td>
+        <td style="font-size:11px;color:var(--text2)">raw H&amp;E floor = 0.137. R6 0.547 above floor (biology wins). B1 0.071 below floor (patient identity wins, anti-helpful)</td></tr>
+  </tbody>
+</table>
+
+<h3>H3 - cross-patient pathway transfer (1 metric family + 2 methodological tools)</h3>
+<table class="atbl">
+  <thead><tr><th style="width:14%">metric</th><th style="width:48%">what it measures (plain English)</th><th style="width:22%">how we compute it here</th><th style="width:16%">what a good value looks like</th></tr></thead>
+  <tbody>
+    <tr><td><strong>z_A per pathway</strong><br><span style="font-size:10px;color:var(--text3)">univariate CCA, cross-patient</span></td>
+        <td style="font-size:11px;color:var(--text2)">Same procedure as z_TLS, but one z-score per Reactome pathway. Asks: does the 1-d direction in z_he that correlates with this pathway's gene signature on training patients <em>also</em> correlate on patients the model never saw?</td>
+        <td style="font-size:11px;color:var(--text2)">least-squares canonical direction on z_he vs gpath2vec-niche-cosine-to-pathway (or AUCell score - both arms tested), cross-patient 11/3 split, 500-perm null, BH-FDR over 4 testable pathways (TGF-β excluded, set_size=2)</td>
+        <td style="font-size:11px;color:var(--text2)">R4 4/4 sig (z 11-25). Late-fusion 0-2/4. Cross-patient is where alignment quality reveals itself - within-cohort is universally positive and doesn't discriminate</td></tr>
+    <tr><td><strong>permutation null</strong><br><span style="font-size:10px;color:var(--text3)">how we get "z" values</span></td>
+        <td style="font-size:11px;color:var(--text2)">Randomly shuffle the pathway labels 500 times (or 10k for bio/patient), recompute the canonical correlation each time. This produces a distribution of "by chance" values. The z-score = (observed value - null mean) / null std.</td>
+        <td style="font-size:11px;color:var(--text2)">500 perms (H3 cross-patient) or 10k perms (bio/patient ratio). Permute labels, not embeddings - preserves within-modality structure</td>
+        <td style="font-size:11px;color:var(--text2)">|z| &gt; 1.96 ≈ p &lt; 0.05. Magnitudes report effect strength relative to chance</td></tr>
+    <tr><td><strong>BH-FDR</strong><br><span style="font-size:10px;color:var(--text3)">Benjamini-Hochberg</span></td>
+        <td style="font-size:11px;color:var(--text2)">When you test many things (ex. 4 pathways, 6 contrasts, 395 DAG nodes), some will appear significant by chance. BH-FDR is the standard multiple-testing correction that controls the <em>fraction of false positives</em> across the family of tests at a chosen rate (ex. 5%).</td>
+        <td style="font-size:11px;color:var(--text2)">applied per test family per hypothesis: 4 H3 parent pathways, 6 H2-B.1 compartment contrasts, 10 H2-B.2 runs, 395 H3 DAG nodes</td>
+        <td style="font-size:11px;color:var(--text2)">BH-FDR &lt; 0.05 is the standard cutoff for reporting "significant" findings</td></tr>
+  </tbody>
+</table>
+
+<div class="note"><strong>Why so many metrics.</strong> Each metric tests a different operationalization of biology. AUC tests whether matched pairs <em>rank above</em> mismatched - the retrieval question. ARI tests whether the embedding produces <em>cluster structure</em> aligned with a label - the geometry question. Linear probe tests whether the label is <em>linearly recoverable</em> from the embedding - the encoding question, independent of geometry. Cosine contrasts and z_TLS test whether <em>specific biological signals</em> are preserved. z_A cross-patient tests whether what works on training patients <em>transfers to new patients</em> - the generalization question. Different alignment strategies optimize different operationalizations, which is what produces the trade-offs in the routing table.</div>
 </div>
 
 <hr>
@@ -360,6 +472,15 @@ nav{position:sticky;top:0;background:var(--bg);border-bottom:0.5px solid var(--b
 
 <h3>Part A - niche clustering (corrected label: mc_megacluster)</h3>
 <p>Original evaluation question used 9 spatial archetypes (patient-level pseudobulk NMF, NMI=0.89 with patient_id - equivalent to asking which country a neighborhood is in). Corrected to Wang's 14-class mc_megacluster label (per-patient NMF on ST counts -> K-means consensus on factor centroids, varies at niche resolution within a patient).</p>
+
+<div class="note" style="margin:.75rem 0">
+  <strong>TLS shows up twice in H2 because the cohort gives two distinct TLS signals - same FTU, two operationalizations.</strong> This is the "two of the four ground truths" from the proposal framing, made concrete.
+  <ul style="margin:.4rem 0 0 1.2rem;font-size:12px;line-height:1.55">
+    <li><strong>Categorical "Lymphoid nodule" (used in Part B.1 below):</strong> Wang's pathologist hand-annotation of organized lymphoid aggregates visible on H&amp;E - 18-category per-spot label from <code>annotBySpot.RDS</code> (Zenodo), "Lymphoid nodule" is the TLS class. Loaded into the niche-join's <code>compartment</code> column on the center spot only (discrete labels can't be averaged). <strong>Sparse:</strong> 344 spots / 238 niches across 23 of 92 patients (~0.36% of annotated spots). Gold-standard morphological TLS - if a pathologist saw an aggregate, it's here.</li>
+    <li><strong>Continuous TLS gene-signature score (used in Part B.2, middle column above):</strong> We score every niche against the Cabrita et al. 2020 30-gene TLS panel (CCL19/21, CXCL13, CD79A/B, MS4A1, BCL6, PAX5, IGHM, etc.) on Wang's raw counts via <code>extract_biological_signals.py::extract_tls_scores()</code>, then mean-pool the 7-spot niche to a single value (<code>tls</code> column in <code>niches_v3</code>). <strong>Dense:</strong> every niche with ST counts gets a score, NaN only if no neighbor has data.</li>
+  </ul>
+  These aren't the same thing - a niche can have high <code>tls</code> score (TLS-related genes elevated) without being labeled <em>Lymphoid nodule</em> (no organized aggregate visible). That mismatch is why both tests live in H2: same FTU, the categorical test routes to late-fusion contrastive (which optimizes within-compartment cosine), and the continuous test routes to morphology-preserving methods (B4 random-init z=25.5 - TLS gene expression is in Virchow2 features without any alignment training).
+</div>
 
 <div class="g3">
   <div>
@@ -419,7 +540,7 @@ nav{position:sticky;top:0;background:var(--bg);border-bottom:0.5px solid var(--b
       <td><span class="bdg bx">systematically computed</span><div style="font-size:10px;color:var(--text3);margin-top:2px">Wang's per-patient NMF on ST counts (variable K per patient) -> K-means (K=14) on the resulting factor centroids to derive cross-patient consensus classes. No FM, no expert annotation. Fully reproducible.</div></td>
       <td><span class="bdg bg">passes</span><div style="font-size:10px;color:var(--text3);margin-top:2px">5x ARI lift. R5/R6/R1 win clustering. R4 at linear probe parity.</div></td>
       <td style="font-size:11px;color:var(--text2)">The best-performing H2 label. Systematically derived from the data itself. Because it varies at niche resolution within a patient, it directly tests whether the aligned space encodes niche-level biology rather than patient identity. No human in the loop.</td>
-      <td style="font-size:11px;color:var(--text2)">Higher k (more classes) or a different factorization basis could reveal finer tissue states. Biological identity per mc class derived from Wang's km14 consensus matrix top-differential genes (e.g., mc12 = B-cell follicle / TLS center with IGKC/IGLC/HLA-DR/TRAC; mc05 = plasma cell zone; mc01 = CAF/desmoplastic stroma; full table in `data/embeddings/biological_signals/mc14_top_features.csv`). Validates the label biologically without per-cohort expert annotation.</td>
+      <td style="font-size:11px;color:var(--text2)">Higher k (more classes) or a different factorization basis could reveal finer tissue states. Biological identity per mc class derived from Wang's km14 consensus matrix top-differential genes (ex. mc12 = B-cell follicle / TLS center with IGKC/IGLC/HLA-DR/TRAC; mc05 = plasma cell zone; mc01 = CAF/desmoplastic stroma; full table in `data/embeddings/biological_signals/mc14_top_features.csv`). Validates the label biologically without per-cohort expert annotation.</td>
     </tr>
     <tr>
       <td><strong>TLS gene signature score</strong><br><span style="font-size:10px;color:var(--text3)">continuous per-niche score from ST counts</span></td>
@@ -734,6 +855,120 @@ nav{position:sticky;top:0;background:var(--bg);border-bottom:0.5px solid var(--b
 </div>
 
 <div class="warn"><strong>Deferred experiments.</strong> Two pre-registered follow-ups are queued and not blocking the current results: (a) DAG-resolution H3 decomposition on the v3 grid (the v1 sub-pathway numbers reported here would be re-derived on v3 - the v1 result is the headline shown in this report), and (b) R5b (AnInfoNCE + cross-attention) as a rescue test for whether per-dim temperature can recover per-pathway specificity while keeping cross-patient transferable magnitude.</div>
+
+<h3>Modalities and their foundation models</h3>
+<p>omicstra's MCP/agent framing treats modalities as pluggable - each modality is a frozen foundation-model encoder + a niche-aggregation step + an evaluation-agent contract (defined in <code>MODALITY_TEMPLATE.md</code>). The current cohort uses H&amp;E + spatial transcriptomics (original ST). Below are the modalities that would add biological signal at the niche or patient level, with the current state of foundation models for each - including the project's anchor modalities and adjacent technologies.</p>
+
+<table class="atbl">
+  <thead>
+    <tr>
+      <th style="width:18%">modality</th>
+      <th style="width:30%">what it adds biologically</th>
+      <th style="width:32%">foundation models available now</th>
+      <th style="width:20%">TNBC-relevance + integration cost</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Multiplex IF / IHC</strong><br><span style="font-size:10px;color:var(--text3)">Vectra Polaris, CODEX, Lunaphore</span></td>
+      <td style="font-size:11px;color:var(--text2)">Protein-level spatial maps of 6-50 markers per slide. Directly resolves immune cell composition (CD3/CD4/CD8/CD20/CD68/FoxP3), checkpoint expression (PD-L1, BTLA, LAG3), proliferation (Ki67), and stromal markers (a-SMA, FAP). Complementary to ST: catches translation/post-translational layer the gene-expression signal can miss.</td>
+      <td style="font-size:11px;color:var(--text2)">Mesmer (Greenwald 2021) for cell segmentation. Cellpose / StarDist for nuclei. <strong>No Virchow-equivalent feature FM yet</strong> - per-marker CNN encoders and pixel-level classifiers are state of the art. Niche encoding is currently per-marker mean + co-localization stats, not learned. Active area: a few groups training mxIF transformers as of 2025.</td>
+      <td style="font-size:11px;color:var(--text2)">High TNBC yield (protein-level immune phenotype is what ICB response stratification depends on). Integration cost: medium - need paired CODEX/Vectra runs on a subset of the same TNBC patients, or use a separate TNBC mxIF cohort (ex. Keren et al. 2018, Schurch et al. 2020).</td>
+    </tr>
+    <tr>
+      <td><strong>Single-cell RNA-seq</strong><br><span style="font-size:10px;color:var(--text3)">10x Chromium, smart-seq3</span></td>
+      <td style="font-size:11px;color:var(--text2)">Per-cell transcriptomic profile - resolves cell types that ST can only see as mixtures (spots are ~100um, contain ~10-50 cells). Reference-mapping scRNA atlases to ST niches recovers per-cell composition. For TNBC, lets you distinguish CD8 effector vs CD8 exhausted T cells within a single ST spot.</td>
+      <td style="font-size:11px;color:var(--text2)"><strong>scGPT</strong> (Wang et al. 2024, 33M cells), <strong>Geneformer</strong> (Theodoris et al. 2024, 30M cells), <strong>scFoundation</strong> (50M cells), <strong>Universal Cell Embeddings</strong> (Rosen et al. 2023, 36M cells), <strong>CellPLM</strong>. Several mature options - scGPT and Geneformer most widely benchmarked.</td>
+      <td style="font-size:11px;color:var(--text2)">High TNBC yield - existing TNBC scRNA atlases (Wu et al. 2021, Bassez et al. 2021 anti-PD-1 cohort, Pal et al. 2021) are public. Integration cost: low - reference-map via Tangram/cell2location, then feed cell-composition vector or pretrained-FM embedding as an additional ST-side input to the alignment grid.</td>
+    </tr>
+    <tr>
+      <td><strong>Spatial proteomics</strong><br><span style="font-size:10px;color:var(--text3)">CODEX, IMC, MIBI-TOF</span></td>
+      <td style="font-size:11px;color:var(--text2)">High-plex (30-60 markers) protein imaging at single-cell resolution, spatially co-registered. Closer to "the truth" than ST for immune cell typing because antibodies detect protein, not mRNA. Reveals signaling-active vs signaling-quiescent cells (phospho-marker panels).</td>
+      <td style="font-size:11px;color:var(--text2)">Same as mxIF - no dominant FM yet. Open-source pipelines: <strong>steinbock</strong> (Bodenmiller lab), <strong>Mesmer + manual gating</strong>. Niche aggregation typically per-marker statistics or learned cell-type embeddings.</td>
+      <td style="font-size:11px;color:var(--text2)">Medium TNBC yield. Integration cost: high - need paired runs (expensive, $5-15k per slide) or a separate cohort. Best for follow-up validation rather than primary alignment training.</td>
+    </tr>
+    <tr>
+      <td><strong>scATAC-seq / multi-omic</strong><br><span style="font-size:10px;color:var(--text3)">10x Multiome, scNMT</span></td>
+      <td style="font-size:11px;color:var(--text2)">Chromatin accessibility per cell - the regulatory layer upstream of gene expression. Identifies which transcription factors are bound and active, which enhancers are open, which lineage decisions are being made. Complementary to gpath2vec's TF-restricted Fisher view.</td>
+      <td style="font-size:11px;color:var(--text2)"><strong>scBasset</strong> (Yuan &amp; Kelley 2022), <strong>CHROMBPNet</strong> (Pampari et al. 2023), <strong>Geneformer</strong> handles peak-counts. <strong>ENFORMER</strong> for sequence-level. Less mature than scRNA FMs but production-ready for the most common use cases.</td>
+      <td style="font-size:11px;color:var(--text2)">Medium TNBC yield. Integration cost: medium - paired scATAC on TNBC cohorts is less common than scRNA. Useful for validating gpath2vec's TF interpretation directly (do the TFs gpath2vec catches have chromatin accessibility at their motifs?).</td>
+    </tr>
+    <tr>
+      <td><strong>Spatial metabolomics</strong><br><span style="font-size:10px;color:var(--text3)">MALDI-MSI, DESI</span></td>
+      <td style="font-size:11px;color:var(--text2)">Spatially-resolved small-molecule abundance (lipids, amino acids, drugs, metabolites). Directly captures the metabolic state of the TME - hypoxia, fatty acid oxidation, glutaminolysis, ICB drug penetration. Complements expression-based modalities by measuring effector molecules directly.</td>
+      <td style="font-size:11px;color:var(--text2)">Emerging FM space - <strong>METASPACE</strong> ecosystem, <strong>m2aia</strong>, growing transformer-based work. No dominant pretrained encoder yet. Currently most pipelines use peak-fitting + per-metabolite quantification.</td>
+      <td style="font-size:11px;color:var(--text2)">High novel-biology yield, low integration maturity. Co-registration with H&amp;E is technically tractable but requires same-section runs. Most useful as orthogonal validation of metabolic signatures inferred from ST.</td>
+    </tr>
+    <tr>
+      <td><strong>TCR/BCR repertoire</strong><br><span style="font-size:10px;color:var(--text3)">scTCR-seq, repertoire deep-seq</span></td>
+      <td style="font-size:11px;color:var(--text2)">Per-cell TCR/BCR sequences from infiltrating T and B cells. Directly resolves immune clonality, antigen specificity (where TCR specificity databases exist), and shared vs private clones. Highly informative for TLS biology (BCR clonal expansion in germinal centers) and ICB response.</td>
+      <td style="font-size:11px;color:var(--text2)"><strong>TCR-BERT</strong> (Wu et al. 2024), <strong>ESM-2</strong> for TCR/BCR protein sequences, <strong>TCRdist</strong> for similarity. FM space maturing fast in 2024-2025. Most production pipelines still use per-clone summary statistics.</td>
+      <td style="font-size:11px;color:var(--text2)">High TNBC yield - tied directly to the TLS sub-types identified in this report. Integration cost: high - paired scTCR + ST is rare. Public TNBC TCR repertoires from Bassez et al. 2021 are usable.</td>
+    </tr>
+    <tr>
+      <td><strong>Bulk RNA-seq + clinical</strong><br><span style="font-size:10px;color:var(--text3)">TCGA, METABRIC, in-house</span></td>
+      <td style="font-size:11px;color:var(--text2)">Patient-level transcriptomic profile + outcomes (OS, DFS, ICB response, treatment trajectory). Already partially used in this project as Bareche TIME/MC_global/MC_tumor patient-level labels. Adds a clinical-outcome layer for risk-stratification training.</td>
+      <td style="font-size:11px;color:var(--text2)">FMs less load-bearing for bulk - traditional pipelines (DESeq2, GSEA, ssGSEA, decoupler) work well. <strong>scGPT</strong> can ingest pseudobulk. Bulk-RNA-specific FMs emerging.</td>
+      <td style="font-size:11px;color:var(--text2)">High TNBC yield for risk stratification. Integration cost: low - patient-level features attach as side inputs to the alignment grid or as outcome targets for downstream prediction.</td>
+    </tr>
+    <tr>
+      <td><strong>WES/WGS + mutational signatures</strong><br><span style="font-size:10px;color:var(--text3)">DNA-seq, mutational signatures</span></td>
+      <td style="font-size:11px;color:var(--text2)">Patient-level DNA variants, copy-number alterations, mutational signatures (BRCA1/2 status, HRD score). Critical for TNBC stratification - BRCA1/2-mutated TNBC responds differently to PARPi than HRD-negative. Could route patients to alignment-strategy subsets.</td>
+      <td style="font-size:11px;color:var(--text2)"><strong>ENFORMER</strong> for regulatory variants, <strong>AlphaMissense</strong> for missense, <strong>SignAture</strong>-style models for mutational signatures. No single dominant patient-level genomic FM yet. Standard pipelines via SigProfiler, deconstructSigs.</td>
+      <td style="font-size:11px;color:var(--text2)">High TNBC clinical relevance. Integration cost: low for patient-level metadata, medium for treating mutational profile as a learned representation. Most useful at downstream patient-stratification layer, not at niche-level alignment.</td>
+    </tr>
+    <tr>
+      <td><strong>H&amp;E (canonical anchor)</strong><br><span style="font-size:10px;color:var(--text3)">already integrated; project's primary modality</span></td>
+      <td style="font-size:11px;color:var(--text2)">Tissue architecture, immune geography, stromal composition at cellular scale. Standard of care - generated at diagnosis and archived at institutional scale across decades of clinical practice. The anchor modality everything else is aligned to.</td>
+      <td style="font-size:11px;color:var(--text2)"><strong>Virchow2</strong> (MSK Paige, 632M, 3M slides - current primary), <strong>UNI2-h</strong> (Mass General, 681M - swap), <strong>Atlas / Hibou</strong> (Histai), <strong>CONCH</strong> (image + text, Mahmood lab), <strong>Phikon-v2</strong> (Owkin), <strong>Prov-GigaPath</strong> (Microsoft + Providence), <strong>CTransPath</strong>, <strong>HIPT</strong>. Most mature FM ecosystem in computational pathology.</td>
+      <td style="font-size:11px;color:var(--text2)">Maximum (project anchor). Integration cost: zero - already integrated. Open question: encoder swap to test whether the routing-table verdict holds across pathology FMs (UNI2 / CONCH / Atlas).</td>
+    </tr>
+    <tr>
+      <td><strong>CODA</strong><br><span style="font-size:10px;color:var(--text3)">Coupled Object Detection-Annotation; serial-section 3D mapping</span></td>
+      <td style="font-size:11px;color:var(--text2)">3D tissue reconstruction from serial H&amp;E sections (~4 um apart) with cell-type and compartment annotations. Adds the third spatial dimension (z) currently flat at 2D - quantifies 3D tumor geometry, vascular network density, immune-aggregate volume, invasion-front topology. Developed by the Kiemen lab (Johns Hopkins) for high-throughput 3D pancreas / breast tissue mapping.</td>
+      <td style="font-size:11px;color:var(--text2)">Task-specific deep-learning models (semantic segmentation + cell-type classification) trained per-tissue rather than a single generic FM. The underlying segmentation models can ingest Virchow2 / UNI2 features. CODA itself is more a production pipeline than a pretrained encoder; the FM layer is the H&amp;E backbone.</td>
+      <td style="font-size:11px;color:var(--text2)">Medium for the current cohort (would require serial sections, not in the TNBC-92 protocol). High for prospective cohorts where 3D context matters for TLS biology (germinal-center volume vs surface area), tumor-immune interface geometry, and invasive front analysis.</td>
+    </tr>
+    <tr>
+      <td><strong>Visium HD</strong><br><span style="font-size:10px;color:var(--text3)">10x Genomics, 2 um spot pitch</span></td>
+      <td style="font-size:11px;color:var(--text2)">Next-generation spatial transcriptomics at <strong>2 um × 2 um spot resolution</strong> (vs 100 um diameter / 200 um spacing in the original ST platform used here). Effectively subcellular resolution: each cell is covered by 5-10 HD spots. Resolves individual immune cells within a niche where original ST only sees cell mixtures.</td>
+      <td style="font-size:11px;color:var(--text2)">Same ST-side FMs (<strong>Novae, scGPT, Geneformer, scFoundation</strong>) but with better fit - Novae was trained on subcellular image-based ST (MERSCOPE/Xenium/CosMX) so Visium HD's resolution is closer to its training distribution than the original ST platform. Bin-aggregated HD spots (8 um, 16 um) can be treated as Visium-like for legacy pipelines.</td>
+      <td style="font-size:11px;color:var(--text2)">High - would address the 100 um spot-mixture problem that motivates current niche aggregation (k=6 neighbors, ~1200 cells). Integration cost: medium - new Visium HD tissue runs required (existing TNBC-92 cannot be re-acquired at HD resolution). Best applied to a successor cohort.</td>
+    </tr>
+    <tr>
+      <td><strong>IHC (single-marker)</strong><br><span style="font-size:10px;color:var(--text3)">DAB, chromogenic; clinical standard</span></td>
+      <td style="font-size:11px;color:var(--text2)">Single-marker protein staining at the slide level - the clinical pathologist's everyday tool. ER / PR / HER2 / Ki67 (the breast cancer essentials, what defines "triple-negative"), PD-L1 (ICB stratification), CD3 / CD8 (TIL scoring per CAP/ASCO guidelines), Ki67 (proliferation index). Available in essentially every pathology archive worldwide.</td>
+      <td style="font-size:11px;color:var(--text2)">Pathology FMs (Virchow2, UNI2) work directly on IHC slides plus marker-specific quantifiers (positivity scoring, H-score). <strong>HistoQC</strong> for quality control, <strong>QuPath</strong> for analysis pipelines, <strong>HistoSegNet</strong> for ROI segmentation.</td>
+      <td style="font-size:11px;color:var(--text2)">Very high - clinical-standard markers are how TNBC patients are typed in the first place. Integration cost: low - attach as patient-level or spot-level continuous markers to the alignment grid; useful as orthogonal validation for ST-derived immune phenotype.</td>
+    </tr>
+    <tr>
+      <td><strong>CyCIF (cyclic IF)</strong><br><span style="font-size:10px;color:var(--text3)">t-CyCIF, COMET; 40-60 markers</span></td>
+      <td style="font-size:11px;color:var(--text2)">Cyclic immunofluorescence - 40-60 markers via repeated rounds of antibody staining on the same slide (Sorger lab's t-CyCIF, Lunaphore COMET commercial). Resolves cell type + signaling state at single-cell resolution with much higher plex than standard mIF (3-7 markers). Reveals immune cell subtypes and signaling-active vs quiescent states that ST and mIF can only approximate.</td>
+      <td style="font-size:11px;color:var(--text2)">Same as mIF / CODEX - no dominant CyCIF-specific FM yet. <strong>MCMICRO</strong> (Lin lab) handles the imaging stack and registration. <strong>Cellpose / StarDist / Mesmer</strong> for cell segmentation. <strong>scimap</strong> for downstream analysis. Niche encoding via per-marker quantification or learned cell-type embeddings.</td>
+      <td style="font-size:11px;color:var(--text2)">Very high - published TNBC CyCIF datasets exist (Lin / Sorger lab work). Most aligned with the project's TLS-sub-types finding, since CyCIF can directly resolve germinal-center vs T-cell-zone vs plasma-cell composition in TLS. Integration cost: medium-high (paired runs or use existing TNBC CyCIF cohorts).</td>
+    </tr>
+    <tr>
+      <td><strong>LCM / DNA-seq</strong><br><span style="font-size:10px;color:var(--text3)">laser capture microdissection + spatial genomics</span></td>
+      <td style="font-size:11px;color:var(--text2)">Laser capture microdissection of specific tissue regions (tumor nests / stroma / TLS / invasive front) followed by DNA sequencing. Reveals spatially-resolved mutational architecture - clonal evolution at the tumor-immune interface, TLS-resident B-cell clonality, sub-clonal heterogeneity within tumor regions.</td>
+      <td style="font-size:11px;color:var(--text2)">DNA sequencing FMs less mature for LCM use cases. Standard pipelines: variant calling (MuTect2, Strelka), clonal inference (<strong>PyClone</strong>, <strong>SciClone</strong>, <strong>dpClust</strong>), mutational signature decomposition (<strong>SigProfiler</strong>, <strong>deconstructSigs</strong>). Emerging sequence-level FMs (<strong>ENFORMER</strong>, <strong>AlphaMissense</strong>) work at the variant level.</td>
+      <td style="font-size:11px;color:var(--text2)">High - directly informs intratumoral heterogeneity and ICB resistance evolution. Integration cost: high - LCM is slow and expensive; few paired LCM + ST cohorts exist publicly. Best applied as a follow-up experiment on a specific hypothesis (ex. TLS-resident clonal expansion in responders vs non-responders).</td>
+    </tr>
+    <tr>
+      <td><strong>Spatial epigenomics</strong><br><span style="font-size:10px;color:var(--text3)">Spatial-CUT&amp;Tag, Spatial-ATAC, Spatial-DBiT</span></td>
+      <td style="font-size:11px;color:var(--text2)">Spatially-resolved histone marks (H3K27ac, H3K27me3) or chromatin accessibility at niche scale. Identifies which enhancers and regulatory elements are active in specific tissue regions - the regulatory layer directly upstream of ST gene expression. Newer than ST; published methods include Spatial-CUT&amp;Tag (Deng et al.), DBiT-seq, and emerging commercial platforms.</td>
+      <td style="font-size:11px;color:var(--text2)"><strong>scBasset</strong> and <strong>CHROMBPNet</strong> for chromatin-state encoding, <strong>ENFORMER</strong> for sequence-level. Spatial-epigenomics-specific FMs are nascent - most analyses currently use peak-calling + ChromVAR-style scoring.</td>
+      <td style="font-size:11px;color:var(--text2)">High biological yield - <strong>directly validates gpath2vec's TF-restricted Fisher predictions</strong> by measuring chromatin accessibility at the predicted TFs' motifs. Low integration maturity. Useful when assays become more standardized.</td>
+    </tr>
+    <tr>
+      <td><strong>Radiology (MRI / CT / PET-CT)</strong><br><span style="font-size:10px;color:var(--text3)">patient-level imaging; clinical-decision bridge</span></td>
+      <td style="font-size:11px;color:var(--text2)">Pre-treatment radiologic phenotype - tumor size, lymph node involvement, distant metastases, FDG-PET metabolic activity, MRI background parenchymal enhancement (BPE). Patient-level, not niche-level - bridges the tissue-scale findings to whole-patient clinical decisions (chemotherapy regimen, surgical extent, ICB candidacy).</td>
+      <td style="font-size:11px;color:var(--text2)"><strong>RAD-DINO</strong> (Microsoft), <strong>BiomedCLIP</strong>, <strong>MedCLIP</strong>, <strong>LLaVA-Med</strong>, <strong>MICA</strong>. Mature for radiology - several pretrained encoders with reasonable cross-institutional generalization.</td>
+      <td style="font-size:11px;color:var(--text2)">Medium for niche-level alignment, very high for patient-level risk stratification. Integration cost: low - patient-level radiologic features attach as additional patient-side metadata. Bridges H&amp;E-derived TME phenotype to whole-body clinical context.</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="note"><strong>What this means for omicstra's roadmap.</strong> The current 10-run grid evaluates two-modality (H&amp;E + ST) alignment. The framework is designed to extend to 3+ modalities via the same MCP/agent pattern - each new modality adds an encoder agent, a niche-aggregation step, and rows to the alignment grid. Highest near-term yield for TNBC: <strong>scRNA-seq reference mapping</strong> (low cost, mature FMs, high biological lift) and <strong>multiplex IF</strong> (high biological lift on immune phenotype, FM maturity is a near-term bet). Both can plug into the same H1/H2/H3 evaluation surface and the same routing-table output.</div>
 </div>
 
 <div style="margin-top:2.5rem;padding-top:1.25rem;border-top:0.5px solid var(--border);font-size:11px;color:var(--text3)">
@@ -743,7 +978,7 @@ gpath2vec source: github.com/teslajoy/gpath2vec
 </div>
 
 <script>
-const secs=['framing','proposal-check','architecture','h1','h2','h2-annotations','h3','routing','matrix','status'];
+const secs=['framing','proposal-check','architecture','metrics','h1','h2','h2-annotations','h3','routing','matrix','status'];
 window.addEventListener('scroll',()=>{
   let cur='framing';
   secs.forEach(id=>{const el=document.getElementById(id);if(el&&el.getBoundingClientRect().top<100)cur=id;});
