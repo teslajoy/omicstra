@@ -20,6 +20,20 @@ early vs late fusion is an experimental variable, not an assumption.
 
 ---
 
+## seed cohort results (v3, 10-run grid)
+
+live report: **[teslajoy.github.io/omicstra/reports/tnbc-92/](https://teslajoy.github.io/omicstra/reports/tnbc-92/)**
+
+evaluated on **35,594 niches across 14 held-out TNBC patients** (zero patient leakage across train / val / test). 6 contrastive runs (R1-R6) + 4 classical baselines (B1-B4):
+
+- **H1 (cross-modal retrieval).** R4 wins. AUC 0.859 (95% CI 0.855-0.862). R4 is the only run using cross-attention - the other 5 contrastive runs use late fusion (mean-pooled H&E + independent MLPs).
+- **H2 (biology preservation).** Split outcome. Late-fusion contrastive (R1, R6) wins K-means MC ARI; R4 still encodes MC biology at linear-probe parity. KMeans-ARI is geometry-biased - load-bearing diagnostic is the linear probe.
+- **H3 (pathway transfer).** R4 wins again. 15/15 cells BH-FDR < 0.05 cross-patient (Welch z 3.8-5.7). At DAG resolution, R4 stays best (78% sig nodes) on clinically interpretable hits: BTLA checkpoint, IL signaling, IFN regulation, ECM collagen biology.
+
+**R4 = the only non-late-fusion run** (cross-attention between the niche's 7 Virchow2 tile tokens and the 576-d ST vector). H1 + H3 both reward keeping local morphological heterogeneity un-pooled. See report for the full proposal-alignment matrix and 95% CIs.
+
+---
+
 ## architecture
 
 three layers:
@@ -175,7 +189,9 @@ every run writes `runs/{project_id}/{run_id}/` - config, QC, embeddings, alignme
 
 ## deliverables
 
+- [x] v3 10-run alignment grid on TNBC-92 ([live report](https://teslajoy.github.io/omicstra/reports/tnbc-92/))
 - [ ] pip-installable MCP server (MIT)
+- [ ] second-modality plug-in via `MODALITY_TEMPLATE.md` (target: CODA or CyCIF)
 
 ---
 
