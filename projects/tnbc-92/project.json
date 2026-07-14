@@ -1,0 +1,22 @@
+{
+  "project_id": "tnbc-92",
+  "platform": "original Spatial Transcriptomics (Stahl 2016)",
+  "k_neighbors": 6,
+  "seed": 42,
+  "split": "patient_stratified_85_15",
+  "encoders": [
+    {"name": "virchow2", "dim": 1280, "role": "primary", "raw": true},
+    {"name": "uni2", "dim": 1536, "role": "alternative", "raw": true},
+    {"name": "novae", "dim": 64, "role": "st", "raw": false},
+    {"name": "gpath2vec", "dim": 512, "role": "pathway", "raw": false}
+  ],
+  "gpath2vec_sha256": "13985cbd18fb72f67d41193cc0b7f1b3186b720c1e83da9403963085c7583490",
+  "h2_label": "mc_megacluster",
+  "supervision": "mc_weights_niche",
+  "headline_view": "z_he",
+  "hypothesis_metric": "auc",
+  "contrastive_runs": ["R1", "R2", "R3", "R4", "R5", "R6"],
+  "classical_runs": ["B1", "B2", "B3", "B4"],
+  "niches_dir": "data/embeddings/niches_v3",
+  "runs_dir": "runs/tnbc-92_v3"
+}

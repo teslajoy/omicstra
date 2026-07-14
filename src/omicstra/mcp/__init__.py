@@ -1,0 +1,1 @@
+"""mcp interface package - the pip-installable server surface."""

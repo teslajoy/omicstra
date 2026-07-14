@@ -1,0 +1,3 @@
+"""omicstra - cross-modal biomedical embedding alignment + reasoning via MCP."""
+
+__version__ = "0.0.1"

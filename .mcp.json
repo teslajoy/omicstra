@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "omicstra": {
+      "command": "python",
+      "args": ["-m", "omicstra.mcp.server"]
+    }
+  }
+}
