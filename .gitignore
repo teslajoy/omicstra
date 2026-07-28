@@ -52,7 +52,6 @@ runs/
 # langsmith / api logs
 *.log
 langsmith_traces/
-scripts/
 docs/papers/
 knowledge/
 notebooks/embeddings/*.html
@@ -64,4 +63,7 @@ docs/tnbc92_three_hypotheses.pdf
 
 .claude/
 notebooks/final/*.html
+
+# scratch workspaces - superseded / one-off work, kept locally as record
 design/_scratch
+scripts/_scratch/
