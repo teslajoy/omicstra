@@ -67,3 +67,6 @@ notebooks/final/*.html
 # scratch workspaces - superseded / one-off work, kept locally as record
 design/_scratch
 scripts/_scratch/
+
+# manuscript drafts - local until deliberately published
+docs/reports/**/discussion.md
