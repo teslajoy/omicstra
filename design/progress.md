@@ -245,6 +245,36 @@ against the project root, and tnbc-92 declares `../../data/...` explicitly. Only
 the physical layout is legacy, so the move is a data operation rather than a
 redesign.
 
+## open experiment · histological progression, never asked
+
+**Clinical stage is not testable at this unit, and annotation would not fix it.**
+Stage is a property of the patient, not a region. Every niche in a patient inherits
+one value, so NMI(stage, patient_id) = 1.0 by construction - the archetype failure
+(0.89) in a more extreme form. On a single section the value is constant, so there
+is nothing to separate. The obstacle is the construct, not the missing annotation.
+
+**Histological progression is testable, and was not tested.** `in situ` vs `Tumor`
+and `Tumor region` is annotated per spot in Wang's 18-class set, varies within a
+section, and is niche-level. That is almost certainly what a pathologist means by
+"different stages on one slide," and this grid never asked it.
+
+| what | state |
+|---|---|
+| label | `dominant_18class` in `biological_signals/morphology_labels.tsv`, center-spot in the niche join |
+| coverage | 94 annotated subarrays; **count of sections carrying both `in situ` and `Tumor` not yet checked** - this decides feasibility |
+| embeddings | already computed, no encoder compute needed |
+| routing prediction | this is a decode-from-morphology-alone question -> row 6 -> the **untrained** projection, not the contrastive runs. B4 scores z=25.5 on the TLS signature while every contrastive run falls below 1.6; contrastive training degrades linearly decodable H&E signal |
+| why it is easier than anything tested here | within a section, patient identity is constant by construction, so the dominant confound of this project disappears. CCA scored 0.667 within-subarray against 0.000 cross-subarray entirely on that shortcut |
+| relevant prior | raw Virchow2 reaches 57.1% on the 5-class morphology probe against a 30.7% majority-class floor |
+
+**Next step:** count sections carrying both classes, then run the morphology probe
+within-section on raw Virchow2 against one aligned run. If the routing prediction
+holds, raw Virchow2 wins and that is itself a result.
+
+**For the writeup:** one sentence stating that stage is patient-level and therefore
+not testable at niche resolution, while progression state is. Saying it closes the
+question; omitting it invites a reviewer to ask for stage.
+
 ## known gaps, named honestly
 
 **The contract is a skeleton, not the contract.** `eda_contract.json` encodes 10
