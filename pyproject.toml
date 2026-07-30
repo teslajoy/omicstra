@@ -8,10 +8,14 @@ license = { text = "MIT" }
 dependencies = [
   "pydantic>=2",
   "pydantic-settings>=2",
+  "click>=8",
 ]
 
+[project.scripts]
+omicstra = "omicstra.cli:main"
+
 [project.optional-dependencies]
-mcp = ["mcp>=1.0"]
+mcp = ["mcp>=2"]
 agents = ["langgraph>=0.2", "langchain-anthropic>=0.2", "anthropic>=0.40"]
 dev = ["pytest", "ruff"]
 

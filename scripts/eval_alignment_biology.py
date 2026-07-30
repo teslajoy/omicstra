@@ -2,7 +2,6 @@
 """eval_alignment_biology.py - port of gpath2vec biology vs patient validation
 to alignment runs.
 
-mirrors /Users/sanati/BForePC/gpath2vec/scripts/embedding_vs_rawea_biology.py
 adapted to alignment outputs at niche resolution.
 
 method:

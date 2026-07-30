@@ -7,16 +7,15 @@ a one-file change, not a sweep.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from .config import ProjectConfig
-from .settings import settings
 
 
 class ArtifactStore:
     def __init__(self, cfg: ProjectConfig):
         self.cfg = cfg
-        self.runs_dir = settings.resolve(Path(cfg.runs_dir))
+        # cohort paths resolve against the PROJECT root, never the package
+        self.runs_dir = cfg.runs_path
 
     def hypothesis_summary(self, hypothesis: str) -> dict:
         # runs/{project}_v3/eval/{H1|H2|H3}/summary.json

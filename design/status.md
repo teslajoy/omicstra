@@ -161,8 +161,40 @@ deliberately **not** changed: the 32 `parents[1]` call sites, the notebook dupli
 
 ---
 
-## 5. open, in order
+## 5. first MCP component - landed
 
-1. first MCP component: the data-structure + EDA gate, built on the learned checks in the two EDA notebooks
-2. EDA gaps to encode: input-provenance per check · itemised funnel · platform floor · 3-way encoder routing · label-granularity NMI · annotation coverage
-3. `docs/reports/tnbc-92/index.html` remains **read-only** - it is the spec and the oracle
+the EDA gate, as a validator. reads `configs/eda_contract.json` (generalizable - thresholds and
+verdict logic, no cohort numbers) against a cohort's `eda_summary.json`. no data, no R, no GPU.
+
+| surface | exposed |
+|---|---|
+| tools | `check_eda_gate` · `describe_data_structure` |
+| resources | `omicstra://eda-contract` · `omicstra://project/{id}/eda-summary` |
+| CLI | `omicstra init --project-dir` · `omicstra gate` · `omicstra describe` |
+
+on tnbc-92 it returns **`proceed_with_caution` against a declared `proceed`** - 8 checks pass, 0
+fail, and the disagreement is the two `null` conditional fields plus 4 unaccepted risks. six
+advisories name the learned checks `EDA.md` never encoded, including Moran's I computed on one
+subarray of 281 while gating the molecular encoder branch.
+
+### two roots, enforced
+
+| root | what | selected by |
+|---|---|---|
+| **package** | code + `configs/eda_contract.json` + the exemplar corpus | derived from the package, not cwd |
+| **project** | one cohort: `project.json`, `eda_summary.json`, `steps/`, `data/`, `runs/` | `OMICSTRA_PROJECT_DIR` / `--project-dir` |
+
+`project_dir` is both the security boundary and the cohort selector - a tool call passing a
+different `project_id` cannot reach outside it (verified). tnbc-92 is the fixture and sits at
+`./projects/tnbc-92`, but is reached through the same `project_root()` call as any external cohort:
+one code path, different default. `project_id` is authoritative from `project.json`, never inferred
+from the directory name.
+
+## 6. open, in order
+
+1. `MODALITY_TEMPLATE.md` - the contract a modality agent generates against. cited by three docs, does not exist. must precede the first generated step or the step defines the contract by accident
+2. generated-step conventions: `{project_dir}/steps/s{NN}_{modality}_{step}.py` + `MANIFEST.json`, header carrying `contract@sha256` + `trace_id`, commit message carrying the trace id
+3. first generated step: `s05_st_spatial_autocorr` - the one whose output is an edge, and where the n=1 defect lives
+4. remaining EDA gaps to encode: input-provenance per check · itemised funnel · platform floor · 3-way encoder routing · label-granularity NMI · annotation coverage
+5. packaging: `configs/` sits at repo root so it is not inside the wheel. a non-editable install needs it under `src/omicstra/` or declared as package data
+6. `docs/reports/tnbc-92/index.html` remains **read-only** - it is the spec and the oracle

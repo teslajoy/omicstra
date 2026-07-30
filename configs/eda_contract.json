@@ -1,0 +1,148 @@
+{
+  "contract_version": "1.0",
+  "source": "EDA.md - decision rule",
+  "note": "generalizable. thresholds and verdict logic only - no cohort measurements. a new cohort is evaluated against this same file.",
+
+  "checks": [
+    {
+      "id": "cohort_counts",
+      "required": true,
+      "field": "patients",
+      "rule": "present_and_positive",
+      "description": "cohort counts present and non-zero"
+    },
+    {
+      "id": "positive_markers",
+      "required": true,
+      "field": "positive_markers_pass",
+      "rule": "is_true",
+      "description": "known positive markers detected for the tissue/disease"
+    },
+    {
+      "id": "negative_markers",
+      "required": true,
+      "field": "negative_markers_pass",
+      "rule": "is_true",
+      "description": "known negative controls absent or near-zero"
+    },
+    {
+      "id": "spatial_autocorrelation",
+      "required": true,
+      "field": "spatial_autocorrelation_pass",
+      "rule": "is_true",
+      "description": "Moran's I > 0.3 for >= 3 of top 5 positive markers",
+      "morans_i_threshold": 0.3,
+      "min_markers_passing": 3,
+      "caution_floor": 0.1,
+      "routes": "selects the molecular encoder branch (spatial GNN vs non-spatial)"
+    },
+    {
+      "id": "batch_structure",
+      "required": true,
+      "field": "batch_correction_needed",
+      "rule": "is_false",
+      "description": "technical silhouette <= biological silhouette, or both <= 0",
+      "technical_silhouette_max": 0.1
+    },
+    {
+      "id": "encoder_input_decision",
+      "required": true,
+      "field": "encoder_input_decision",
+      "rule": "resolved_string",
+      "unresolved_values": ["", "unresolved", null],
+      "description": "encoder input format decided; blocking if unresolved"
+    },
+    {
+      "id": "cross_modal_registration",
+      "required": false,
+      "applies_when": "multi_modal",
+      "field": "cross_modal_registration_pass",
+      "rule": "is_true",
+      "description": "coordinate correspondence verified between modalities"
+    },
+    {
+      "id": "model_tissue_fit",
+      "required": false,
+      "applies_when": "foundation_model_encoders",
+      "field": "model_tissue_fit",
+      "rule": "all_encoders_assessed",
+      "acceptable": ["validated", "validated_with_constraints"],
+      "escalate": ["uncertain"],
+      "description": "encoder-tissue compatibility documented per encoder"
+    },
+    {
+      "id": "segmentation_qc",
+      "required": false,
+      "applies_when": "single_cell_resolution",
+      "field": "segmentation_qc_pass",
+      "rule": "is_true",
+      "description": "cell segmentation QC (Xenium/MERFISH/CosMx only)"
+    },
+    {
+      "id": "multi_section_alignment",
+      "required": false,
+      "applies_when": "serial_sections",
+      "field": "multi_section_alignment_pass",
+      "rule": "is_true",
+      "description": "inter-section registration (serial sections only)"
+    }
+  ],
+
+  "verdict_rule": {
+    "stop_if": [
+      "any required check fails",
+      "encoder_input_decision unresolved",
+      "batch_correction_needed is true"
+    ],
+    "caution_if": [
+      "spatial_autocorrelation_pass false but Moran's I > caution_floor for most markers",
+      "a required check is null rather than measured",
+      "unaccepted entries remain in risks[]",
+      "any model_tissue_fit is uncertain"
+    ],
+    "proceed_otherwise": true
+  },
+
+  "learned_checks": {
+    "note": "checks established in practice but never encoded in EDA.md. advisory in contract 1.0 - reported, never verdict-changing.",
+    "items": [
+      {
+        "id": "input_provenance",
+        "description": "every check records which matrix it read",
+        "rationale": "a directory named raw may hold normalized values; filenames are not evidence",
+        "expected_field": "check_provenance"
+      },
+      {
+        "id": "itemised_funnel",
+        "description": "unit count at each stage plus a reason for every drop",
+        "rationale": "aggregate counts cannot be reconciled after the fact",
+        "expected_field": "funnel"
+      },
+      {
+        "id": "platform_floor",
+        "description": "encoder-specific minimum unit count per sample",
+        "rationale": "below an encoder's prototype count, zero-shot inference is undefined",
+        "expected_field": "platform_floors"
+      },
+      {
+        "id": "label_granularity",
+        "description": "NMI(candidate_label, subject_id) before any clustering metric",
+        "rationale": "a subject-level label makes clustering a subject-classification task",
+        "expected_field": "label_granularity",
+        "nmi_confounded_above": 0.5
+      },
+      {
+        "id": "annotation_coverage",
+        "description": "fraction of samples carrying each annotation",
+        "rationale": "determines which hypotheses are answerable at all",
+        "expected_field": "annotation_coverage"
+      },
+      {
+        "id": "single_sample_statistic",
+        "description": "flag any cohort-level statistic computed on one sample",
+        "rationale": "an n=1 measurement should not gate a cohort decision",
+        "expected_field": null
+      }
+    ]
+  }
+}
