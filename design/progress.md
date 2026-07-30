@@ -210,6 +210,41 @@ This is the third instance of the same pattern - the project computes more than
 it reports (see also: the three `eval/*/summary.json` files each dropping a
 different run). Worth a standing check rather than three separate fixes.
 
+## repo reorganisation - target recorded 2026-07-30, deferred
+
+The current layout starts everything at the repo root. A cohort's material should
+live under its own project root instead:
+
+```
+projects/tnbc-92/
+├── data/        inputs · embeddings
+├── runs/        routes + results
+├── report/      the published view
+├── context/     program.md · eda_summary.json · schema docs
+├── scripts/     this cohort's implementation (pre-port)
+└── notebooks/   this cohort's decision record
+```
+
+**It is one operation, not several.** Every script does
+`ROOT = Path(__file__).resolve().parents[1]` and then reads `data/...` relative to
+that. Moving `scripts/` alone silently redefines `ROOT` and breaks all 32; the same
+holds for the 6 live notebooks. So scripts + notebooks + data + runs move together
+or not at all - and that is the 151 GB operation.
+
+**Sequencing.** Do it *after* the port behind `stages.py` (RERUN), when one place
+resolves paths instead of 32. Doing it before means doing it twice.
+
+**One split to settle first.** The notebooks currently serve two roles: tnbc-92's
+decision record, and the exemplar corpus a future modality agent reads. Those
+separate cleanly - the *derivation* stays with the cohort, the *derived rules* ship
+in the package (contract, guards, routing table). That extraction is the "grow the
+contract" item below, and it belongs before the move, not after.
+
+The mechanism is already correct: `ProjectConfig.path()` resolves cohort paths
+against the project root, and tnbc-92 declares `../../data/...` explicitly. Only
+the physical layout is legacy, so the move is a data operation rather than a
+redesign.
+
 ## known gaps, named honestly
 
 **The contract is a skeleton, not the contract.** `eda_contract.json` encodes 10
