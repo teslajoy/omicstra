@@ -258,18 +258,28 @@ and `Tumor region` is annotated per spot in Wang's 18-class set, varies within a
 section, and is niche-level. That is almost certainly what a pathologist means by
 "different stages on one slide," and this grid never asked it.
 
+**Counted 2026-07-30: not answerable with the existing annotation.**
+
 | what | state |
 |---|---|
 | label | `dominant_18class` in `biological_signals/morphology_labels.tsv`, center-spot in the niche join |
-| coverage | 94 annotated subarrays; **count of sections carrying both `in situ` and `Tumor` not yet checked** - this decides feasibility |
-| embeddings | already computed, no encoder compute needed |
-| routing prediction | this is a decode-from-morphology-alone question -> row 6 -> the **untrained** projection, not the contrastive runs. B4 scores z=25.5 on the TLS signature while every contrastive run falls below 1.6; contrastive training degrades linearly decodable H&E signal |
-| why it is easier than anything tested here | within a section, patient identity is constant by construction, so the dominant confound of this project disappears. CCA scored 0.667 within-subarray against 0.000 cross-subarray entirely on that shortcut |
-| relevant prior | raw Virchow2 reaches 57.1% on the 5-class morphology probe against a 30.7% majority-class floor |
+| `in situ` | **181 spots, 0.19% of 95,161** across 20 subarrays |
+| `Tumor` | 27,104 spots, 28.5% |
+| sections carrying both | 18, but **median 4 in-situ spots each** (range 1-29, 124 total) |
+| verdict | **blocked.** four spots per section cannot support a within-section test, and 7-spot niches built on them would overlap almost entirely. for scale, `Lymphoid nodule` is 344 spots and the report already calls that sparse; `in situ` is half of it |
 
-**Next step:** count sections carrying both classes, then run the morphology probe
-within-section on raw Virchow2 against one aligned run. If the routing prediction
-holds, raw Virchow2 wins and that is itself a result.
+**What it would take:** re-annotation targeting in-situ regions, or a cohort where
+DCIS is deliberately sampled. Not a compute problem, an annotation problem.
+
+**Still worth stating in the writeup**, because the reasoning holds regardless of
+whether the experiment runs: raw Virchow2 reaches 57.1% on the 5-class morphology
+probe against a 30.7% majority-class floor, so morphology is encoded; and routing
+predicts a decode-from-morphology-alone question goes to the **untrained**
+projection rather than the contrastive runs, since B4 scores z=25.5 on the TLS
+signature while every contrastive run falls below 1.6. Within a section, patient
+identity is constant by construction, so the dominant confound of this project
+disappears; CCA scored 0.667 within-subarray against 0.000 cross-subarray entirely
+on that shortcut.
 
 **For the writeup:** one sentence stating that stage is patient-level and therefore
 not testable at niche resolution, while progression state is. Saying it closes the
