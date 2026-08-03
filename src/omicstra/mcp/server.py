@@ -74,6 +74,67 @@ def describe_data_structure(project_id: str | None = None) -> dict:
     }
 
 
+# --- compute-lite: run a real EDA step on cached data ---------------------
+@srv.tool(description=(
+    "Run a real exploratory-data-analysis step on this cohort's actual measurements "
+    "and return the scientific finding: the method used, the scope it ran on, what "
+    "was observed, the criterion it was judged against, the result, and the decision "
+    "that follows. Steps: count_statistics (depth, detection, and whether values are "
+    "genuinely integer counts), marker_expression (are expected markers present and "
+    "unexpected ones absent), spatial_autocorrelation (is expression spatially "
+    "structured - this routes the molecular encoder), batch_structure (does technical "
+    "origin explain more variation than biology). This computes; it does not read a "
+    "stored verdict."))
+def run_eda_step(step: str, n_perm: int = 199) -> dict:
+    import anndata as ad
+    from .. import eda_steps as st
+    from ..eda import load_summary
+
+    cache = settings.resolve(settings.data_dir) / "embeddings/_eda_cache/cohort_sample.h5ad"
+    if not cache.exists():
+        return {"error": f"no cached cohort at {cache}. build it with the adapter first."}
+    a = ad.read_h5ad(cache)
+    s = load_summary()
+
+    if step == "count_statistics":
+        r = st.count_statistics(a, sample_key="sample")
+    elif step == "marker_expression":
+        r = st.marker_expression(
+            a,
+            positive={g: v["expected"] for g, v in s.get("positive_markers", {}).items()},
+            negative={g: v["expected"] for g, v in s.get("negative_markers", {}).items()})
+    elif step == "spatial_autocorrelation":
+        genes = list(s.get("morans_i_summary", {}).get("results", {}))
+        r = st.spatial_autocorrelation(a, markers=genes, sample_key="sample",
+                                       n_perm=int(n_perm))
+    elif step == "batch_structure":
+        meta = {smp: {"slide": smp.split("_")[0]} for smp in a.obs["sample"].unique()}
+        r = st.batch_structure(a, sample_key="sample", sample_meta=meta,
+                               technical=["slide"], biological=[])
+    else:
+        return {"error": f"unknown step {step!r}",
+                "available": ["count_statistics", "marker_expression",
+                              "spatial_autocorrelation", "batch_structure"]}
+
+    d = r.model_dump()
+    d["headline"] = r.headline()
+
+    # the cache is a convenience subset, not the cohort. a subset must not be
+    # allowed to state a cohort-level decision - that is how a routing choice
+    # ends up resting on unrepresentative data.
+    n_samples = int(a.obs["sample"].nunique())
+    n_subjects = len({s.split("_")[0] for s in a.obs["sample"].unique()})
+    total = s.get("samples_with_counts") or s.get("samples")
+    d["scope_warning"] = (
+        f"computed on a cached subset: {n_samples} samples from {n_subjects} "
+        f"subject group(s)" + (f", of {total} in the cohort" if total else "")
+        + ". Not representative. Treat `decision` as illustrative of the method, "
+          "not as a cohort-level finding."
+    )
+    d["decision_authority"] = "subset - illustrative only"
+    return d
+
+
 # --- resources: URI-addressed data, not model-invoked ---------------------
 @srv.resource("omicstra://eda-contract", mime_type="application/json",
               description="the generalizable EDA gate contract - thresholds and "

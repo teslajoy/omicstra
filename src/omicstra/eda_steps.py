@@ -233,3 +233,82 @@ def spatial_autocorrelation(adata, markers: list[str], sample_key: str | None = 
         caveats=caveats,
         duration_s=round(time.time() - t0, 3),
     )
+
+# --- batch structure -------------------------------------------------------
+def batch_structure(adata, sample_key: str,
+                    sample_meta: dict[str, dict[str, Any]],
+                    technical: list[str], biological: list[str],
+                    n_pcs: int = 10, max_silhouette: float = 0.1) -> DiagnosticRecord:
+    """does technical origin explain more variation than biology does?
+
+    pseudobulk per sample, PCA, then silhouette by each declared variable. a
+    positive technical silhouette that exceeds the biological one means batch
+    dominates and must be addressed before alignment - not corrected reflexively,
+    which is why the criterion is comparative rather than absolute.
+    """
+    t0 = time.time()
+    from sklearn.decomposition import PCA
+    from sklearn.metrics import silhouette_score
+
+    samples = list(dict.fromkeys(adata.obs[sample_key]))
+    if len(samples) < 3:
+        return DiagnosticRecord(
+            step_id="batch_structure", status="not_run",
+            method="pseudobulk PCA + silhouette by declared variable",
+            scope=f"{len(samples)} samples",
+            criterion=f"technical silhouette <= biological, or both <= {max_silhouette}",
+            result="fewer than 3 samples - batch structure is not assessable",
+            decision="cannot assess; do not conclude absence of batch effect",
+            caveats=["absence of evidence is not evidence of absence here"],
+            duration_s=round(time.time() - t0, 3))
+
+    # pseudobulk: mean expression per sample
+    pb = np.vstack([np.asarray(adata[adata.obs[sample_key] == s].X.mean(axis=0)).ravel()
+                    for s in samples])
+    pb = np.log1p(pb)
+    n_comp = min(n_pcs, len(samples) - 1, pb.shape[1])
+    coords = PCA(n_components=n_comp, random_state=42).fit_transform(pb)
+
+    observed: dict[str, Any] = {}
+    for group, variables in (("technical", technical), ("biological", biological)):
+        for v in variables:
+            labels = [sample_meta.get(s, {}).get(v) for s in samples]
+            keep = [i for i, l in enumerate(labels) if l is not None]
+            vals = [labels[i] for i in keep]
+            if len(set(vals)) < 2 or len(keep) < 3:
+                observed[v] = {"group": group, "silhouette": None,
+                               "note": "too few groups or samples"}
+                continue
+            observed[v] = {"group": group,
+                           "silhouette": round(float(silhouette_score(coords[keep], vals)), 4),
+                           "n_groups": len(set(vals))}
+
+    tech = [o["silhouette"] for o in observed.values()
+            if o["group"] == "technical" and o["silhouette"] is not None]
+    bio = [o["silhouette"] for o in observed.values()
+           if o["group"] == "biological" and o["silhouette"] is not None]
+    max_tech = max(tech) if tech else None
+    max_bio = max(bio) if bio else None
+
+    if max_tech is None:
+        passed, result = False, "no technical variable was assessable"
+    else:
+        passed = max_tech <= max_silhouette or (max_bio is not None and max_tech <= max_bio)
+        result = (f"max technical silhouette {max_tech:+.3f}"
+                  + (f", max biological {max_bio:+.3f}" if max_bio is not None else ""))
+
+    return DiagnosticRecord(
+        step_id="batch_structure",
+        method=f"pseudobulk per sample, log1p, PCA({n_comp}), silhouette by declared variable",
+        params={"n_pcs": n_comp, "max_silhouette": max_silhouette,
+                "technical": technical, "biological": biological},
+        scope=f"{len(samples)} samples pseudobulked over {_fmt(adata.n_obs)} observations",
+        observed=observed,
+        criterion=f"technical silhouette <= biological, or <= {max_silhouette}",
+        result=result,
+        decision=("no batch correction needed - technical origin does not dominate"
+                  if passed else
+                  "batch dominates; address before alignment rather than proceeding"),
+        status="pass" if passed else "fail",
+        duration_s=round(time.time() - t0, 3),
+    )
