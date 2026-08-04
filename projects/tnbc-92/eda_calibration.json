@@ -1,0 +1,53 @@
+{
+  "project_id": "tnbc-92",
+  "contract_version": "1.1",
+  "note": "which cohort_calibrated checks this cohort has derived or adopted, and on what evidence. the contract holds the default value; this file holds the warrant. a cohort with no such file inherits nothing - every cohort_calibrated check escalates.",
+  "status_values": {
+    "derived": "measured on this cohort",
+    "adopted": "taken as given for this cohort, with the basis stated",
+    "escalate": "recorded but not accepted - the check escalates as if absent"
+  },
+
+  "calibrated": {
+    "spatial_autocorrelation": {
+      "status": "adopted",
+      "morans_i_threshold": 0.3,
+      "min_markers_passing": 3,
+      "provenance": "notebooks/exploration/eda_biological_signal.ipynb - one subarray, CN1/C1, 1,075 tissue-selected spots, k=6, 999 permutations. 5 of the top 5 markers cleared 0.3.",
+      "scope": "n=1 of 281 samples",
+      "flagged_at_source": "eda_biological_signal.ipynb cell 22 states in writing that this is CN1/C1 only and that the median across all subarrays is needed for the registered report. the caveat was written down and then lost between the notebook and the gate.",
+      "open_risk": "eda_summary.json risks[1], open since 2026-04-01",
+      "cohort_recomputation": {
+        "date": "2026-08-03",
+        "scope": "281 of 281 samples, streamed, k=6, 999 permutations",
+        "record": "data/embeddings/_eda_cache/spatial_autocorrelation_cohort.json",
+        "result": "2 of the top 5 markers above 0.3 - COL1A1 0.532, ERBB2 0.363; CD79A 0.284, CD37 0.173, CD3D 0.165 fall below",
+        "reading": "CN1/C1 sits above the cohort median on 9 of 10 genes, with the largest gaps on immune markers. structure is present in stroma and tumour architecture; the immune markers collapse, which is coherent for a cohort containing immune-cold cases.",
+        "not_acted_on": "recorded, not adjudicated. the verdict on this cohort is unchanged pending a human decision on the criterion itself, which has no external basis to fall back to."
+      },
+      "does_not_invalidate": "the molecular encoder routing had independent support under encoder_validation.novae (spatial rho, effective rank, z-score tests). the recomputation invalidates one justification, not the routing."
+    },
+
+    "positive_markers": {
+      "status": "adopted",
+      "provenance": "notebooks/exploration/eda_biological_signal.ipynb - panel declared in project.json for this tissue and disease context; detection reported as percent of units with non-zero expression.",
+      "scope": "n=1 of 281 samples - cell 13 loads count_files[0] and cell 16 reuses the same frame, so every reported percentage is CN1/C1",
+      "caveat": "CN1/C1 is now known to sit above the cohort median on immune markers, so the immune and proliferation percentages carry the same optimistic bias the Moran's I did. the panel itself is corroborated independently by the clinical table."
+    },
+
+    "negative_markers": {
+      "status": "adopted",
+      "provenance": "same notebook and same single subarray as positive_markers. the controls are negative because of this cohort's disease context, and the clinical table corroborates that independently of the expression data.",
+      "scope": "n=1 of 281 samples",
+      "caveat": "percent-expressing is computed on log-normalised, per-gene batch-corrected values. if the correction shifts structural zeros off zero, the quantity being reported is not a detection rate. detection rates require raw integer counts."
+    },
+
+    "batch_structure": {
+      "status": "adopted",
+      "technical_silhouette_max": 0.1,
+      "provenance": "notebooks/exploration/eda_data_inventory.ipynb - pseudobulk per sample, PCA, silhouette by plate, lane and subtype across the cohort.",
+      "scope": "cohort-wide",
+      "observed": "every silhouette negative (technical -0.054 to -0.081, biological -0.053 to -0.143), so the absolute floor is not load-bearing here - the comparative half decides it."
+    }
+  }
+}

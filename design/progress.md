@@ -285,6 +285,182 @@ on that shortcut.
 not testable at niche resolution, while progression state is. Saying it closes the
 question; omitting it invites a reviewer to ask for stage.
 
+## 2026-08-04 · authority - a criterion declares where its warrant comes from
+
+The EDA flagged its own weakest check in writing and the flag was lost in
+propagation. `eda_biological_signal.ipynb` cell 22 states that the Moran's I
+result is CN1/C1 only and that the cohort median is needed for the registered
+report. `eda_summary.json` carries it as `risks[1]`. The gate read
+`spatial_autocorrelation_pass: true` and passed it. **The defect is caveat loss
+between the notebook and the gate, not a bad EDA.**
+
+Every check now declares an `authority`, and the gate branches on it:
+
+| authority | on this cohort | on a new cohort |
+|---|---|---|
+| `universal` | apply silently | apply silently |
+| `cohort_calibrated` | evaluate, carry provenance | **escalate.** do not inherit, do not substitute a default |
+| `advisory` | report | report. never contributes to a verdict |
+
+Same discipline as the encoder prior in `decisions.md` B7: a locked default
+escalates rather than silently substituting.
+
+### where the numbers live, and where the warrant lives
+
+`configs/eda_contract.json` keeps the thresholds as **defaults** and says, in
+cohort-free terms, why a check's criterion is calibrated rather than universal.
+The **warrant** - what was actually measured, on how many samples, by which
+notebook - lives in `{project_root}/eda_calibration.json`, because the warrant is
+precisely the thing a second cohort must not inherit. A cohort with no such file
+has calibrated nothing, so every `cohort_calibrated` check escalates. That is the
+correct default rather than a missing-file error.
+
+### classification
+
+| check | authority | basis |
+|---|---|---|
+| `cohort_counts` | universal | no threshold. a cohort with no units is not a cohort |
+| `positive_markers` | cohort_calibrated | panel and detection floor both declared per project |
+| `negative_markers` | cohort_calibrated | which genes count as absent is a property of the disease context |
+| `spatial_autocorrelation` | cohort_calibrated | `I > 0.3`, `3 of 5` - **no external basis**, see below |
+| `batch_structure` | cohort_calibrated | comparative half universal, the absolute floor is not |
+| `encoder_input_decision` | universal | resolved-or-not is a property of the field; integer-ness a property of the matrix |
+| `cross_modal_registration` | universal | boolean, no threshold |
+| `model_tissue_fit` | universal | fixed category vocabulary, not a measured bar |
+| `segmentation_qc` | universal | boolean; its platform minima are not in this contract |
+| `multi_section_alignment` | universal | boolean |
+
+`learned_checks` stay advisory and each now records the authority it **would**
+carry on promotion - `platform_floor` and `label_granularity` to
+`cohort_calibrated`, the other four to `universal` - so the classification is
+settled before the promotion rather than during it.
+
+**Provenance unknown is not a reason to promote.** `positive_markers`,
+`negative_markers`, the batch floor and the label-granularity NMI cut all have
+unstated sources; each is marked calibrated rather than assumed universal.
+
+### the spatial autocorrelation threshold has no external basis
+
+SVG literature selects by FDR-adjusted p or by rank, not by a raw magnitude bar.
+Multi-sample practice aggregates ranks or combines p-values, never takes a median.
+And the cohort-level question this check actually asks - *is this dataset
+structured enough to justify a spatial encoder* - has no published precedent at
+all. `0.3` and `3 of 5` are ours, defensible by argument only. That is exactly
+what `cohort_calibrated` is for.
+
+### the cohort recomputation, recorded not acted on
+
+281 of 281 samples, streamed, memory-flat, 8.8 min.
+`data/embeddings/_eda_cache/spatial_autocorrelation_cohort.json`.
+
+| gene | cohort median | q25 | q75 | CN1/C1 | delta |
+|---|---:|---:|---:|---:|---:|
+| COL1A1 | 0.532 | 0.440 | 0.606 | 0.596 | -0.064 |
+| ERBB2 | 0.363 | 0.262 | 0.469 | 0.431 | -0.069 |
+| CD79A | 0.284 | 0.136 | 0.430 | 0.389 | -0.105 |
+| CD37 | 0.173 | 0.091 | 0.318 | 0.323 | -0.150 |
+| CD3E | 0.139 | 0.059 | 0.268 | 0.318 | -0.179 |
+| CD3D | 0.165 | 0.076 | 0.280 | 0.495 | -0.330 |
+
+**2 of 5 above threshold against 5 of 5 on CN1/C1.** CN1/C1 sits above the cohort
+median on 9 of 10 genes, largest gaps on the immune markers. Structure is genuinely
+present in stroma and tumour architecture; the immune markers collapse, which is
+coherent for a cohort containing immune-cold cases.
+
+This closes `eda_summary.json:risks[1]`, open since April. It does **not**
+invalidate the molecular encoder routing, which had independent support under
+`encoder_validation.novae` - spatial rho, effective rank, z-score tests. It
+invalidates one justification.
+
+**The verdict on tnbc-92 is unchanged.** `check_eda_gate` still returns
+`proceed_with_caution` against a declared `proceed`, same three cautions, same six
+advisories. The recomputation is recorded in the calibration file with its
+provenance attached; adjudicating it is a human decision, and there is no external
+standard to fall back to.
+
+### escalation reuses the gate interrupt
+
+No second mechanism. A `cohort_calibrated` check with no calibration record
+becomes a caution, the verdict becomes `proceed_with_caution`, and the existing
+`escalate` node's `interrupt()` fires - pauses hard, checkpoints, resumes at that
+point, no default. The payload names what accepting forecloses, the same field
+that carries the weight in the `route_question` tie escalation.
+
+Verified on a scaffolded second cohort whose summary declares
+`spatial_autocorrelation_pass: true`: the gate refuses to read that as a pass,
+because the bar behind the boolean was calibrated somewhere else.
+
+### surface
+
+`omicstra gate` prints the authority per check plus an escalations block.
+`check_eda_gate` returns `authority` and `provenance` per check and an
+`escalations` list. `tests/` is new - 14 tests, including one asserting the
+langgraph state schema is module-scope rather than leaving it as a comment.
+
+---
+
+## recorded 2026-08-04 · three findings, no code change
+
+Each is a candidate contract entry. None is acted on today.
+
+### F1 · k=6 is a hex-grid assumption on a square lattice - **confirmed**
+
+Original ST (Ståhl 2016) is a cartesian lattice, not the hexagonal Visium packing
+that k=6 comes from. Measured on CN1/C1, median distance to the j-th neighbour:
+
+| j | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| dist | 158.6 | 161.0 | 162.7 | 165.1 | 214.8 | 218.3 | 239.6 | 242.6 |
+
+Four rook neighbours in a tight band at ~161, then four diagonals in two groups at
+~216 and ~241. So `KDTree.query(k=7)` returns **4 rook plus exactly 2 of the 4
+diagonals** - and it selects them by distance, consistently in the same two
+directions across the whole array, which is a stronger statement than a tie-break:
+it is a fixed directional anisotropy present in every weights matrix in the cohort.
+The niche unit inherits it (centre + 6 neighbours, k matched deliberately).
+
+**Do not change k.** It invalidates the niche unit and every downstream embedding.
+k is platform-derived, so it belongs in the contract as `cohort_calibrated` when
+the platform floor is promoted from advisory.
+
+### F2 · the marker percentages are also n=1
+
+`eda_biological_signal.ipynb` cell 13 loads `count_files[0]`; cell 16 reuses the
+same frame. Every reported percentage - ESR1 2.6%, PGR 0.9%, MKI67 31.2%, CD3D
+~8.9% - is CN1/C1, the subarray now known to sit above the cohort median on immune
+markers. The triple-negative call is safe because the clinical table corroborates
+it independently. The immune and proliferation percentages carry the same
+optimistic bias the Moran's I did.
+
+Recorded as a `scope` string on those values in `eda_calibration.json`. Not a
+recompute.
+
+**Sub-point, generalizable.** `% expressing = (vals > 0)` is computed on
+log-normalised, per-gene batch-corrected floats. If the correction shifts
+structural zeros off zero, the quantity is not a detection rate. This sits next to
+the existing counts-are-raw check: **detection rates require raw integer counts.**
+
+### F3 · the permutation p is a normal approximation
+
+`_morans_i` runs 999 permutations, then discards the empirical distribution and
+computes p from `norm.cdf` of a z against the permutation mean and variance. The
+published critique of Moran's I calibration is specifically about normal
+approximations. The empirical form costs nothing:
+
+```
+p = (1 + count(|I_perm| >= |I_obs|)) / (n_perm + 1)
+```
+
+This is `universal`, not cohort-derived. It also has leverage: the better criterion
+- *fraction of samples where >= 3 of 5 markers reach FDR < 0.05* - needs per-sample
+p-values, and `spatial_autocorrelation_streamed` currently stores only median,
+quartiles and range. Retaining empirical p is what makes that criterion computable
+later without reopening the methodology question now.
+
+**Next change after the demo.** Not implemented today.
+
+---
+
 ## known gaps, named honestly
 
 **The contract is a skeleton, not the contract.** `eda_contract.json` encodes 10

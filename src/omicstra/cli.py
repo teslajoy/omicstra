@@ -83,13 +83,21 @@ def gate(project_dir: Path | None, project_id: str | None) -> None:
     click.echo(f"verdict: {r.verdict}   declared: {r.declared_verdict}   "
                f"agrees: {r.agrees_with_declared}")
     for c in r.checks:
-        click.echo(f"  [{c.status:<14}] {'req' if c.required else '   '} {c.id}")
+        click.echo(f"  [{c.status:<14}] {'req' if c.required else '   '} "
+                   f"{c.id:<26} {c.authority}")
     for label, items in (("violations", r.violations), ("cautions", r.cautions),
                          ("advisories", r.advisories)):
         if items:
             click.echo(f"{label} ({len(items)}):")
             for i in items:
                 click.echo(f"  - {i}")
+    if r.escalations:
+        click.echo(f"escalations ({len(r.escalations)}) - no default, the system does not pick:")
+        for e in r.escalations:
+            click.echo(f"  - {e['check']}  {e['package_default']}")
+            click.echo(f"      why not inherited: {e['why_not_inherited']}")
+            if e.get("consequence"):
+                click.echo(f"      forecloses:        {e['consequence']}")
     raise SystemExit(0 if r.passed else 1)
 
 

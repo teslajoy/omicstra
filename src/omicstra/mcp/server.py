@@ -29,7 +29,11 @@ srv = MCPServer("omicstra")
     "Run the EDA admissibility gate for a cohort. Returns a verdict "
     "(proceed | proceed_with_caution | stop), per-check results, blocking "
     "violations, cautions, and advisories for checks the contract expects but "
-    "the cohort summary cannot answer. Reads committed artifacts only."))
+    "the cohort summary cannot answer. Every check carries an authority: "
+    "universal criteria are applied silently, cohort_calibrated criteria were "
+    "derived on some cohort and escalate rather than being inherited by a new "
+    "one, and advisory checks are reported but never change a verdict. Reads "
+    "committed artifacts only."))
 def check_eda_gate(project_id: str | None = None) -> dict:
     r = run_gate(project_id)
     return {
@@ -42,11 +46,13 @@ def check_eda_gate(project_id: str | None = None) -> dict:
             "failed": sum(c.status == "fail" for c in r.checks),
             "not_run": sum(c.status == "not_run" for c in r.checks),
             "not_applicable": sum(c.status == "not_applicable" for c in r.checks),
+            "escalated": sum(c.status == "escalate" for c in r.checks),
         },
         "checks": [c.model_dump() for c in r.checks],
         "violations": r.violations,
         "cautions": r.cautions,
         "advisories": r.advisories,
+        "escalations": r.escalations,
     }
 
 

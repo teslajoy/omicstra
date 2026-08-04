@@ -22,6 +22,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from . import eda_steps
+from .eda import cohort_escalations, load_calibration, load_contract
 from .records import DiagnosticRecord, GateRecord
 
 
@@ -38,6 +39,7 @@ class EDAState(TypedDict, total=False):
     verdict: str
     violations: list[str]
     cautions: list[str]
+    escalations: list[dict]
     approved: bool | None
     halted: bool
 
@@ -93,17 +95,37 @@ def profile(state: EDAState) -> dict:
 
 
 def gate(state: EDAState) -> dict:
-    """turn the records into a verdict. no new measurement happens here."""
+    """turn the records into a verdict. no new measurement happens here.
+
+    a step whose criterion is `cohort_calibrated` in the contract, on a cohort
+    with no calibration record for it, is NOT judged: the measurement stands,
+    but the bar it would be judged against was derived somewhere else. that
+    escalates instead, through the same interrupt a cautionary verdict takes.
+
+    a step the contract declares no check for is judged on its own status, as
+    before - an unregistered step is a missing step, not a missing criterion.
+    """
     records = state.get("records", [])
     violations, cautions = [], []
 
+    contract = load_contract()
+    calibration = load_calibration(state.get("project_id"))
+    escalations = cohort_escalations(contract, calibration, state.get("project_id", ""),
+                                     only={r["step_id"] for r in records})
+    escalated_steps = {e["check"] for e in escalations}
+
     for r in records:
+        if r["step_id"] in escalated_steps:
+            continue
         if r.get("status") == "fail":
             violations.append(f"{r['step_id']}: {r.get('result', 'failed')}")
         elif r.get("status") in ("not_run", "error"):
             cautions.append(f"{r['step_id']}: {r.get('result', 'not measured')}")
         for c in r.get("caveats", []):
             cautions.append(f"{r['step_id']}: {c}")
+
+    for e in escalations:
+        cautions.append(f"{e['check']}: escalated - {e['why_not_inherited']}")
 
     verdict = ("stop" if violations
                else "proceed_with_caution" if cautions
@@ -117,7 +139,7 @@ def gate(state: EDAState) -> dict:
         escalated=(verdict == "proceed_with_caution"),
     )
     return {"verdict": verdict, "violations": violations, "cautions": cautions,
-            "records": records + [rec.model_dump()]}
+            "escalations": escalations, "records": records + [rec.model_dump()]}
 
 
 def escalate(state: EDAState) -> dict:
@@ -125,11 +147,18 @@ def escalate(state: EDAState) -> dict:
 
     the system does not pick a default - that is what escalation means.
     """
+    escalations = state.get("escalations", [])
     answer = interrupt({
         "question": "The gate returned proceed_with_caution. Accept the cautions and proceed?",
         "verdict": state.get("verdict"),
         "cautions": state.get("cautions", []),
-        "consequence": "proceeding records these as accepted; they will not be raised again",
+        # a calibrated criterion this cohort never derived is the sharper ask:
+        # it names what accepting forecloses, not just what it risks.
+        "escalations": escalations,
+        "consequence": "proceeding records these as accepted; they will not be raised again"
+                       + ("; accepting an escalated check adopts a criterion calibrated on "
+                          "another cohort" if escalations else ""),
+        "no_default": "the system does not pick",
     })
     if isinstance(answer, bool):
         accepted = answer
