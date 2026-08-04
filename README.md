@@ -209,7 +209,7 @@ OHSU Knight Cancer Institute - Department of Biomedical Engineering - Creason La
 
 ```bibtex
 @software{sanati2026omicstra,
-  author  = {Sanati, Nasim and Watson, Cameron},
+  author  = {Sanati, Nasim},
   title   = {omicstra: cross-modal biomedical embedding alignment + reasoning via MCP orchestration},
   year    = {2026},
   url     = {https://github.com/teslajoy/omicstra},
