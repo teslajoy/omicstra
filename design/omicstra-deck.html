@@ -99,7 +99,8 @@ ul.tick li:before{content:"";position:absolute;left:0;top:15px;width:9px;height:
 .sg ul.tick li:before{background:var(--sage)}
 .rd ul.tick li:before{background:var(--red)}
 
-/* notes: hidden on screen, shown when you press N, printed with the slide */
+/* notes: hidden by default, shown when you press N. they print only if
+   body carries .notes-on - see design/README-deck.md for the presenter build. */
 .notes{display:none;font-size:14px;color:var(--mut);border-top:1px solid #E4E1E8;
        margin-top:12px;padding-top:10px;line-height:1.5}
 body.notes-on .notes{display:block}
@@ -109,9 +110,15 @@ body.notes-on .notes{display:block}
 
 @media print{
   body{background:#fff}
-  @page{size:1280px 720px;margin:0}
+  /* landscape 1280x720 at 96dpi = 13.333in x 7.5in. px page sizes are honoured
+     inconsistently across engines; inches are not. */
+  @page{size:13.333in 7.5in;margin:0}
   #stage{position:static;display:block}
-  .slide{display:flex!important;position:static;box-shadow:none;page-break-after:always}
+  /* fit() writes an inline transform:scale() for the screen. without this the
+     PDF inherits it and every slide prints shrunk into the top-left corner. */
+  .slide{display:flex!important;position:static;box-shadow:none;
+         page-break-after:always;transform:none!important}
+  .slide:last-child{page-break-after:auto}
   #hud{display:none}
 }
 </style>
@@ -194,6 +201,7 @@ body.notes-on .notes{display:block}
     <div class="card deep"><p style="font-size:20px">But biology isn't one question.</p>
       <h3 style="font-size:28px;margin-top:10px">It's many different questions.</h3></div>
   </div>
+  <div class="notes">Short slide, do not linger. The pivot line is: an agent cannot pick a tool without evidence about what each tool answers well.</div>
 </section>
 
 <!-- ============================================================ 4  hierarchy -->
@@ -424,7 +432,7 @@ body.notes-on .notes{display:block}
     <path d="M672 328 C684 312 690 292 696 272" stroke="#C08840" stroke-width="2" fill="none" marker-end="url(#a5)"/>
     <circle cx="718" cy="258" r="17" fill="#4A5D7E"/>
     <text x="718" y="265" text-anchor="middle" class="n5 w5" style="font-size:19px">+</text>
-    <text x="718" y="298" text-anchor="middle" class="d5">576-d molecular</text>
+    <text x="718" y="298" text-anchor="middle" class="d5">576-d</text>
     <text x="718" y="316" text-anchor="middle" class="d5">64 + 512</text>
     <path d="M736 250 C750 242 756 238 766 230" stroke="#4A5D7E" stroke-width="2" fill="none" marker-end="url(#a5)"/>
 
@@ -439,6 +447,7 @@ body.notes-on .notes{display:block}
   </svg>
   </figure>
   <p class="punch">The goal: learn how these different views relate.</p>
+  <div class="notes">The unit is the niche, not the spot - spot-level cross-patient retrieval collapsed to chance, which is why it moved. The + node: the two molecular encoders are concatenated into one 576-d vector and enter as one side; imaging enters as the other. Imaging and molecular are never concatenated with each other. On 'only H&amp;E enters': true for deployment and the headline z_he view; retrieval is the evaluation and necessarily scores both sides.</div>
 </section>
 
 <!-- ============================================================ 6  the plot -->
@@ -511,6 +520,7 @@ body.notes-on .notes{display:block}
   </div>
   </div>
   <p class="foot">There wasn't a single winner.</p>
+  <div class="notes">R4 AUC 0.859 / ARI 0.101. R5 0.246, R6 0.244, R1 0.234 on ARI. R6 carries ZERO of four pathways cross-patient. Careful claim: R4 is the only CONTRASTIVE run carrying all four - B1, B2 and B3 also reach 4/4, and R4 beats them on magnitude, about 1.5x on every pathway. Do not say 'the only run'.</div>
 </section>
 
 <!-- ============================================================ 7  confound -->
@@ -569,6 +579,7 @@ body.notes-on .notes{display:block}
   </div>
   <p class="foot">It tells you which computational method to trust for which biological question, and shows the
     measurement that put it there. Internally that is a routing table.</p>
+  <div class="notes">The reframe. It tells you which method to trust for which question, and shows the measurement that put it there. Internally that is a routing table.</div>
 </section>
 
 <!-- ============================================================ 9 -->
@@ -588,6 +599,7 @@ body.notes-on .notes{display:block}
   <div class="step"><span class="dot">4</span><span><b>Returns the result - plus why that method was selected</b>
     <span>the measurement, and whether a rule, a model or a human made the call</span></span></div>
   <p class="punch">Instead of an AI agent guessing, it consults evidence and can explain why.</p>
+  <div class="notes">Step 3 is the one that matters: routes on evidence, records a tie, or refuses. Step 4 is the reproducibility claim as a number - every decision labelled rule, model or human.</div>
 </section>
 
 <!-- ============================================================ 10  three questions -->
@@ -671,6 +683,7 @@ body.notes-on .notes{display:block}
     <text class="i10" x="48" y="622">which representation and which alignment method can answer it.</text>
   </svg>
   </figure>
+  <div class="notes">Same two assays, same data, three destinations. B4 is the counter-intuitive one: the best method for finding TLS-like regions is an untrained projection, and contrastive training makes it worse (z = 25.5). Expect a question there. The point: what changes is the level of abstraction the question lives at.</div>
 </section>
 
 <!-- ============================================================ 11 -->
@@ -692,6 +705,7 @@ body.notes-on .notes{display:block}
   </div>
   <p class="punch">The system improves without being rebuilt, because it accumulates what is known about which
     computational methods answer which biological questions.</p>
+  <div class="notes">A new method is admitted only if it beats EVERY existing route, not just the incumbent.</div>
 </section>
 
 <!-- ============================================================ 12 -->
@@ -731,6 +745,7 @@ body.notes-on .notes{display:block}
   </div>
   <p class="foot" style="color:#9FAAC2">teslajoy.github.io/omicstra/reports/internal/tnbc-92 &nbsp;&middot;&nbsp;
     github.com/teslajoy/gpath2vec &nbsp;&middot;&nbsp; funded by ResearchHub Foundation</p>
+  <div class="notes">Say this before anyone asks. Localising checkpoint and stromal programs from archived material is a PRECONDITION for morphology-based stratification, not an instance of it. Then read the quote - it is the summary of the talk. Report link: teslajoy.github.io/omicstra/reports/internal/tnbc-92/</div>
 </section>
 
 </div>
