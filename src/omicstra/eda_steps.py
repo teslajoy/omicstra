@@ -312,3 +312,75 @@ def batch_structure(adata, sample_key: str,
         status="pass" if passed else "fail",
         duration_s=round(time.time() - t0, 3),
     )
+
+
+def spatial_autocorrelation_streamed(load_sample_fn, sample_ids: list,
+                                     markers: list[str], k: int = 6, n_perm: int = 999,
+                                     threshold: float = 0.3, min_passing: int = 3,
+                                     seed: int = 42, progress=None) -> DiagnosticRecord:
+    """cohort-wide Moran's I without holding the cohort in memory.
+
+    each sample is loaded, measured and discarded, so memory is flat regardless of
+    cohort size. this is the one check the EDA notebooks never ran across samples -
+    every other cohort-level statistic loops all of them, but Moran's I was built
+    from a single subarray's weights matrix, which is why eda_summary.json carries
+    it as an open risk rather than a finding.
+
+    `load_sample_fn(sample_id) -> AnnData` keeps the adapter injected, so this is
+    not specific to any cohort.
+    """
+    t0 = time.time()
+    rng = np.random.default_rng(seed)
+    per_sample: dict[str, dict[str, float]] = {}
+    failed: list[str] = []
+
+    for n, sid in enumerate(sample_ids, 1):
+        try:
+            a = load_sample_fn(sid)
+            if a.n_obs < k + 1:
+                failed.append(f"{sid}: too few observations")
+                continue
+            W = _knn_weights(np.asarray(a.obsm["spatial"], dtype=float), k)
+            for g in markers:
+                if g in a.var_names:
+                    per_sample.setdefault(g, {})[str(sid)] = _morans_i(
+                        _dense(a[:, g].X).astype(float), W, n_perm, rng)["I"]
+            del a
+        except Exception as e:
+            failed.append(f"{sid}: {type(e).__name__}")
+        if progress:
+            progress(n, len(sample_ids), sid)
+
+    observed = {
+        g: {"median_I": round(float(np.median(list(v.values()))), 4),
+            "n_samples": len(v),
+            "q25": round(float(np.percentile(list(v.values()), 25)), 4),
+            "q75": round(float(np.percentile(list(v.values()), 75)), 4),
+            "min_I": round(float(min(v.values())), 4),
+            "max_I": round(float(max(v.values())), 4)}
+        for g, v in per_sample.items()
+    }
+    ranked = sorted(observed.items(), key=lambda kv: -kv[1]["median_I"])
+    top = ranked[:5]
+    n_pass = sum(1 for _, v in top if v["median_I"] > threshold)
+    passed = n_pass >= min_passing
+    n_used = len(sample_ids) - len(failed)
+    top_str = ", ".join(f"{g} {v['median_I']:.3f}" for g, v in top[:3])
+    result = f"{n_pass} of {len(top)} above threshold" + (f" (top: {top_str})" if top else "")
+
+    return DiagnosticRecord(
+        step_id="spatial_autocorrelation",
+        method=f"Moran's I, k-NN spatial weights (k={k}), {n_perm}-permutation null, "
+               f"computed per sample and reported as the cohort median",
+        params={"k": k, "n_perm": n_perm, "threshold": threshold,
+                "min_passing": min_passing, "seed": seed, "streamed": True},
+        scope=f"{n_used} of {len(sample_ids)} samples, {len(observed)} markers",
+        observed=observed,
+        criterion=f"median I > {threshold} for >= {min_passing} of the top 5 markers",
+        result=result,
+        decision=("spatial structure present -> route to a spatial encoder" if passed
+                  else "no spatial structure -> route to a non-spatial encoder"),
+        status="pass" if passed else "fail",
+        caveats=([f"{len(failed)} sample(s) not measured"] if failed else []),
+        duration_s=round(time.time() - t0, 1),
+    )
