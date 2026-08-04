@@ -28,7 +28,7 @@ they may trigger computation.
 
 ## 2. specification and oracle
 
-`docs/reports/tnbc-92/index.html` is both the specification and the test oracle. It already
+`docs/reports/internal/tnbc-92/index.html` is both the specification and the test oracle. It already
 contains the correct answer to every question the server must handle. The completion test for the
 interface is therefore not "does it execute" but **does the server return the value the report
 states, with the qualifying guard attached**.
@@ -42,7 +42,7 @@ test that references it.
 
 | rule | |
 |---|---|
-| `docs/reports/tnbc-92/index.html` | **read-only.** No edits, no regeneration, no reformatting |
+| `docs/reports/internal/tnbc-92/index.html` | **read-only.** No edits, no regeneration, no reformatting |
 | a value in the report that appears wrong | record it as a finding; do not correct the file |
 | the report needs to change | that is a separate, later task, performed after the build and re-baselined deliberately |
 | derived copies | permitted and expected — the evidence bundle (§10) is generated *from* it and from `runs/`, never back into it |
@@ -66,7 +66,7 @@ test that references it.
 
 `docs/images/architecture_diagram.png` documents the funded design. Six aspects changed during
 execution. Four are substitutions; two alter topology, and a system built from the figure alone
-would be wrong in those two respects. These are recorded in `docs/reports/tnbc-92/` but **not** in
+would be wrong in those two respects. These are recorded in `docs/reports/internal/tnbc-92/` but **not** in
 `proposal_deviations.md`, which is where reviewers look for scope changes.
 
 | # | figure | system | basis |
@@ -186,7 +186,7 @@ Every claim in the report traces through it.
                       notebooks/final/05_summary_umaps_v3.ipynb  [committed]
                                  │
                                  ▼
-                      docs/reports/tnbc-92/index.html  ◄── SPEC + ORACLE
+                      docs/reports/internal/tnbc-92/index.html  ◄── SPEC + ORACLE
                                  │
                                  ▼
                           routing table, 7 rows

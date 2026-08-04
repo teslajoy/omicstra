@@ -22,7 +22,7 @@ early vs late fusion is an experimental variable, not an assumption.
 
 ## seed cohort results (v3, 10-run grid)
 
-live report: **[teslajoy.github.io/omicstra/reports/tnbc-92/](https://teslajoy.github.io/omicstra/reports/tnbc-92/)**
+live report: **[teslajoy.github.io/omicstra/reports/internal/tnbc-92/](https://teslajoy.github.io/omicstra/reports/internal/tnbc-92/)**
 
 evaluated on **35,594 niches across 14 held-out TNBC patients** (zero patient leakage across train / val / test). 6 contrastive runs (R1-R6) + 4 classical baselines (B1-B4):
 
@@ -189,7 +189,7 @@ every run writes `runs/{project_id}/{run_id}/` - config, QC, embeddings, alignme
 
 ## deliverables
 
-- [x] v3 10-run alignment grid on TNBC-92 ([live report](https://teslajoy.github.io/omicstra/reports/tnbc-92/))
+- [x] v3 10-run alignment grid on TNBC-92 ([live report](https://teslajoy.github.io/omicstra/reports/internal/tnbc-92/))
 - [ ] pip-installable MCP server (MIT)
 - [ ] second-modality plug-in via `MODALITY_TEMPLATE.md` (target: CODA or CyCIF)
 

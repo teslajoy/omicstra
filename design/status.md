@@ -197,4 +197,4 @@ from the directory name.
 3. first generated step: `s05_st_spatial_autocorr` - the one whose output is an edge, and where the n=1 defect lives
 4. remaining EDA gaps to encode: input-provenance per check · itemised funnel · platform floor · 3-way encoder routing · label-granularity NMI · annotation coverage
 5. packaging: `configs/` sits at repo root so it is not inside the wheel. a non-editable install needs it under `src/omicstra/` or declared as package data
-6. `docs/reports/tnbc-92/index.html` remains **read-only** - it is the spec and the oracle
+6. `docs/reports/internal/tnbc-92/index.html` remains **read-only** - it is the spec and the oracle

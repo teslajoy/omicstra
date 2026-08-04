@@ -495,4 +495,4 @@ repo from minute one and the trace/commit coupling has something to attach to.
    floor · 3-way encoder routing · label-granularity NMI · annotation coverage.
 7. **packaging** - `configs/` sits at repo root, so it is not inside the wheel.
    a non-editable install needs it under `src/omicstra/` or declared as package data.
-8. `docs/reports/tnbc-92/index.html` stays **read-only** - spec and oracle.
+8. `docs/reports/internal/tnbc-92/index.html` stays **read-only** - spec and oracle.
