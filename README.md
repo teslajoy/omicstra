@@ -104,13 +104,13 @@ omicstra/
 │       ├── program.md               # karpathy loop - search space + constraints + metric
 │       └── eda_summary.md           # EDA gate output
 │
-├── src/
-│   ├── agents/                      # CLAUDE.md - orchestrator - he_agent - st_agent
-│   ├── tools/                       # embed_he - embed_st - align - retrieve - evaluate
-│   ├── models/                      # CLAUDE.md - encoders/ - alignment.py
-│   ├── eval/                        # CLAUDE.md - h1 - h2 - h3
+├── src/omicstra/                    # the pip-installable package - src layout
+│   ├── agents/                      # orchestrator - he_agent - st_agent - alignment - eval
+│   ├── adapters/                    # a cohort's files -> AnnData
 │   ├── mcp/                         # server.py
-│   └── utils/                       # manifest - pairing - notebook_gen
+│   ├── eda.py  eda_steps.py  eda_graph.py    # the gate - steps - subgraph
+│   ├── records.py  guards.py        # the record contract - construct-validity guards
+│   └── settings.py  config.py  stages.py  artifacts.py  cli.py
 │
 ├── config/
 │   ├── qc_params.json               # K1 editable asset
