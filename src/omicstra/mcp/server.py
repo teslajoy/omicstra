@@ -141,6 +141,83 @@ def run_eda_step(step: str, n_perm: int = 199) -> dict:
     return d
 
 
+# --- a picture of the caveat ----------------------------------------------
+@srv.tool(description=(
+    "Plot Moran's I spatial autocorrelation for this cohort's marker genes, comparing "
+    "the single subarray the recorded EDA measured against the median across every "
+    "sample in the cohort. Use this when asked how well a spatial-signal result "
+    "generalises, whether a check rested on one sample, or to see the evidence behind "
+    "the spatial_autocorrelation gate check. Returns a chart plus the counts above "
+    "threshold for each scope."))
+def plot_spatial_autocorrelation(project_id: str | None = None) -> list:
+    import base64
+    import io
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    from mcp.types import ImageContent, TextContent
+
+    s = load_summary(project_id)
+    single = (s.get("morans_i_summary") or {})
+    recorded = single.get("results") or {}
+    cache = (settings.resolve(settings.data_dir)
+             / "embeddings/_eda_cache/spatial_autocorrelation_cohort.json")
+    if not recorded:
+        return [TextContent(type="text", text="no morans_i_summary recorded for this cohort")]
+    cohort = json.loads(cache.read_text())["observed"] if cache.exists() else {}
+
+    thr = 0.3
+    genes = sorted(recorded, key=lambda g: -(cohort.get(g, {}).get("median_I")
+                                             if cohort.get(g) else recorded[g]["I"]))
+    sns.set_theme(style="ticks", palette="Set2", context="notebook")
+    fig, ax = plt.subplots(figsize=(7.2, 0.42 * len(genes) + 1.5))
+    y = range(len(genes))
+
+    for i, g in enumerate(genes):
+        c = cohort.get(g)
+        if c:
+            ax.plot([c["q25"], c["q75"]], [i, i], lw=7, color="#6FA3B8", alpha=.45,
+                    solid_capstyle="butt", zorder=1)
+            ax.plot(c["median_I"], i, "o", ms=8, color="#4A5D7E", zorder=3,
+                    label="cohort median (281 samples)" if i == 0 else None)
+        ax.plot(recorded[g]["I"], i, "D", ms=7, color="#C97B84", zorder=4,
+                label=f"{single.get('subarray', 'single subarray')} only (n=1)" if i == 0 else None)
+
+    ax.axvline(thr, color="#B5544F", ls="--", lw=1.4, zorder=2)
+    ax.text(thr, len(genes) - .3, f"  threshold {thr}", color="#B5544F", fontsize=9, va="top")
+    ax.set_yticks(list(y)); ax.set_yticklabels(genes)
+    ax.set_xlabel("Moran's I"); ax.invert_yaxis()
+    ax.set_title("the check that gates the molecular encoder\n"
+                 "recorded on one subarray, recomputed across the cohort", fontsize=11)
+    ax.legend(fontsize=9, frameon=False, loc="lower right")
+    sns.despine(ax=ax)
+    fig.tight_layout()
+    buf = io.BytesIO(); fig.savefig(buf, format="png", dpi=130); plt.close(fig)
+
+    # the criterion is "top 5 markers" ranked WITHIN a scope, so each scope ranks
+    # by its own values. ranking both by the cohort would silently restate the
+    # recorded result on a different marker set.
+    top_single = sorted(recorded, key=lambda g: -recorded[g]["I"])[:5]
+    n_single = sum(1 for g in top_single if recorded[g]["I"] > thr)
+    msg = (f"Top 5 markers above I > {thr}: "
+           f"{n_single} of 5 on {single.get('subarray', 'the recorded subarray')} alone")
+    if cohort:
+        top_cohort = sorted(cohort, key=lambda g: -cohort[g]["median_I"])[:5]
+        n_cohort = sum(1 for g in top_cohort if cohort[g]["median_I"] > thr)
+        msg += f", {n_cohort} of 5 across all {cohort[top_cohort[0]]['n_samples']} samples."
+    else:
+        n_cohort = None
+        msg += ". No cohort-wide recomputation is cached."
+    if cohort and n_cohort is not None and n_cohort < n_single:
+        msg += (" The recorded value rests on one sample and does not hold cohort-wide - "
+                "the criterion behind it is calibrated, not universal.")
+    return [ImageContent(type="image", data=base64.b64encode(buf.getvalue()).decode(),
+                         mimeType="image/png"),
+            TextContent(type="text", text=msg)]
+
+
 # --- resources: URI-addressed data, not model-invoked ---------------------
 @srv.resource("omicstra://eda-contract", mime_type="application/json",
               description="the generalizable EDA gate contract - thresholds and "
