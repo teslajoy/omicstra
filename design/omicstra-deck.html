@@ -555,8 +555,11 @@ body.notes-on .notes{display:block}
     </div>
   </div>
   <p class="punch">This is structural in any study where several regions come from one patient.</p>
-  <div class="notes">Say the BForePC line here: LG PanIN, HG PanIN and PDAC ROIs come from the same block, same
-    patient, by design. This is the check to run before trusting any comparison across them.</div>
+  <div class="notes">The ratio is two permutation z-scores on the same space, 10,000 label shuffles each:
+    how much more similar niches are when they share a tumour immune microenvironment class, over how much
+    more similar they are when they share a patient. Below the unaligned floor means the space is reading
+    provenance. Without this diagnostic B1 would have been selected - it passed both axes on slide 6 and
+    scored 4 of 4 on pathway transfer. Source: eval/H2/metrics_h2_ci.json, block h2c.</div>
 </section>
 
 <!-- ============================================================ 8 -->

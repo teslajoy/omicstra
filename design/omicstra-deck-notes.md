@@ -118,9 +118,10 @@ R6 0.547   R5 0.497   R1 0.461   R4 0.376   unaligned floor 0.137   B1 0.071
 Below the floor means the space is reading provenance, not biology. **Without this
 diagnostic B1 would have been selected.**
 
-**The BForePC line.** LG PanIN, HG PanIN and PDAC ROIs come from the same block, same
-patient, by design. This is the check to run before trusting any comparison across them.
-This is structural in any study where several regions come from one patient.
+**The generalisation.** This is structural in any study where several regions come from
+one patient - which is most spatial designs. If several ROIs are cut from one block, a
+method can score well by learning the block rather than the biology, and only a
+confound diagnostic separates the two.
 
 *Source: `H2/metrics_h2_ci.json`, block `h2c`.*
 
