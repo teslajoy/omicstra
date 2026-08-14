@@ -63,7 +63,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13
 
 <div class="header">
   <div class="meta">
-    <span class="now">today: Jul 24 2026</span>
+    <span class="now">today: Aug 14 2026</span>
     <span>build due Oct 31 &middot; paper due Dec 31 2026</span>
     <span>42 weeks</span>
   </div>
@@ -88,7 +88,7 @@ body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:13
 
 <script>
 const W = 42;
-const NOW = 18.57;  // Jul 24 2026, weeks from Mar 16 origin
+const NOW = 21.57;  // Aug 14 2026, weeks from Mar 16 origin
 
 function wkDate(i) {
   const d = new Date(2026, 2, 16);
@@ -105,10 +105,10 @@ const phases = [
    dels:['analyses workflows','UNI2 extraction','Novae extraction','manifest.db']},
   {name:'Phase 3\nalignment + loops', dates:'May 1 - May 29',  start:6.7, len:4,   buf:1.5, color:'#534AB7',
    dels:['K1: QC threshold loop','K2: alignment hyperparam loop','winner.json','checkpoint']},
-  {name:'Phase 4\nevaluation', dates:'May 22 - Aug 31', start:9.7, len:14.3,buf:0,   color:'#993C1D',
-   dels:['K3: retrieval optimization loop','h1 - h2 - h3','Opus synthesis','UMAP plots']},
-  {name:'Phase 5\nrefine design',      dates:'Jun 12 - Aug 31', start:12.7,len:11.3,buf:0,   color:'#2D7A8A',
+  {name:'Phase 4\nrefine design',      dates:'Jun 12 - Sep 30', start:12.7,len:15.59,buf:4.43,   color:'#2D7A8A',
    dels:['refine design','encoder swap','baselines']},
+  {name:'Phase 5\nevaluation', dates:'May 22 - Sep 30', start:9.7, len:18.59,buf:4.43,   color:'#993C1D',
+   dels:['K3: retrieval optimization loop','h1 - h2 - h3','Opus synthesis','UMAP plots']},
   {name:'Phase 6\nMCP + packaging',dates:'Jun 26 - Oct 31', start:14.0,len:18.71,buf:0,   color:'#0F6E56',
    dels:['MCP server','generalizable src/ package','best run notebook','release'],
 },
