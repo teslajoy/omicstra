@@ -1,0 +1,154 @@
+{
+  "contract_version": "1.0",
+  "source": "docs/v2/tnbc92_routing_matrix.md - routing rule shape, generalized",
+  "note": "generalizable. the question taxonomy, the outcome vocabulary, and the rules that turn evidence into an outcome. no cohort measurements - those live in {project_root}/routing_evidence.json, because a second cohort must not inherit them.",
+  "authority": {
+    "note": "same split as the EDA gate. what a routing decision rests on decides whether a new cohort may reuse it.",
+    "values": {
+      "rule": "the decision followed deterministically from the contract plus the cohort's recorded evidence. no model judgement entered it",
+      "model": "a model mapped natural language onto a task_id. the route that followed was still a rule",
+      "human": "escalated - the system declined to pick and a person recorded the choice"
+    },
+    "why_this_matters": "the routing rule is the same on every cohort; the evidence that resolves it is not. a cohort with no routing_evidence.json cannot be routed, and the system says so rather than reusing another cohort's winner."
+  },
+  "outcomes": {
+    "recommend": "one candidate leads and its interval does not overlap the runner-up's",
+    "tie": "two or more candidates overlap within the declared interval. the system names all of them and does not pick",
+    "refuse": "the evidence contraindicates the named method, or no candidate clears the cohort's floor for this task",
+    "disambiguate": "the question maps onto more than one task family. the caller resolves it with the human before calling again - this tool is never asked to guess a level"
+  },
+  "decision_rules": {
+    "tie_rule": {
+      "id": "interval_overlap",
+      "description": "candidates whose recorded interval overlaps the leader's are tied with it",
+      "applies_to": "any metric carrying an interval",
+      "authority": "rule",
+      "basis": "an ordering that a bootstrap interval does not separate is not an ordering. naming a single winner inside the overlap invents a precision the measurement does not have"
+    },
+    "refusal_rule": {
+      "id": "below_floor",
+      "description": "a method whose metric falls below the cohort's declared raw-modality floor is contraindicated for that task",
+      "authority": "rule",
+      "basis": "a floor is the value the raw un-aligned modality already achieves. a method scoring under it has removed information rather than organized it - it is worse than doing nothing, not merely worse than the leader",
+      "forecloses": "reporting a method as the weakest option when the correct report is that it is anti-helpful"
+    },
+    "reference_rule": {
+      "id": "below_reference",
+      "description": "a reference is REPORTED, never decisive. it is the un-aligned modality's own score, carried so a reader can see what alignment bought. when the leader falls below it that shortfall leads the rationale; when the leader clears it, nothing is claimed",
+      "authority": "rule",
+      "status_on_this_contract": "no live instance on tnbc-92 - both declared references sit below their leaders. exercised only by fixture in tests/test_routing.py",
+      "basis": "a floor says the method removed information and is disqualifying. a reference says what the un-aligned modality already achieved and is not",
+      "interval_asymmetry": "a reference is typically a single point estimate while candidates carry intervals. it therefore cannot be adjudicated by the tie rule, and 'clears the reference' must never be stated as a separated claim. report the shortfall, do not resolve on the absence of one"
+    },
+    "multi_metric_rule": {
+      "id": "metrics_must_agree",
+      "description": "a task may declare more than one metric. resolve each independently; if every metric names the same leader, recommend it. if they name different leaders, escalate - do not average, rank or pick one metric",
+      "authority": "rule",
+      "basis": "two metrics that disagree are measuring two different things, and the task has not said which one it wants. picking either silently answers a question the caller did not ask. this is the interval rule one level up: a set of measurements that does not order the candidates is not an ordering",
+      "forecloses": "a leaderboard that hides a tradeoff by reporting whichever axis the winner happens to lead on"
+    }
+  },
+  "task_families": [
+    {
+      "id": "cross_modal_retrieval",
+      "level": "measurement",
+      "asks": "given one modality's representation of a unit, find the matching unit in the other modality",
+      "hypothesis": "H1",
+      "required_guards": [
+        "cross_subject_eval"
+      ]
+    },
+    {
+      "id": "structural_agreement",
+      "level": "measurement",
+      "asks": "do the two modalities' representations agree in geometry, not merely retrieve each other",
+      "hypothesis": "H1",
+      "required_guards": [
+        "cross_subject_eval"
+      ]
+    },
+    {
+      "id": "tissue_state_grouping",
+      "level": "structure",
+      "asks": "group units into recurring tissue states within a section",
+      "hypothesis": "H2-A",
+      "required_guards": [
+        "label_granularity",
+        "paired_subject_z"
+      ]
+    },
+    {
+      "id": "subject_identity_suppression",
+      "level": "cohort",
+      "asks": "represent biology while suppressing subject identity, for analysis pooled across subjects",
+      "hypothesis": "H2-C",
+      "required_guards": [
+        "paired_subject_z",
+        "raw_floor"
+      ]
+    },
+    {
+      "id": "pathway_transfer",
+      "level": "program",
+      "asks": "carry a pathway-level signal onto subjects never seen in training",
+      "hypothesis": "H3",
+      "required_guards": [
+        "cross_subject_eval",
+        "circularity_view"
+      ]
+    },
+    {
+      "id": "pathway_discrimination",
+      "level": "program",
+      "asks": "distinguish which of several pathways drives a specific unit, rather than detect pathway signal at all",
+      "hypothesis": "H3-DAG",
+      "required_guards": [
+        "circularity_view",
+        "off_diagonal_specificity"
+      ]
+    },
+    {
+      "id": "morphology_decode",
+      "level": "structure",
+      "asks": "predict a molecular signature from imaging alone, with no molecular assay at prediction time",
+      "hypothesis": "H2-B.2",
+      "required_guards": [
+        "cross_subject_eval",
+        "untrained_control"
+      ]
+    }
+  ],
+  "guards": {
+    "cross_subject_eval": "held-out subjects only. within-subject evaluation reports subject identity as if it were method quality",
+    "label_granularity": "compute NMI(label, subject_id) before any clustering metric. a subject-level label makes clustering a subject-classification task",
+    "paired_subject_z": "pair every clustering or similarity claim with a biology-z vs subject-z test. a method can raise both",
+    "raw_floor": "compare against what the raw un-aligned modality already achieves, not only against other methods",
+    "circularity_view": "a view whose input encodes the signal being tested is circular. report the view that does not",
+    "off_diagonal_specificity": "detecting a signal and attributing it to the right source are different claims. a method with high off-diagonal similarity does the first and not the second",
+    "untrained_control": "include an untrained projection. a signal an untrained projection preserves was in the encoder, not created by training"
+  },
+  "evidence_contract": {
+    "note": "what {project_root}/routing_evidence.json must supply for a cohort to be routable. a missing task family is not routed - it escalates.",
+    "required_per_task": [
+      "candidates",
+      "metric",
+      "source"
+    ],
+    "required_per_candidate": [
+      "id",
+      "value"
+    ],
+    "optional_per_candidate": [
+      "ci",
+      "note"
+    ],
+    "absent_cohort_file": "no routing. the system reports that this cohort has no recorded evaluation and declines to reuse another cohort's routing table.",
+    "multi_metric_tasks": "a task with more than one axis declares `metrics: [...]`, each block carrying its own metric, candidates, higher_is_better and optional floor/reference. a single-axis task keeps the flat shape and is read as one block."
+  },
+  "how_a_question_reaches_a_task": {
+    "note": "this tool does not parse natural language. the caller (a model) reads task_families, picks the task_id, and asks the human when the level is genuinely ambiguous. what follows the task_id is deterministic.",
+    "model_step": "question -> task_id, plus optional proposed_method when the asker names one",
+    "rule_step": "task_id -> route, ties, refusal, guards - resolved from recorded evidence alone",
+    "why_split_here": "the same question can be asked a hundred ways and must reach the same route. keeping interpretation in the model and resolution in the contract is what makes a model swap change fluency without changing a decision"
+  }
+}

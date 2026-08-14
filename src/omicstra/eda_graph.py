@@ -21,9 +21,9 @@ from typing import Any, Callable, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from . import eda_steps
-from .eda import cohort_escalations, load_calibration, load_contract
-from .records import DiagnosticRecord, GateRecord
+from omicstra import eda_steps
+from omicstra.eda import cohort_escalations, load_calibration, load_contract
+from omicstra.records import DiagnosticRecord, GateRecord
 
 
 # --- state -----------------------------------------------------------------

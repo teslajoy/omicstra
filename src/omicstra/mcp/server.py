@@ -17,9 +17,9 @@ import json
 
 from mcp.server import MCPServer
 
-from ..config import ProjectConfig
-from ..eda import load_contract, load_summary, run_gate
-from ..settings import settings
+from omicstra.config import ProjectConfig
+from omicstra.eda import load_contract, load_summary, run_gate
+from omicstra.settings import settings
 
 srv = MCPServer("omicstra")
 
@@ -80,6 +80,94 @@ def describe_data_structure(project_id: str | None = None) -> dict:
     }
 
 
+# --- routing: which method can answer which biological question -----------
+@srv.tool(description=(
+    "List the biological question types this cohort's evaluation can route. Call "
+    "this FIRST when asked what the system can answer, or before routing, to pick "
+    "the task_id. Each family states the level of biological abstraction it lives "
+    "at - measurement, structure, cohort or program - because the same words can "
+    "sit at two levels and they route to different methods. If a question could "
+    "belong to two families, ask the user which they mean rather than guessing; "
+    "this server will not guess for you."))
+def list_task_families(project_id: str | None = None) -> dict:
+    from omicstra.routing import list_task_families as _list
+    return _list(project_id=project_id)
+
+
+@srv.tool(description=(
+    "Route one biological question to the method this cohort's evidence supports, "
+    "and say why. You choose the task_id from list_task_families; everything after "
+    "that is resolved by rule from recorded measurements - no judgement of yours "
+    "enters it.\n\n"
+    "Returns a selection record whose `resolution` field is one of five, and they "
+    "are not interchangeable: `recommend` - one method leads on every declared "
+    "axis; `tie` - the measurement does not order the candidates, so the system "
+    "declines to pick; `escalate` - the rules cannot resolve it at all, because "
+    "the declared axes disagree or this cohort has no evidence; `refuse` - the "
+    "evidence contraindicates the method the user named; `override_ack` - the "
+    "user was refused and chose to proceed, recorded as dissent.\n\n"
+    "A tie is a statement about the measurement; an escalation is a statement "
+    "about the rules. Report them differently.\n\n"
+    "WHEN REPORTING THIS TO THE USER: state the scope sentence from `caveats` "
+    "BEFORE the recommendation, and reproduce `why` in full including any "
+    "shortfall it opens with. The `why` field sometimes leads with a comparison "
+    "against the raw un-aligned modality - that sentence is the finding, not a "
+    "hedge, and must not be moved to the end or summarised away. Report a tie as "
+    "a tie; do not pick a winner the evidence declined to pick.\n\n"
+    "Set proposed_method when the user names a method themselves. Set "
+    "override_refusal only when the user has seen a refusal and asked to proceed "
+    "anyway - that is recorded as dissent against the evidence."))
+def route(task_id: str, question: str = "", proposed_method: str | None = None,
+          override_refusal: bool = False, project_id: str | None = None) -> dict:
+    from omicstra.routing import resolve
+    r = resolve(task_id, question=question, proposed_method=proposed_method,
+                override=override_refusal, project_id=project_id)
+    d = r.model_dump()
+    d["resolution"] = ("override_ack" if (r.contraindicated and r.actor == "human")
+                       else "refuse" if r.contraindicated
+                       else "escalate" if r.escalated
+                       else "tie" if r.tie else "recommend")
+    d["headline"] = r.headline()
+    return d
+
+
+@srv.tool(description=(
+    "Summarise the decision ledger for this cohort: how many routing decisions "
+    "were taken, how they resolved, and what each rested on. Use when asked what "
+    "the system has decided, how reproducible it is, or how much was rule-resolved "
+    "versus escalated to a human. Note the boundary it reports: mapping a question "
+    "onto a task_id happens in the calling model and is NOT counted here - only "
+    "task_id to route is."))
+def decision_record(project_id: str | None = None) -> dict:
+    from omicstra.routing import decision_record as _rec
+    return _rec(project_id=project_id)
+
+
+@srv.tool(description=(
+    "Show the evidence behind a routing decision as a chart. Use when the user "
+    "asks to see the evidence, the numbers, the intervals, or why a task tied or "
+    "escalated. Renders the candidates for one task_id with their confidence "
+    "intervals, the floor and reference drawn as lines, and any contraindicated "
+    "method greyed out and labelled.\n\n"
+    "The chart is drawn from the same evidence file the route resolves against, "
+    "so it cannot disagree with what `route` returned. A task with two axes gets "
+    "two panels - that is what makes an escalation visible: you can see the axes "
+    "name different leaders."))
+def plot_evidence(task_id: str, project_id: str | None = None) -> list:
+    import base64
+
+    from mcp.types import ImageContent, TextContent
+
+    from omicstra.figures import evidence_plot
+    try:
+        path, caption = evidence_plot(task_id, project_id=project_id)
+    except KeyError as e:
+        return [TextContent(type="text", text=str(e))]
+    return [ImageContent(type="image", mimeType="image/png",
+                         data=base64.b64encode(path.read_bytes()).decode()),
+            TextContent(type="text", text=caption)]
+
+
 # --- compute-lite: run a real EDA step on cached data ---------------------
 @srv.tool(description=(
     "Run a real exploratory-data-analysis step on this cohort's actual measurements "
@@ -93,8 +181,8 @@ def describe_data_structure(project_id: str | None = None) -> dict:
     "stored verdict."))
 def run_eda_step(step: str, n_perm: int = 199) -> dict:
     import anndata as ad
-    from .. import eda_steps as st
-    from ..eda import load_summary
+    from omicstra import eda_steps as st
+    from omicstra.eda import load_summary
 
     cache = settings.resolve(settings.data_dir) / "embeddings/_eda_cache/cohort_sample.h5ad"
     if not cache.exists():
@@ -224,6 +312,23 @@ def plot_spatial_autocorrelation(project_id: str | None = None) -> list:
                           "verdict logic, no cohort measurements")
 def eda_contract() -> str:
     return json.dumps(load_contract(), indent=2)
+
+
+@srv.resource("omicstra://routing-contract", mime_type="application/json",
+              description="the generalizable routing contract - task taxonomy, "
+                          "outcome vocabulary and decision rules, no cohort numbers")
+def routing_contract() -> str:
+    from omicstra.routing import load_routing_contract
+    return json.dumps(load_routing_contract(), indent=2)
+
+
+@srv.resource("omicstra://project/{project_id}/routing-evidence",
+              mime_type="application/json",
+              description="the selected cohort's measured routing evidence - the "
+                          "numbers a route resolves against")
+def routing_evidence(project_id: str) -> str:
+    from omicstra.routing import load_routing_evidence
+    return json.dumps(load_routing_evidence(project_id), indent=2)
 
 
 @srv.resource("omicstra://project/{project_id}/eda-summary",

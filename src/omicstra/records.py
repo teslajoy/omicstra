@@ -14,7 +14,10 @@ three properties fall out of putting `actor`, `inputs` and `outputs` on the base
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -26,6 +29,21 @@ Kind = Literal["transform", "diagnostic", "gate", "selection"]
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def stable_id(*parts: Any, n: int = 12) -> str:
+    """content id over the INPUTS to a decision. deterministic everywhere.
+
+    the id exists to answer one question - did swapping the model change any
+    decision - and that only works if it is stable across machines, models and
+    commits. so `started_at`, `duration_s` and `code_version` are deliberately
+    not hashed: an id that moved on every commit could not support the
+    comparison it exists for.
+
+    two ledgers join on this id and either differ on outcome, or do not differ.
+    """
+    canon = json.dumps(parts, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(canon.encode()).hexdigest()[:n]
 
 
 class ArtifactRef(BaseModel):
@@ -42,6 +60,10 @@ class Record(BaseModel):
     kind: Kind
     status: Status = "pass"
     actor: Actor = "deterministic"
+
+    # content id over this decision's inputs - see stable_id(). set by the
+    # producer, because each kind hashes a different tuple.
+    record_id: str = ""
 
     params: dict[str, Any] = Field(default_factory=dict)
     inputs: list[ArtifactRef] = Field(default_factory=list)
@@ -143,30 +165,74 @@ class SelectionRecord(Record):
     candidates: list[Candidate] = Field(default_factory=list)
     chosen: str | None = None
     tie: bool = False
+    # who is actually tied. `candidates` carries every method that was scored,
+    # including ones that fell below the floor or were contraindicated, so it
+    # must not be used to name a tie - that reports a method the evidence
+    # separated, or excluded, as though it were defensible.
+    tied: list[str] = Field(default_factory=list)
+    # a tie and an escalation both decline to pick, and they are not the same
+    # thing. a tie means the measurement does not order the candidates; an
+    # escalation means the contract's rules cannot resolve the task at all -
+    # the axes disagree, or this cohort has no evidence. same field name as
+    # GateRecord, because it is the same idea one layer down.
+    escalated: bool = False
     contraindicated: bool = False
     why: str = ""
     consequence: str = ""               # what choosing this forecloses downstream
 
     def headline(self) -> str:
         if self.contraindicated:
-            return f"{self.step_id}: contraindicated — {self.why}"
+            verb = "overridden" if self.actor == "human" else "contraindicated"
+            return f"{self.step_id}: {verb} — {self.why}"
+        if self.escalated:
+            return f"{self.step_id}: escalated — {self.why}"
         if self.tie:
-            names = ", ".join(c.name for c in self.candidates)
-            return f"{self.step_id}: tie between {names} — escalated"
+            src = self.tied or [c.name for c in self.candidates]
+            names = " | ".join(dict.fromkeys(src))
+            return f"{self.step_id}: tie between {names} — the system does not pick"
         return f"{self.step_id}: {self.chosen}"
 
 
 AnyRecord = TransformRecord | DiagnosticRecord | GateRecord | SelectionRecord
 
 
-class RecordStore:
-    """the ledger. append-only within a run."""
+_KINDS: dict[str, type[Record]] = {
+    "transform": TransformRecord,
+    "diagnostic": DiagnosticRecord,
+    "gate": GateRecord,
+    "selection": SelectionRecord,
+}
 
-    def __init__(self) -> None:
+
+class RecordStore:
+    """the ledger. append-only within a run.
+
+    optionally file-backed: a store bound to a path appends each record as it
+    arrives and reloads what is already there on open. that is what makes the
+    ledger survive a process boundary - the MCP server answers each tool call in
+    its own call frame, and a purely in-memory ledger would report one decision
+    however many had actually been taken.
+    """
+
+    def __init__(self, path: str | Path | None = None) -> None:
         self._records: list[Record] = []
+        self.path = Path(path) if path else None
+        if self.path and self.path.exists():
+            self._reload()
+
+    def _reload(self) -> None:
+        assert self.path is not None
+        for line in self.path.read_text().splitlines():
+            if line.strip():
+                d = json.loads(line)
+                self._records.append(_KINDS.get(d.get("kind", ""), Record).model_validate(d))
 
     def append(self, r: Record) -> Record:
         self._records.append(r)
+        if self.path:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a") as fh:
+                fh.write(r.model_dump_json() + "\n")
         return r
 
     def all(self) -> list[Record]:

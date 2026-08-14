@@ -14,7 +14,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from .settings import settings
+from omicstra.settings import settings
 
 
 class EncoderSpec(BaseModel):
@@ -64,8 +64,18 @@ class ProjectConfig(BaseModel):
     @classmethod
     def load(cls, project_id: str | None = None,
              projects_dir: str | Path | None = None) -> "ProjectConfig":
-        """resolve a cohort through the settings boundary."""
+        """resolve a cohort through the settings boundary.
+
+        `projects_dir` is the dev-registry path and needs a cohort name to index
+        into. without one there is nothing to look up - say so rather than
+        letting `Path(dir) / None` raise a TypeError three frames down.
+        """
         if projects_dir is not None:
+            if not project_id:
+                raise ValueError(
+                    "projects_dir needs a project_id to index into. pass one, or "
+                    "drop projects_dir and let settings.project_dir select the cohort"
+                )
             return cls.from_dir(Path(projects_dir) / project_id)
         return cls.from_dir(settings.project_root(project_id))
 

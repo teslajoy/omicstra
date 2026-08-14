@@ -29,7 +29,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from .settings import settings
+from omicstra.settings import settings
 
 Status = Literal["pass", "fail", "not_run", "not_applicable", "escalate"]
 Verdict = Literal["proceed", "proceed_with_caution", "stop"]

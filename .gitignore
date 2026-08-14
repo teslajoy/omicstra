@@ -70,3 +70,20 @@ scripts/_scratch/
 
 # manuscript drafts - local until deliberately published
 docs/reports/**/discussion.md
+
+
+design/omicstra-deck-presenter.pdf
+design/omicstra-deck.pdf
+
+
+demo/
+docs/deck_v3_plan.md
+docs/deck_v4_plan.md
+docs/deck_v5_qa.md
+docs/talk_content.md
+docs/deck_v4_outline.md
+
+scripts/slurm/
+projects/tnbc-92/talk/
+projects/tnbc-92/routing_evidence.json
+

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from .config import ProjectConfig
+from omicstra.config import ProjectConfig
 
 
 class ArtifactStore:

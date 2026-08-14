@@ -18,7 +18,7 @@ from typing import Any
 
 import numpy as np
 
-from .records import ArtifactRef, DiagnosticRecord
+from omicstra.records import ArtifactRef, DiagnosticRecord
 
 
 def _dense(x) -> np.ndarray:

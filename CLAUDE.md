@@ -6,7 +6,13 @@ this file provides guidance to Claude Code when working with code in this reposi
 
 omicstra is a multi-agent MCP server for cross-modal reasoning in spatial biology. it aligns embeddings from H&E histopathology (UNI2/Virchow2) and spatial transcriptomics (Novae GNN) into a shared 512d space, then exposes cross-modal retrieval and evaluation through the Model Context Protocol.
 
-seed dataset: 92 TNBC patients from Wang et al. 2024 (co-registered ST + H&E WSI, Zenodo doi:10.5281/zenodo.8135721). platform: original Spatial Transcriptomics (Stahl et al. 2016, KTH/Spatial Transcriptomics AB, acquired by 10x Genomics 2018) - 1934 spots/array, 100um diameter, 200um center-to-center. not 10x Visium (5000 spots, 55um).
+seed dataset: 92 TNBC patients from Wang et al. 2024 (co-registered ST + H&E WSI, Zenodo doi:10.5281/zenodo.8135721). platform: original Spatial Transcriptomics (Stahl et al. 2016, KTH/Spatial Transcriptomics AB, acquired by 10x Genomics 2018) - 1934 spots/array, 100um diameter, **150um center-to-center**, ~200 cells/spot, array 6.2 x 6.4 mm. not 10x Visium (5000 spots, 55um).
+
+corrected 2026-08-12: this file previously said 200um center-to-center. Wang 2024 Methods states 150um, and the lattice measures to it - nearest neighbour 161.6 px with the (+2,0)/(0,+2) offsets at 216/240 px, i.e. NN x sqrt(2), so NN IS centre-to-centre. at 150um that is 0.93 um/px and the array spans 6.5 x 6.9 mm, matching the stated capture area; at 200um it would span 8.7 x 9.2 mm, which no ST array is. every figure scaled by the old number was 33% out.
+
+niche geometry: the array is a square lattice rotated 45 degrees and ~11% anisotropic. a k=6 niche is 4 neighbours at ~150um plus 2 at ~200um (the x-axis pair, not the diagonals), so the footprint is a lozenge ~500 x 322um, not a symmetric hexagon. 83% of niches follow this 4+2 pattern. 7 spots x ~200 cells = ~1,400 cells.
+
+the H&E and the ST come from the SAME physical 16um section - stained, imaged at 20x, then coverslip removed and permeabilised in place. there is no serial-section registration error between morphology and expression. the three subarrays per patient are consecutive 16um sections of one frozen block, so they are near-duplicates in z, not independent samples.
 
 ---
 

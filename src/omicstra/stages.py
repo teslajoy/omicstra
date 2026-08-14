@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from .config import ProjectConfig
+from omicstra.config import ProjectConfig
 
 
 # --- typed artifact refs: paths + provenance, not the arrays themselves ---
