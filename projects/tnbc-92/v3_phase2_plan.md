@@ -242,7 +242,7 @@ python scripts/eval_h3_gpath2vec_direction_contribution.py \
 
 **does it**: mirror `05_summary_umaps.ipynb` structure (§§3-13) on the v3 grid. this IS the proposal's deliverable: "Reproducible evaluation notebooks ... will be included as output logic" (proposal §Data Sharing).
 
-**proposal relevance**: strong. the explain-to-people artifact; the closest thing the proposal has to a "demo." also satisfies Cameron's request.
+**proposal relevance**: strong. the explain-to-people artifact; the closest thing the proposal has to a "demo." also satisfies the biology-validation request.
 
 **code review / publishability checks**:
 - [ ] `sns.set_theme(style='ticks', palette='Set2', context='notebook')` at top (per `feedback_plot_theme.md` memory)

@@ -120,7 +120,7 @@ def title_page():
     fig.text(0.5, 0.42, 'Wang et al. 2024 TNBC cohort', ha='center', fontsize=11)
     fig.text(0.5, 0.395, '94 patients · 261 subarrays · ~278k niches',
              ha='center', fontsize=10, color='#666')
-    fig.text(0.5, 0.36, 'OHSU Knight Cancer Institute · Creason Lab',
+    fig.text(0.5, 0.36, 'OHSU Knight Cancer Institute',
              ha='center', fontsize=9, color='#888')
     fig.text(0.5, 0.34, 'ResearchHub Foundation grant',
              ha='center', fontsize=9, color='#888')

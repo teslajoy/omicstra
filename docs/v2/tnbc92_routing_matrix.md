@@ -53,6 +53,6 @@ these are construct-validity guards lifted directly from the v3 evidence and the
 | v1 routing matrix | [`../v1/tnbc92_routing_matrix.md`](../v1/tnbc92_routing_matrix.md) |
 | v3 results summary | [`tnbc92_results_summary.md`](tnbc92_results_summary.md) |
 | MCP / LangGraph agent design (encodes these guards) | `docs/mcp_agent_design.md` |
-| evaluation-question audit (Cameron's questions) | `projects/tnbc-92/evaluation_question_audit.md` |
+| evaluation-question audit (biology-validation questions) | `projects/tnbc-92/evaluation_question_audit.md` |
 | proposal deviations log | `projects/tnbc-92/proposal_deviations.md` |
 | v3 retrain plan + memory | `projects/tnbc-92/v3_phase2_plan.md`, [[project_v3_retrain_result]] |

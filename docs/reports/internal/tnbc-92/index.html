@@ -949,7 +949,7 @@ nav{position:sticky;top:0;background:var(--bg);border-bottom:0.5px solid var(--b
     </tr>
     <tr>
       <td><strong>Visium HD</strong><br><span style="font-size:10px;color:var(--text3)">10x Genomics, 2 um spot pitch</span></td>
-      <td style="font-size:11px;color:var(--text2)">Next-generation spatial transcriptomics at <strong>2 um x 2 um spot resolution</strong> (vs 100 um diameter / 200 um spacing in the original ST platform used here). Effectively subcellular resolution: each cell is covered by 5-10 HD spots. Resolves individual immune cells within a niche where original ST only sees cell mixtures.</td>
+      <td style="font-size:11px;color:var(--text2)">Next-generation spatial transcriptomics at <strong>2 um x 2 um spot resolution</strong> (vs 100 um diameter / 150 um spacing in the original ST platform used here). Effectively subcellular resolution: each cell is covered by 5-10 HD spots. Resolves individual immune cells within a niche where original ST only sees cell mixtures.</td>
       <td style="font-size:11px;color:var(--text2)">ST-side FMs with much better fit than v3 implied: <strong>scGPT-spatial</strong> was pretrained on a corpus explicitly including Visium HD alongside Visium, Xenium and MERFISH, with a mixture-of-experts decoder for protocol heterogeneity. <strong>Novae</strong> was trained on subcellular image-based ST (MERSCOPE/Xenium/CosMX), so HD resolution is closer to its training distribution than the original ST platform. Bin-aggregated HD spots (8 um, 16 um) can be treated as Visium-like for legacy pipelines.</td>
       <td style="font-size:11px;color:var(--text2)">High - would address the 100 um spot-mixture problem that motivates current niche aggregation (k=6 neighbors, ~1200 cells). Integration cost: medium - new Visium HD tissue runs required (existing TNBC-92 cannot be re-acquired at HD resolution). Best applied to a successor cohort.</td>
     </tr>
@@ -1045,7 +1045,7 @@ nav{position:sticky;top:0;background:var(--bg);border-bottom:0.5px solid var(--b
 </div>
 
 <div style="margin-top:2.5rem;padding-top:1.25rem;border-top:0.5px solid var(--border);font-size:11px;color:var(--text3)">
-omicstra v3 · TNBC-92 · Creason Lab, OHSU Knight Cancer Institute · June 2026<br>
+omicstra v3 · TNBC-92 · OHSU Knight Cancer Institute · June 2026<br>
 funded by ResearchHub Foundation doi:10.55277/researchhub.6ou1w3h3 · dataset: Wang et al. 2024 Zenodo doi:10.5281/zenodo.14204217 (processed) + doi:10.5281/zenodo.8135721 (mc-labels)<br>
 gpath2vec source: github.com/teslajoy/gpath2vec
 </div>

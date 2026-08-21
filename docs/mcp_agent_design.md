@@ -1,6 +1,6 @@
 # omicstra MCP / LangGraph agent design
 
-written 2026-05-26. audience: Nasim (AI/ML systems) + Cameron (biology validation). scope: the LangGraph + MCP layer that wraps the existing tnbc-92 scripts (`scripts/build_niche_join.py`, `align.py`, `align_classical.py`, `eval.py`, `eval_h3_pathway_cca_gpath2vec_v2.py`) into agentic tools, grounded in the v3 evidence base. companion docs: `projects/tnbc-92/evaluation_question_audit.md` (load-bearing), `docs/tnbc92_routing_matrix.md`, `docs/tnbc92_results_summary_v2.md`, `projects/tnbc-92/program.md` (hard constraints).
+written 2026-05-26. audience: AI/ML systems + biology validation. scope: the LangGraph + MCP layer that wraps the existing tnbc-92 scripts (`scripts/build_niche_join.py`, `align.py`, `align_classical.py`, `eval.py`, `eval_h3_pathway_cca_gpath2vec_v2.py`) into agentic tools, grounded in the v3 evidence base. companion docs: `projects/tnbc-92/evaluation_question_audit.md` (load-bearing), `docs/tnbc92_routing_matrix.md`, `docs/tnbc92_results_summary_v2.md`, `projects/tnbc-92/program.md` (hard constraints).
 
 `src/` is empty at time of writing (verified). this doc is the spec the first commit lands against.
 
@@ -144,7 +144,7 @@ these are the audit-derived rules `eval_agent` and `orchestrator` MUST encode. e
 - **LangSmith tracing config**: observability-only per `CLAUDE.md`; project-id, run-tagging convention, and trace-budget per node not yet specified. burn rate must be tracked from experiment 1 (`CLAUDE.md` token budget).
 - **per-node prompt budget**: $850 LLM cap (`CLAUDE.md`); per-experiment ~$1-2; ~400-850 experiments total. orchestrator (Sonnet 4.6) routing prompts vs synthesis (Opus 4.6) writeup prompts need a budget split. defer to first integration test.
 - **encoder swap path**: UNI2 (1536-d) -> Virchow2 (1280-d) is "pluggable" per `MODELS.md`; the swap on H1 grid has not been run. defer until a non-TNBC cohort lands and forces the question.
-- **R4 attention_weights downstream use**: `attention_weights` is persisted (v3 retrain plan step 5) but not yet consumed by any eval. interpretability tool (per-niche tile-weight heatmap) is a likely Cameron-facing demo asset; defer until cameron_demo.ipynb sees use.
+- **R4 attention_weights downstream use**: `attention_weights` is persisted (v3 retrain plan step 5) but not yet consumed by any eval. interpretability tool (per-niche tile-weight heatmap) is a likely a biologist-facing demo asset; defer until biology_demo.ipynb sees use.
 - **R5b: AnInfoNCE + cross-attention** (deferred). R5 (AnInfoNCE + late) showed AnInfoNCE collapses mostly to standard InfoNCE on late fusion (17/512 dims moved >0.1 log-scale; H1 unchanged from R1). the targeted "does anisotropic temperature rescue R4's pathway-direction aliasing?" question requires AnInfoNCE on cross-attention - one-variable-change vs R4. needs patching `CrossAttnFusion` to register `aniso_log_scale` (`build_model` raises by design today). ~30 min compute if greenlit.
 
 ---

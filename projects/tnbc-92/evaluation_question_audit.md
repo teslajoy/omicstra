@@ -1,8 +1,8 @@
 # evaluation-question quality audit · omicstra tnbc-92
 
-written 2026-05-21. catalogs every meta-evaluation finding the project has made: cases where the evaluation **question** the proposal asks is not in fact a faithful proxy for the underlying biological **objective**. companion to `proposal_deviations.md` (scope drift) - this doc is about *question-quality drift*. audience: external reviewer / Cameron / future Nasim.
+written 2026-05-21. catalogs every meta-evaluation finding the project has made: cases where the evaluation **question** the proposal asks is not in fact a faithful proxy for the underlying biological **objective**. companion to `proposal_deviations.md` (scope drift) - this doc is about *question-quality drift*. audience: external reviewer / computational biologists / future Nasim.
 
-motivation, plain: Cameron's read, paraphrased: *"the quality of the evaluation is totally dependent on how good of a question your asking is."* this is exactly right, and the project already has a track record of catching its own evaluation-question failures and rescuing them. that track record is below.
+motivation, plain: a wet-lab collaborator's read, paraphrased: *"the quality of the evaluation is totally dependent on how good of a question your asking is."* this is exactly right, and the project already has a track record of catching its own evaluation-question failures and rescuing them. that track record is below.
 
 source for the proposal H1/H2/H3 wording: `docs/papers/sanati_2025_researchhub.pdf` pp. 5 + 9 (verbatim quoted per hypothesis).
 
@@ -137,9 +137,9 @@ each finding follows the same shape:
 
 ---
 
-## where Cameron's biology-validation lane lives
+## where the biology-validation lane lives
 
-Cameron is offering biology validation. four concrete checks the project needs from a biologist:
+the biology-validation lane covers this. four concrete checks the project needs from a biologist:
 
 1. **MC2 = stromal/mesenchymal? MC11 = proliferative?** v3 R4 z_he canonical directions split as TGFb/Immune/ECM → MC2 (positive direction, n=6,154 niches in MC2 on the test set) vs Cell Cycle / PCD → MC11 (n=1,010). is the MC2-stromal / MC11-proliferative mapping consistent with Wang's MC characterization (`Robjects/clustering/clustPrototypes/`)? if yes, v3 H3 has independent biology validation even with the specificity aliasing.
 
@@ -149,7 +149,7 @@ Cameron is offering biology validation. four concrete checks the project needs f
 
 4. **TGF-β R-HSA-170834 vs the family-level R-HSA-9006936**: program.md pins the H3 TGF-β target at R-HSA-170834 ("Signaling by TGF-beta Receptor Complex"), structurally underpowered at n=2 in v1. v3 covers 7 nodes under it. is the **receptor-complex subtree** the right TGF-β scope for TME biology, or should H3 report the family-level supplementary as well?
 
-these are the *biology* questions; the *computational* H1/H2/H3 numbers are review-defensible once paired with their diagnostics. the demo notebook for Cameron (`notebooks/final/cameron_demo.ipynb`, task #13) operationalizes (1)-(4) as concrete questions with the v3 data already loaded.
+these are the *biology* questions; the *computational* H1/H2/H3 numbers are review-defensible once paired with their diagnostics. the biology demo notebook (`notebooks/final/biology_demo.ipynb`, task #13) operationalizes (1)-(4) as concrete questions with the v3 data already loaded.
 
 ---
 

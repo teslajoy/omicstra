@@ -186,7 +186,5 @@ gives ~400–850 full experiments. track burn rate from experiment 1.
 ## team
 
 - Nasim Sanati — AI/ML systems, MCP server, agent orchestration, embedding pipelines, main analysis pipeline
-- Cameron Watson — biological validation, spatial transcriptomics, TME interpretation
-- Dr. Allison Creason — scientific oversight
 
-OHSU Knight Cancer Institute, Creason Lab. funded by ResearchHub Foundation (doi:10.55277/researchhub.6ou1w3h3).
+OHSU Knight Cancer Institute. funded by ResearchHub Foundation (doi:10.55277/researchhub.6ou1w3h3).

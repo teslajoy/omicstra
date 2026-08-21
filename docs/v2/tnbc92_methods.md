@@ -9,7 +9,7 @@ companion to `tnbc92_results_summary.md`. that doc reports *what the results are
 
 ## biological data H2 evaluates against (glossary)
 
-H2 asks whether the aligned space preserves biological structure. "biological structure" is operationalized by several ground-truth labels from Wang et al. 2024, **at different biological resolutions**. the central subtlety (Cameron's evaluation-question concern) is that some labels are **patient-level** (one value per whole tumor) and some are **niche/spot-level** (vary within a tumor) - a niche-level objective must be tested with a niche-level label, or the metric silently measures patient identity.
+H2 asks whether the aligned space preserves biological structure. "biological structure" is operationalized by several ground-truth labels from Wang et al. 2024, **at different biological resolutions**. the central subtlety (the evaluation-question concern) is that some labels are **patient-level** (one value per whole tumor) and some are **niche/spot-level** (vary within a tumor) - a niche-level objective must be tested with a niche-level label, or the metric silently measures patient identity.
 
 ### the ground-truth labels at a glance
 

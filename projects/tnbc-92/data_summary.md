@@ -18,7 +18,7 @@ scaffold populated 2026-06-02 from `eda_summary.json`, niche-join manifests, and
 | held-out test patients | 14 | patient-stratified 85/15, seed 42 |
 | held-out test subarrays | 38 | same split |
 | held-out test niches | 35,594 | `runs/tnbc-92_v3/*/embeddings_test.parquet` |
-| spot geometry | 100 um diameter, 200 um center-to-center, 1934 spots/array (full grid), ~1075 tissue-selected per subarray | CLAUDE.md |
+| spot geometry | 100 um diameter, 150 um center-to-center, 1934 spots/array (full grid), ~1075 tissue-selected per subarray | CLAUDE.md (corrected 2026-08-12; this row read 200 um until 2026-08-20) |
 | niche definition | center spot + 6 spatial neighbors (~1200 cells, ~500 um footprint) | program.md / methods.md |
 
 ## subarray funnel (the 282 -> 35,594 trace)

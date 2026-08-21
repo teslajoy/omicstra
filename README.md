@@ -70,86 +70,84 @@ alignment strategies (experimental variable):
 
 ---
 
-## initial repo structure-design
+## repo structure
+
+audited against the filesystem 2026-08-20. `·` is built, `○` is named in the design and **not yet built** - kept here because the name is referenced elsewhere, not because it exists.
 
 ```
 omicstra/
 │
-├── CLAUDE.md                        # north star for Claude Code
-├── EDA.md                           # gate - data quality checks before pipeline
-├── PLAN_RULES.md                    # constraints - no alignment until EDA passes
-├── MODELS.md                        # training provenance + tissue compatibility per model
-├── MODALITY_TEMPLATE.md             # how to add a new modality
-├── .mcp.json                        # MCP server entry
-├── .env.example                     # COMPUTE_BACKEND=local|cloud|slurm
+· CLAUDE.md                          # north star for Claude Code
+· EDA.md                             # gate - data quality checks before pipeline
+· PLAN_RULES.md                      # constraints - no alignment until EDA passes
+· MODELS.md                          # training provenance + tissue compatibility per model
+○ MODALITY_TEMPLATE.md               # how to add a new modality - cited by README + CLAUDE.md
+· .mcp.json                          # MCP server entry
+· .env.example                       # COMPUTE_BACKEND=local|cloud|slurm
 │
-├── .claude/
-│   ├── skills/                      # he_agent - st_agent - alignment
-│   │                                # karpathy_loop - eval - notebook_gen
-│   └── hooks/                       # post_edit - block_data_writes - run_tests
+· design/                            # the planning tree - tracked, this is where "what next" lives
+│   · mcp_plan.md                    # the engineering plan
+│   · workflow.md                    # the executable graph - what runs, in what order
+│   · decisions.md                   # the decision graph - what is decided and by whom
+│   · progress.md  status.md         # build log - repo snapshot
+│   · _scratch/                      # BACKLOG.md ("this is the plan") - ROADMAP - doc_drift_audit
 │
-├── docs/                            # -> teslajoy.github.io/omicstra
-│   ├── index.html
-│   ├── timeline.html
-│   └── images/
+· src/omicstra/                      # the pip-installable package - src layout
+│   · agents/                        # graph.py (orchestrator + judge) - modality.py
+│   · adapters/                      # a cohort's files -> AnnData
+│   · mcp/server.py                  # MCP server - read path, zero compute
+│   · eda.py  eda_steps.py  eda_graph.py    # the gate - steps - LangGraph subgraph
+│   · routing.py                     # task family -> method, four outcomes
+│   · records.py  guards.py          # the record contract - construct-validity guards
+│   · settings.py  config.py  stages.py  artifacts.py  figures.py  cli.py
 │
-├── knowledge/                       # shared domain assets - committed
-│   ├── pathways/
-│   └── annotations/
+· configs/                           # contracts are generalizable, evidence is per-cohort
+│   · eda_contract.json              # which EDA steps, which criteria
+│   · routing_contract.json          # task taxonomy, outcome vocabulary, rules
+│   · v3/                            # R1_v3 .. R6_v3 run configs
+│   ○ qc_params.json                 # K1 editable asset - not built
+│   ○ alignment_config.json          # K2 editable asset - not built
 │
-├── projects/                        # committed
-│   ├── registry.json
-│   └── {project_id}/
-│       ├── project.json
-│       ├── program.md               # karpathy loop - search space + constraints + metric
-│       └── eda_summary.md           # EDA gate output
+· projects/                          # committed
+│   · registry.json
+│   · {project_id}/
+│       · project.json  program.md   # karpathy loop - search space + constraints + metric
+│       · eda_summary.json           # EDA gate output
+│       · routing_evidence.json      # this cohort's measured evaluation - never inherited
 │
-├── src/omicstra/                    # the pip-installable package - src layout
-│   ├── agents/                      # orchestrator - he_agent - st_agent - alignment - eval
-│   ├── adapters/                    # a cohort's files -> AnnData
-│   ├── mcp/                         # server.py
-│   ├── eda.py  eda_steps.py  eda_graph.py    # the gate - steps - subgraph
-│   ├── records.py  guards.py        # the record contract - construct-validity guards
-│   └── settings.py  config.py  stages.py  artifacts.py  cli.py
+· scripts/                           # the chain behind the published results
+· tests/                             # test_eda_authority.py - test_routing.py
+· knowledge/                         # shared domain assets - committed
+│   · reactome/  pathway_commons/
 │
-├── config/
-│   ├── qc_params.json               # K1 editable asset
-│   └── alignment_config.json        # K2 editable asset
+· docs/                              # -> teslajoy.github.io/omicstra
+│   · index.html  timeline.html  images/  reports/internal/{project_id}/
+│   · TODO_*.md                      # parked work - untracked
 │
-├── compute/
-│   └── slurm/                       # optional - uni2_array - novae_array - alignment_train
+· notebooks/                         # exploration - embeddings - experiments - final
+· runs/            [ignored]         # {project_id}/{run_id}/ - run_config, metrics, embeddings
+│   ○ winner.json                    # best validated run record - not written yet
+· data/            [ignored]         # inputs/ - embeddings/
+· demo/            [ignored]         # talk assets, figure scripts
+· logs/  venv/  venv_test/
 │
-├── runs/            [ignored]
-│   └── {project_id}/{run_id}/
-│       ├── run_config.json
-│       ├── winner.json              # best validated run record
-│       ├── qc_summary.json
-│       ├── embedding_summary.json
-│       ├── alignment_summary.json
-│       ├── evaluation_summary.json
-│       └── synthesis.md
-│
-├── data/            [ignored except READMEs]
-│   ├── inputs/{project_id}/
-│   ├── embeddings/{project_id}/
-│   └── outputs/{project_id}/
-│
-└── notebooks/
-    ├── exploration/ [ignored]
-    └── final/       [git]           # best run generated in trace_notebook 
+○ .claude/skills/  .claude/hooks/    # named in the design - not built (.claude/ holds settings only)
+○ compute/slurm/                     # optional array jobs - not built
 ```
 
 ---
 
 ## extending to a new modality
 
-`MODALITY_TEMPLATE.md` is the contract a new modality agent (single-cell, protein, electron microscopy, etc.) must satisfy: a frozen foundation-model encoder, a niche-aggregation step, a clean ST/H&E-equivalent feature parquet shape, and the construct-validity guards the eval agent enforces. each modality adds one row to the alignment grid; the orchestrator's routing table and the karpathy-loop search space pick it up automatically.
+`MODALITY_TEMPLATE.md` (**planned, not yet written**) is the contract a new modality agent (single-cell, protein, electron microscopy, etc.) must satisfy: a frozen foundation-model encoder, a niche-aggregation step, a clean ST/H&E-equivalent feature parquet shape, and the construct-validity guards the eval agent enforces. each modality adds one row to the alignment grid; the orchestrator's routing table and the karpathy-loop search space pick it up automatically.
 
 ---
 
 ## seed cohort
 
-[Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) - 92 TNBC patients, co-registered ST + H&E WSI. platform: original Spatial Transcriptomics (Stahl et al. 2016, KTH/Spatial Transcriptomics AB, acquired by 10x Genomics 2018) - 1934 spots/array, 100um diameter, 200um center-to-center. not 10x Visium.
+[Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) - 92 TNBC patients, co-registered ST + H&E WSI. platform: original Spatial Transcriptomics (Stahl et al. 2016, KTH/Spatial Transcriptomics AB, acquired by 10x Genomics 2018) - 1934 spots/array, 100um diameter, 150um center-to-center. not 10x Visium.
+
+> corrected 2026-08-12: previously read 200um center-to-center. Wang 2024 Methods states 150um and the lattice measures to it - nearest neighbour 161.6 px with the (+2,0)/(0,+2) offsets at 216/240 px, i.e. NN x sqrt(2), so NN is centre-to-centre. at 150um that is 0.93 um/px and the array spans 6.5 x 6.9 mm, matching the stated capture area; at 200um it would span 8.7 x 9.2 mm, which no ST array is.
 
 | resource | url |
 |---|---|
@@ -175,8 +173,8 @@ omicstra/
 | pathway | gpath2vec + biological pathway embeddings |
 | alignment | contrastive MLP + cross-attention bridge |
 | compute | laptop / cloud GPU / SLURM (ARC HPC at OHSU) |
-| vector retrieval | Qdrant |
-| graph store | Neo4j |
+| vector retrieval | Qdrant *(planned - retrieval is currently exact cosine over the run's parquet)* |
+| graph store | Neo4j *(planned - not yet used)* |
 | interface | Model Context Protocol |
 
 ---
@@ -198,10 +196,8 @@ every run writes `runs/{project_id}/{run_id}/` - config, QC, embeddings, alignme
 ## team
 
 **Nasim Sanati, M.S.** - AI/ML systems - MCP server - agent orchestration - embedding pipelines  
-**Cameron Watson, M.S.** - biological validation - spatial transcriptomics - TME interpretation  
-**Dr. Allison Creason** - scientific oversight  
 
-OHSU Knight Cancer Institute - Department of Biomedical Engineering - Creason Lab
+OHSU Knight Cancer Institute - Department of Biomedical Engineering
 
 ---
 

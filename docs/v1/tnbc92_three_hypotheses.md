@@ -9,7 +9,7 @@ what each hypothesis measures, how the metrics work mathematically, and what the
 | evaluation | subarray-level, patient-stratified 85/15 split |
 | permutations | seed=42, 1e5 perms for H3-extended (Bareche labels), 1e3 perms for H3-proposal (per-pathway CCA) |
 | FDR control | BH-FDR over 20-test family (H3-extended) and over 120-test grid (H3-proposal) |
-| affiliation | OHSU Knight Cancer Institute · Creason Lab |
+| affiliation | OHSU Knight Cancer Institute |
 | funding | ResearchHub Foundation grant |
 
 scientific brief · companion to `projects/tnbc-92/current_report.md` and `tnbc92_summary.pdf`
