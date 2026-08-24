@@ -2,7 +2,9 @@
 
 written 2026-05-26. audience: AI/ML systems + biology validation. scope: the LangGraph + MCP layer that wraps the existing tnbc-92 scripts (`scripts/build_niche_join.py`, `align.py`, `align_classical.py`, `eval.py`, `eval_h3_pathway_cca_gpath2vec_v2.py`) into agentic tools, grounded in the v3 evidence base. companion docs: `projects/tnbc-92/evaluation_question_audit.md` (load-bearing), `docs/tnbc92_routing_matrix.md`, `docs/tnbc92_results_summary_v2.md`, `projects/tnbc-92/program.md` (hard constraints).
 
-`src/` is empty at time of writing (verified). this doc is the spec the first commit lands against.
+this doc is the spec the first commit lands against.
+
+> **status note (2026-08-24)**: written when `src/` was empty. it no longer is - `src/omicstra/` is ~1,200 lines and the coordination layer described below is partly built: `mcp/server.py` (346 ln, read path), `eda_graph.py` (193 ln, the gate as a LangGraph subgraph with `interrupt()` on `caution`), `agents/graph.py` + `agents/modality.py` (orchestrator -> three modality agents -> judge), `routing.py` (306 ln, task family -> method, four outcomes). the contracts split that shipped is `configs/{eda,routing}_contract.json` (generalizable) against `projects/{id}/{eda_summary,routing_evidence}.json` (measured, never inherited). **not** built: the ingest layer, and nothing yet runs the agent graph end to end - the demo calls `routing.py` directly. the node spec below still describes LangGraph-only orchestration with no durability layer, and §D is a second copy of the routing table (see `design/_scratch/doc_drift_audit.md` §3).
 
 ---
 
