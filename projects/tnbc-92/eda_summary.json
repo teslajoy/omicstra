@@ -10,7 +10,7 @@
   "dataset_source": "Zenodo",
   "dataset_publication": "Wang et al. 2024, Nat. Commun. 15:10232",
   "eda_date": "2026-04-01",
-  "platform": "Spatial Transcriptomics (Stahl 2016, KTH/Spatial Transcriptomics AB; acquired by 10x Genomics 2018). NOT 10x Visium. 1934 spots/array, 100um spot diameter, 200um center-to-center.",
+  "platform": "Spatial Transcriptomics (Stahl 2016, KTH/Spatial Transcriptomics AB; acquired by 10x Genomics 2018). NOT 10x Visium. 1934 spots/array, 100um spot diameter, 150um center-to-center (corrected 2026-08-24; this field read 200um until then - Wang 2024 Methods states 150um and the lattice measures to it, see CLAUDE.md).",
   "patients": 94,
   "patients_with_st": 94,
   "patients_in_publication": 92,
@@ -178,7 +178,7 @@
     "Novae": {
       "tissue": "breast_TNBC",
       "fit": "validated_with_constraints",
-      "reason": "spatial rho PASS, but platform mismatch (200um spots vs subcellular training)"
+      "reason": "spatial rho PASS, but platform mismatch (100um spots vs subcellular training)"
     }
   },
   "encoder_validation": {
@@ -221,7 +221,7 @@
       "deprioritized": {
         "TNBC68_CN34_D2": "low_gene_count=873, rho=-0.254"
       },
-      "platform_mismatch": "200um spots vs subcellular training - documented, not blocking",
+      "platform_mismatch": "100um spots vs subcellular training - documented, not blocking",
       "embeddings_path": "data/embeddings/novae/"
     },
     "uni2_raw": {
