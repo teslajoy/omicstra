@@ -17,6 +17,8 @@ from omicstra.settings import settings
 
 TEMPLATE = {
     "project_id": "",
+    "data_classification": "restricted",  # public | restricted. see configs/data_contract.json
+
     "platform": "",
     "k_neighbors": 6,
     "seed": 42,
@@ -46,27 +48,99 @@ def main() -> None:
               help="cohort root. created if absent. never inside the omicstra package.")
 @click.option("--project-id", default=None, help="cohort id. defaults to the directory name.")
 @click.option("--force", is_flag=True, help="overwrite an existing project.json.")
-def init(project_dir: Path, project_id: str | None, force: bool) -> None:
-    """scaffold a new cohort project root."""
+@click.option("--public", is_flag=True,
+              help="cohort is published and redistributable. sets data_classification=public and relaxes the project .gitignore. DEFAULT is restricted - forgetting this flag fails closed.")
+def init(project_dir: Path, project_id: str | None, force: bool, public: bool) -> None:
+    """scaffold a new cohort project root.
+
+    the project home is the shape of the package repo MINUS the package, so a
+    cohort is its own git repo from minute one and its trace/commit coupling has
+    something of its own to attach to.
+
+    `--public` sets data_classification and, as a CONSEQUENCE, relaxes the
+    .gitignore. restricted is the default because the failure modes are
+    asymmetric: treating public data as restricted costs convenience, treating
+    restricted data as public is unrecoverable once it has left.
+    """
     project_dir = project_dir.expanduser()
     cfg_path = project_dir / "project.json"
     if cfg_path.exists() and not force:
         raise click.ClickException(f"{cfg_path} exists - pass --force to overwrite")
 
-    project_dir.mkdir(parents=True, exist_ok=True)
-    (project_dir / "steps").mkdir(exist_ok=True)
-    (project_dir / "steps" / ".gitkeep").touch()
+    classification = "public" if public else "restricted"
 
-    payload = dict(TEMPLATE, project_id=project_id or project_dir.resolve().name)
+    for d in ("steps", "data/inputs", "data/embeddings", "runs", "notebooks"):
+        (project_dir / d).mkdir(parents=True, exist_ok=True)
+        (project_dir / d / ".gitkeep").touch()
+
+    payload = dict(TEMPLATE,
+                   project_id=project_id or project_dir.resolve().name,
+                   data_classification=classification)
+    if public:
+        # public is a claim about redistribution rights. a claim with no
+        # provenance is not checkable, so the slots are created empty and named.
+        payload["provenance"] = {"source": "", "licence": "", "gated": ""}
     cfg_path.write_text(json.dumps(payload, indent=2) + "\n")
 
+    (project_dir / ".gitignore").write_text(_project_gitignore(classification))
+    if not (project_dir / "program.md").exists():
+        (project_dir / "program.md").write_text(
+            f"# {payload['project_id']} - program\n\n"
+            "the search space, the constraints, and the stopping criteria.\n"
+            "a human writes this file, not code.\n\n"
+            "## search space\n\n## constraints\n\n## stopping criteria\n")
+
     click.echo(f"scaffolded {payload['project_id']} at {project_dir}")
+    click.echo(f"  data_classification: {classification}"
+               + ("" if public else "  (default - pass --public to relax)"))
     for line in ("project.json   fill in platform, encoders, labels",
+                 "program.md     search space, constraints, stopping criteria",
+                 "data/inputs/   raw cohort data lands here",
                  "steps/         generated step bodies land here",
+                 ".gitignore     written from the classification above",
                  "",
                  "nothing was downloaded. point the server at it with:",
                  f"  OMICSTRA_PROJECT_DIR={project_dir} python -m omicstra.mcp.server"):
         click.echo(f"  {line}")
+    if public and not payload["provenance"]["source"]:
+        click.echo("\n  public cohort: fill provenance.source / licence / gated in "
+                   "project.json.\n  an unprovenanced public claim is not checkable.")
+
+
+def _project_gitignore(classification: str) -> str:
+    """the .gitignore is a CONSEQUENCE of the classification, not the feature.
+
+    note what does not change: caches, runs and embeddings stay ignored either
+    way. they are large and regenerable, and 'public' says a thing may be
+    redistributed - not that git is the right place to put six gigabytes of it.
+    """
+    common = (
+        "# regenerable or large - ignored regardless of classification\n"
+        "data/embeddings/\n"
+        "runs/\n"
+        "__pycache__/\n"
+        ".ipynb_checkpoints/\n"
+        ".env\n"
+        ".env.*\n"
+        "!.env.example\n"
+        "_scratch/\n"
+    )
+    if classification == "public":
+        return (
+            "# data_classification: public\n"
+            "# raw inputs MAY be committed - but see the size note below.\n"
+            + common +
+            "\n# public does not mean small. commit raw inputs deliberately,\n"
+            "# per file, or keep them out and record how to re-fetch them.\n"
+            "# uncomment to keep them out entirely:\n"
+            "# data/inputs/\n"
+        )
+    return (
+        "# data_classification: restricted\n"
+        "# raw inputs MUST NOT be committed. this line is the enforcement.\n"
+        "data/inputs/\n"
+        + common
+    )
 
 
 @main.command()

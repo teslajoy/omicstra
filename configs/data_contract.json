@@ -19,6 +19,41 @@
     "why_this_matters": "a contract that carries one cohort's numbers stops being a contract. every value below is either a public fact about a platform or a method, or a symbolic dimension resolved at runtime."
   },
 
+  "data_classification": {
+    "note": "REQUIRED per cohort. this is the field every governance question turns on, and nothing in the pipeline could read it before. it is NOT the same question as 'may this be committed to git' - a public 6 GB cohort is committable in principle and a bad idea in practice. classification answers what is PERMITTED; size answers what is ADVISABLE.",
+    "values": {
+      "public": {
+        "meaning": "published, de-identified, redistributable under its own licence",
+        "may_commit_raw": true,
+        "may_leave_host": true,
+        "may_appear_in_tool_results": "raw values permitted",
+        "note": "still subject to the source licence and to size judgement - permitted is not the same as wise"
+      },
+      "restricted": {
+        "meaning": "private, sensitive, or otherwise not cleared for redistribution",
+        "may_commit_raw": false,
+        "may_leave_host": false,
+        "may_appear_in_tool_results": "derived metrics only - never raw values, never per-subject rows",
+        "note": "THE DEFAULT. a cohort with no declared classification is treated as restricted, so forgetting the flag fails closed rather than open."
+      }
+    },
+    "default": "restricted",
+    "why_default_closed": "the failure modes are asymmetric. treating public data as restricted costs convenience; treating restricted data as public is unrecoverable once it has left.",
+    "reads_this_field": [
+      "the project .gitignore written at init - whether data/inputs is ignored",
+      "whether a tool result may carry raw values or only derived metrics",
+      "whether cohort content may cross to an external model provider",
+      "whether a record store may live on shared scratch"
+    ],
+    "provenance_required_when_public": {
+      "source": "where it came from - repository, accession, or DOI",
+      "licence": "the licence the source publishes under",
+      "gated": "whether access requires accepting terms",
+      "note": "public is a claim about redistribution rights. a claim with no provenance is not checkable, so it is not accepted."
+    },
+    "guard": "classification is declared by a person at init and never inferred. no heuristic over file paths, filenames or content may set it - a wrong guess in the permissive direction is the one error this whole field exists to prevent."
+  },
+
   "platform_descriptor": {
     "note": "REQUIRED per cohort. the single field that changes the graph is same_section_as_image - it decides whether the registration node fires at all. everything downstream inherits the error term it emits.",
     "schema": {
