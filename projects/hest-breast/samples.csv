@@ -1,0 +1,126 @@
+id,patient,st_technology,oncotree_code,disease_state,inter_spot_dist,spot_diameter,spots_under_tissue,nb_genes,dataset_title
+TENX99,patient 1,Xenium,IDC,Cancer,,,25080,541,FFPE Human Breast using the Entire Sample Area
+TENX98,patient 1,Xenium,IDC,Cancer,,,26070,541,FFPE Human Breast using the Entire Sample Area
+TENX97,patient 2,Xenium,IDC,Cancer,,,11845,541,FFPE Human Breast with Custom Add-on Panel
+TENX96,patient 3,Xenium,ILC,Cancer,,,8624,541,FFPE Human Breast with Custom Add-on Panel
+TENX95,patient 2,Xenium,IDC,Cancer,,,11845,541,FFPE Human Breast with Pre-designed Panel
+TENX94,patient 3,Xenium,ILC,Cancer,,,9152,541,FFPE Human Breast with Pre-designed Panel
+TENX68,,Visium,IDC,Cancer,100.0,55.0,1657,18085,"Fresh Frozen Visium on CytAssist: Human Breast Cancer, Probe-Based Whole Transcriptome Profiling"
+TENX53,,Visium,IDC,Cancer,100.0,55.0,4898,36601,"Human Breast Cancer: Visium Fresh Frozen, Whole Transcriptome"
+TENX39,,Visium,IDC,Cancer,100.0,55.0,2518,17943,"Human Breast Cancer: Ductal Carcinoma In Situ, Invasive Carcinoma (FFPE)"
+TENX24,,Visium,ILC,Cancer,100.0,55.0,4325,32285,Human Breast Cancer: Whole Transcriptome Analysis
+TENX23,,Visium,ILC,Cancer,100.0,55.0,4325,1056,"Human Breast Cancer: Targeted, Immunology Panel"
+TENX14,,Visium,IDC,Cancer,100.0,55.0,4015,33538,Human Breast Cancer (Block A Section 2)
+TENX13,,Visium,IDC,Cancer,100.0,55.0,3813,33538,Human Breast Cancer (Block A Section 1)
+SPA154,Patient A,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,346,15045,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA153,Patient A,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,325,15526,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA152,Patient A,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,359,15517,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA151,Patient A,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,343,15583,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA150,Patient A,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,332,15638,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA149,Patient A,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,360,15645,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA148,Patient B,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,295,15109,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA147,Patient B,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,270,15290,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA146,Patient B,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,298,15215,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA145,Patient B,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,283,15289,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA144,Patient B,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,289,15273,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA143,Patient B,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,277,15387,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA142,Patient C,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,176,15557,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA141,Patient C,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,187,15706,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA140,Patient C,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,180,15821,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA139,Patient C,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,184,15842,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA138,Patient C,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,181,15721,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA137,Patient C,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,178,15772,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA136,Patient D,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,306,15661,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA135,Patient D,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,303,15396,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA134,Patient D,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,301,15529,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA133,Patient D,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,302,15503,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA132,Patient D,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,306,15666,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA131,Patient D,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,315,15409,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA130,Patient E,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,587,15701,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA129,Patient E,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,572,15167,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA128,Patient E,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,570,15097,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA127,Patient F,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,691,14861,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA126,Patient F,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,695,15041,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA125,Patient F,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,712,15067,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA124,Patient G,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,441,14992,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA123,Patient G,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,467,15258,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA122,Patient G,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,463,15035,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA121,Patient H,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,613,15029,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA120,Patient H,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,603,14907,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA119,Patient H,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,510,14873,Spatial deconvolution of HER2-positive breast cancer delineates tumor-associated cell type interactions
+SPA118,BC23287,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,256,16744,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA117,BC23287,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,334,16773,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA116,BC23287,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,357,16826,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA115,BC23450,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,316,19391,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA114,BC23450,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,301,18702,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA113,BC23450,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,318,18843,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA112,BC23901,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,292,18082,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA111,BC23901,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,297,17636,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA110,BC23944,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,414,18201,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA109,BC23944,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,423,18384,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA108,BC23944,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,403,18578,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA107,BC24220,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,432,16908,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA106,BC24220,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,428,17273,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA105,BC24220,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,437,17246,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA104,BC23567,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,587,17368,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA103,BC23567,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,572,18013,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA102,BC23567,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,570,17960,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA101,BC23810,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,691,17923,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA100,BC23810,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,695,18126,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA99,BC23810,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,713,18295,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA98,BC23903,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,441,17824,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA97,BC23903,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,468,18263,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA96,BC23903,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,464,17973,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA95,BC24044,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,614,17653,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA94,BC24044,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,603,17509,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA93,BC24044,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,511,17570,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA92,BC24105,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,325,18015,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA91,BC24105,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,297,18036,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA90,BC24105,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,338,17864,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA89,BC23268,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,435,17546,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA88,BC23268,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,498,17467,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA87,BC23268,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,492,17417,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA86,BC23269,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,434,17779,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA85,BC23269,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,435,18371,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA84,BC23269,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,433,17576,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA83,BC23272,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,565,17724,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA82,BC23272,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,578,17593,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA81,BC23272,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,548,17627,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA80,BC24223,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,368,17428,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA79,BC24223,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,362,17668,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA78,BC24223,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,363,17751,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA77,BC23270,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,284,17940,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA76,BC23270,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,283,18081,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA75,BC23270,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,284,18373,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA74,BC23277,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,506,18191,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA73,BC23277,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,513,18426,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA72,BC23277,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,566,18853,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA71,BC23506,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,489,19017,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA70,BC23506,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,502,19088,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA69,BC23506,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,482,18606,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA68,BC23508,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,478,18787,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA67,BC23508,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,473,18663,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA66,BC23508,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,504,18535,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA65,BC23895,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,498,17686,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA64,BC23895,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,454,17630,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA63,BC23895,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,518,17402,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA62,BC23209,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,294,16859,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA61,BC23209,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,318,18356,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA60,BC23209,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,331,18298,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA59,BC23288,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,464,17387,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA58,BC23288,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,480,17641,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA57,BC23288,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,478,17405,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA56,BC23377,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,597,17933,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA55,BC23377,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,687,18306,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA54,BC23377,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,601,17939,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA53,BC23803,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,402,19729,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA52,BC23803,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,340,18871,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA51,BC23803,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,421,19119,Integrating spatial gene expression and breast tumour morphology via deep learning
+SPA3,,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,254,14880,Visualization and analysis of gene expression in tissue sections by spatial transcriptomics
+SPA2,,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,251,14789,Visualization and analysis of gene expression in tissue sections by spatial transcriptomics
+SPA1,,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,264,14929,Visualization and analysis of gene expression in tissue sections by spatial transcriptomics
+SPA0,,Spatial Transcriptomics,IDC,Cancer,200.0,100.0,262,14808,Visualization and analysis of gene expression in tissue sections by spatial transcriptomics
+NCBI785,patient 4,Xenium,IDC,Cancer,,,4180,541,"High resolution mapping of the tumor microenvironment using integrated single-cell, spatial and in situ analysis [Xenium]"
+NCBI784,patient 4,Xenium,IDC,Cancer,,,4180,541,"High resolution mapping of the tumor microenvironment using integrated single-cell, spatial and in situ analysis [Xenium]"
+NCBI783,patient 5,Xenium,IDC,Cancer,,,3869,541,"High resolution mapping of the tumor microenvironment using integrated single-cell, spatial and in situ analysis [Xenium]"
+NCBI776,,Visium,IDC,Cancer,100.0,55.0,4992,18085,"High resolution mapping of the tumor microenvironment using integrated single-cell, spatial and in situ analysis [scRNA-seq and Visium]"

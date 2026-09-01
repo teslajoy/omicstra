@@ -1,0 +1,51 @@
+{
+  "project_id": "hest-breast",
+  "platform": "HETEROGENEOUS - see platform.json. 3 platforms in this cohort.",
+  "k_neighbors": 6,
+  "seed": 42,
+  "split": "patient_stratified_85_15",
+  "encoders": [
+    {
+      "name": "virchow2",
+      "dim": 1280,
+      "role": "primary",
+      "raw": true
+    },
+    {
+      "name": "novae",
+      "dim": 64,
+      "role": "st",
+      "raw": false,
+      "compatibility": "MUST BE MEASURED per platform - novae trained on subcellular imaging ST. 9 xenium samples are in-distribution, 108 spot-based are not."
+    },
+    {
+      "name": "pca_hvg",
+      "dim": null,
+      "role": "st_fallback",
+      "raw": false,
+      "note": "declared fallback if the novae probe does not clear chance"
+    }
+  ],
+  "h2_label": "",
+  "supervision": "",
+  "headline_view": "z_he",
+  "hypothesis_metric": "auc",
+  "contrastive_runs": [],
+  "classical_runs": [],
+  "niches_dir": "../../data/embeddings/hest_breast_niches",
+  "runs_dir": "../../runs/hest-breast",
+  "source": {
+    "repo": "MahmoodLab/hest",
+    "repo_type": "dataset",
+    "manifest": "HEST_v1_1_0.csv",
+    "organ_filter": "Breast",
+    "gated": "auto - accept terms once on huggingface"
+  },
+  "n_samples": 125,
+  "n_patients": 36,
+  "n_studies": 15,
+  "open": [
+    "h2_label unset - no pathologist annotation identified yet",
+    "k_neighbors=6 inherited from tnbc-92; NOT valid across 3 pitches"
+  ]
+}
