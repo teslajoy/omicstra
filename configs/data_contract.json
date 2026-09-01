@@ -1,0 +1,304 @@
+{
+  "contract_version": "1.0.0",
+  "source": "lifted from docs/data_structure_flow.md (shapes read off artifacts on disk 2026-08-20), scripts/ AST extraction 2026-08-31, and the cross-section alignment sweep 2026-08-18",
+  "note": "the DATA half of the pipeline contract. cohort-free by construction: this file declares shapes, axis semantics, units, and the method menus that are legitimate at each node. it holds NO cohort measurements - those live in {project_root}/eda_summary.json and {project_root}/routing_evidence.json. companion to configs/routing_contract.json, which does the same job for the evaluation half.",
+
+  "authority": {
+    "note": "what this file may and may not decide",
+    "decides": [
+      "the shape and axis semantics of every artifact",
+      "which unit a stage operates on",
+      "the menu of legitimate methods at a node, and what each is for",
+      "the guards that must hold for downstream evidence to remain valid"
+    ],
+    "does_not_decide": [
+      "which method a given cohort should use - that is measured, not declared",
+      "any threshold calibrated on a cohort",
+      "whether a cohort passes - configs/eda_contract.json owns the gate"
+    ],
+    "why_this_matters": "a contract that carries one cohort's numbers stops being a contract. every value below is either a public fact about a platform or a method, or a symbolic dimension resolved at runtime."
+  },
+
+  "platform_descriptor": {
+    "note": "REQUIRED per cohort. the single field that changes the graph is same_section_as_image - it decides whether the registration node fires at all. everything downstream inherits the error term it emits.",
+    "schema": {
+      "name": "string",
+      "spot_diameter_um": "number | null - null for imaging platforms with no spot",
+      "spot_pitch_um": "number | null - CENTRE-TO-CENTRE. not the diameter. confusing these mis-scales every spatial figure",
+      "spots_per_array": "integer | null",
+      "cells_per_spot": "number | null - null when resolution is subcellular",
+      "resolution_class": "spot | subcellular | single_cell",
+      "transcriptome_scope": "whole_transcriptome | targeted_panel",
+      "same_section_as_image": "boolean - true when the stained image and the molecular assay come off ONE physical section",
+      "section_thickness_um": "number | null"
+    },
+    "known_platforms": {
+      "note": "public facts, safe in the package. a cohort names one of these or supplies its own descriptor.",
+      "original_st": {
+        "name": "Spatial Transcriptomics (Stahl 2016, KTH / Spatial Transcriptomics AB; acquired by 10x Genomics 2018)",
+        "spot_diameter_um": 100,
+        "spot_pitch_um": 150,
+        "spots_per_array": 1934,
+        "cells_per_spot": 200,
+        "resolution_class": "spot",
+        "transcriptome_scope": "whole_transcriptome",
+        "lattice": "square lattice rotated 45 degrees, ~11% anisotropic. a k=6 niche is 4 neighbours at ~150um plus 2 at ~200um - a lozenge, not a symmetric hexagon",
+        "not_to_be_confused_with": "10x Visium. different spot count, diameter and pitch. mislabelling this mis-scales every micron-denominated figure"
+      },
+      "visium": {
+        "name": "10x Visium",
+        "spot_diameter_um": 55,
+        "spot_pitch_um": 100,
+        "spots_per_array": 5000,
+        "resolution_class": "spot",
+        "transcriptome_scope": "whole_transcriptome"
+      },
+      "xenium": {
+        "name": "10x Xenium",
+        "spot_diameter_um": null,
+        "spot_pitch_um": null,
+        "resolution_class": "subcellular",
+        "transcriptome_scope": "targeted_panel"
+      },
+      "merscope": {
+        "name": "Vizgen MERSCOPE",
+        "resolution_class": "subcellular",
+        "transcriptome_scope": "targeted_panel"
+      },
+      "cosmx": {
+        "name": "NanoString CosMx",
+        "resolution_class": "subcellular",
+        "transcriptome_scope": "targeted_panel"
+      }
+    }
+  },
+
+  "units": {
+    "note": "the unit a stage operates on. changing it changes what every downstream metric means, so it is a declared decision with recorded evidence, not an implementation detail.",
+    "spot": {
+      "definition": "one capture location on the array",
+      "id_form": "{col}x{row}"
+    },
+    "niche": {
+      "definition": "centre spot + K spatial neighbours",
+      "params_used": {"k_neighbors": 6},
+      "derived": "7 spots, ~1400 cells, ~0.5mm across on a 150um lattice",
+      "params_space": [
+        {"k": 6, "note": "first ring on this lattice"},
+        {"k": 15, "note": "the proposal's stated contingency if spot-level pathway embeddings prove too noisy"},
+        {"k": "radius_um", "note": "physical-radius neighbourhoods - platform-independent, preferable when comparing across pitches"}
+      ],
+      "chosen_because": "niche outperformed cell scale at predicting molecular class from the image on this platform - a measurement, not a preference",
+      "validated_on": "original_st, 100um spots. the cell-vs-niche ordering is NOT assumed to transfer to subcellular platforms and must be re-measured there",
+      "guard": "k is meaningless without a pitch. a k=6 niche spans ~0.5mm at 150um pitch and ~0.33mm at 100um - report the physical footprint alongside k"
+    },
+    "cell": {
+      "definition": "one tile at a spot centre, pre-pooling",
+      "note": "the H&E side can express this; the 100um-spot molecular side cannot resolve it"
+    }
+  },
+
+  "artifacts": {
+    "note": "shapes are symbolic. D_he, D_st, D_pathway and D_shared are resolved from the encoder registry at runtime, never hardcoded - swapping an encoder must not require editing this file.",
+
+    "raw_counts": {
+      "phase": "data",
+      "format": "RData",
+      "path_pattern": "data/inputs/byArray/{slide}/{subarray}/selection.RData",
+      "objects": {
+        "cnts": {
+          "shape": ["n_spots_selected", "n_genes"],
+          "dtype": "integer",
+          "axis0": "spot_id, tissue-selected",
+          "axis1": "versioned Ensembl gene ids",
+          "semantics": "RAW INTEGER COUNTS. the only correct expression input."
+        },
+        "spots": {
+          "shape": ["n_spots_selected", 6],
+          "semantics": "the entire spot -> pixel coordinate story. there is no GeoJSON and no registration step in this pipeline."
+        }
+      },
+      "variants": {
+        "all.RData": "full grid, raw. superset of selection.",
+        "rawCountsMatrices/*.tsv": "DO NOT USE. normalised and batch-corrected floats despite the name."
+      },
+      "guard": "gene ids are versioned Ensembl throughout. symbols are for display only - never a join key."
+    },
+
+    "he_niche_cache": {
+      "phase": "embed",
+      "format": "npy + tsv sidecar",
+      "path_pattern": "data/embeddings/virchow2_niche/{subarray}.npy",
+      "shape": ["n_niches_subarray", "D_he"],
+      "dtype": "float32",
+      "axis0": "niche index, row-aligned with {subarray}_meta.tsv",
+      "axis1": "encoder feature dimension",
+      "sidecar": {"path": "{subarray}_meta.tsv", "columns": ["pixel_x", "pixel_y", "neighbor_count"]},
+      "encoder_frozen": true,
+      "note": "pre-join. row count exceeds the joined parquet because the join is an inner join against pathway coverage."
+    },
+
+    "st_niche_cache": {
+      "phase": "embed",
+      "format": "parquet",
+      "path_pattern": "data/embeddings/novae_niche_full/{subarray}_novae_embeddings.parquet",
+      "shape": ["n_niches_subarray", "D_st"],
+      "encoder_frozen": true,
+      "guard": "raw GAT output - carries no normalisation of its own (mean norm ~2.6). every consumer MUST LayerNorm or z-score before use. it is z-scored per subarray at join time."
+    },
+
+    "pathway_cache": {
+      "phase": "embed",
+      "format": "parquet",
+      "scope": "cohort-wide, not per subarray",
+      "shape": ["n_niches", "D_pathway"],
+      "guard": "sha-locked to a named build. silently swapping the pathway build invalidates every H3 number measured against it."
+    },
+
+    "niche_join": {
+      "phase": "join",
+      "format": "parquet",
+      "path_pattern": "data/embeddings/niches_v3/{subarray}.parquet",
+      "note": "THE WAIST. every downstream stage reads this and nothing else.",
+      "columns": {
+        "spot_id":              {"type": "string",   "semantics": "centre spot"},
+        "subarray":             {"type": "string"},
+        "patient_id":           {"type": "int64",    "semantics": "THE SPLIT KEY"},
+        "archetype":            {"type": "int64",    "semantics": "patient-level pseudobulk. DIAGNOSTIC ONLY - see guards.archetype_is_not_biology"},
+        "compartment":          {"type": "string|null", "semantics": "pathologist category, 15-class. null on most rows - see guards.annotation_coverage"},
+        "mc_megacluster":       {"type": "int64",    "semantics": "expression-derived class, or -1 join fill - see guards.fill_value_is_not_null"},
+        "mc_weights_niche":     {"type": "float[K_mc]", "semantics": "SUPERVISION ONLY. never an input feature - see guards.no_circular_supervision"},
+        "he_niche":             {"type": "float[D_he]", "semantics": "POOLED - mean of the K+1 tiles"},
+        "he_cell_tokens":       {"type": "float[K+1, D_he]", "semantics": "UN-POOLED tiles. the early-vs-late fusion variable lives here"},
+        "st_niche":             {"type": "float[D_st]", "semantics": "z-scored per subarray"},
+        "pathway_niche":        {"type": "float[D_pathway]", "semantics": "pathway anchor"},
+        "signature_score":      {"type": "double",   "semantics": "continuous gene-signature score"},
+        "neighbor_spot_ids":    {"type": "list[string]", "semantics": "provenance of the K+1 spots"}
+      },
+      "guard": "the join is an INNER join. niches without pathway coverage are dropped before this table exists, so the funnel must be reported as counts, not implied."
+    },
+
+    "split": {
+      "phase": "split",
+      "format": "json",
+      "path_pattern": "runs/{grid}/{run}/split.json",
+      "fields": {"seed": "int", "train_patients": "int[]", "val_patients": "int[]", "test_patients": "int[]"},
+      "guard": "BY SUBJECT, never by niche or by section. consecutive sections of one block are near-duplicates in z - splitting below subject level puts near-copies of the same tissue on both sides."
+    },
+
+    "shared_space": {
+      "phase": "align",
+      "format": "parquet",
+      "path_pattern": "runs/{grid}/{run}/embeddings_test.parquet",
+      "columns": {
+        "spot_id": "string", "subarray": "string", "patient_id": "int64",
+        "archetype": "int64", "compartment": "string|null",
+        "z_he": {"type": "float[D_shared]", "semantics": "L2-normalised"},
+        "z_st": {"type": "float[D_shared]", "semantics": "L2-normalised"},
+        "attn":  {"type": "float[K+1] | null", "semantics": "present only on runs with a cross-attention bridge; null on late-fusion runs"}
+      },
+      "guard": "both outputs are L2-normalised, so every downstream similarity is a cosine. a metric that assumes unnormalised magnitude is wrong here."
+    }
+  },
+
+  "register_cross_section": {
+    "phase": "data",
+    "note": "SEGMENT 1b. declared, not exercised - no cohort in this project requires it.",
+    "fires_when": "platform.same_section_as_image == false",
+    "skipped_when": "same_section_as_image == true. the stained image and the molecular assay come off one physical section, so registration error is zero by construction.",
+
+    "framing": {
+      "note": "the benchmark literature reaches the same conclusion this project reaches for alignment: method choice is data-dependent, so the node offers a menu and records which was used, rather than hardcoding one.",
+      "anchor": "Yan et al., Nat Comput Sci 6:524-541 (2026) - 295 alignment tasks over 240 datasets; best method is dataset-dependent. code: github.com/Yunzhi-Yan/SABench",
+      "supporting": [
+        "Hu et al., Genome Biol 25:212 (2024) - clustering + alignment + integration",
+        "Dong et al., Genome Biol 26:318 (2025) - multi-slice integration and downstream effects"
+      ]
+    },
+
+    "params_space": [
+      {"id": "VALIS", "scope": "WSI + point data", "ref": "Gatenbee et al., Nat Commun 2023",
+       "why": "warps POINT data, so it can carry molecular spot coordinates through the transform into image space. the only entry that directly performs 'map another assay's coordinates onto the stained image'."},
+      {"id": "RegWSI / DeeperHistReg", "scope": "WSI <-> WSI", "ref": "Wodzinski et al.",
+       "why": "ACROBAT 2023 winner. the strong general-purpose registration baseline."},
+      {"id": "CORE", "scope": "nuclei-level", "ref": "2025",
+       "why": "when the required correspondence is finer than a deformation field."},
+      {"id": "DFBR", "scope": "WSI <-> WSI", "why": "alternate in the ACROBAT family."},
+      {"id": "HistokatFusion", "scope": "WSI <-> WSI", "why": "alternate in the ACROBAT family."},
+      {"id": "PASTE / PASTE2", "scope": "ST <-> ST serial", "why": "slice-to-slice within the molecular modality. does not register to an image."},
+      {"id": "GPSA", "scope": "ST <-> ST serial", "why": "gaussian-process spatial alignment."},
+      {"id": "STalign", "scope": "ST <-> ST serial", "why": "diffeomorphic alignment of spatial transcriptomics."},
+      {"id": "PIVOT", "scope": "UNVERIFIED", "status": "placeholder",
+       "why": "named as in local use. capabilities, scope and publication status not confirmed - do not route to it until its fields are filled in."}
+    ],
+
+    "benchmarks": [
+      {"id": "HyReCo", "why": "restained plus consecutive serial sections - the closest published analogue to a restain/serial workflow."},
+      {"id": "ACROBAT 2022/2023", "why": "breast tissue, 4121 WSIs - matches the tissue type here."},
+      {"id": "ANHIR", "ref": "IEEE TMI 2020", "why": "landmark target-registration-error via the BIRL harness."},
+      {"id": "Learn2Reg 2024 COMULISglobe SHG/BF", "why": "first microscopy task in that series; hidden test set with manual landmarks."}
+    ],
+
+    "emits": {
+      "method_id": "string - which entry from params_space ran",
+      "warp_field": "artifact ref",
+      "registration_error_um": "number - REQUIRED, never null when this node fires",
+      "landmark_tre": "number | null"
+    },
+
+    "guard": "registration_error_um propagates into every downstream niche-level cosine. evidence collected at error=0 does NOT transfer unwidened to a registered cohort - intervals must be widened by the error term before any recorded threshold is applied.",
+
+    "recorded_exclusions": [
+      "registration mismatch was tested and RULED OUT as a cause of the observed H2 fragmentation on this cohort. it is a same-section cohort; the fragmentation has another cause. do not re-open this."
+    ],
+
+    "bites_on": "serial-section cohorts sampled at intervals, and 3D reconstruction across a block. not this cohort."
+  },
+
+  "guards": {
+    "note": "data-level invariants. these sit upstream of configs/routing_contract.json guards, which govern evaluation.",
+
+    "no_circular_supervision": "a signal used to define positive pairs or labels may never also be an input feature. using one signal as both is the circularity that makes a result unfalsifiable.",
+
+    "split_by_subject": "held-out units must be whole subjects. consecutive sections of one block are near-duplicates, so any split below subject level leaks.",
+
+    "annotation_coverage": "expert annotation is typically partial. record the covered fraction and the covered unit count explicitly - absent annotation reads as a category in a figure unless it is stated otherwise, and a coverage figure is not a class.",
+
+    "fill_value_is_not_null": "a sentinel fill (-1 and friends) is NOT NaN, so .notna() does not remove it and it reaches downstream metrics as an extra class. filter on the sentinel explicitly, and report whether the fill is enriched for any tissue type - a join that preferentially loses one tissue is a biased join.",
+
+    "archetype_is_not_biology": "a label derived at subject level cannot serve as a biology-coherence target. compute NMI(label, subject_id) first - a label that tracks subject identity turns any clustering win into a restatement of which sample something came from.",
+
+    "pitch_not_diameter": "spot pitch is centre-to-centre; spot diameter is the capture footprint. they are different numbers and confusing them mis-scales every micron-denominated figure and every physical niche footprint.",
+
+    "encoder_tissue_compatibility": "an encoder's training distribution must be checked against the target platform and tissue, and the result recorded. where a pathway encoder was trained on a resolution class the cohort does not share, compatibility is an empirical question - measure it, never assume it.",
+
+    "frozen_encoders": "no stage in this contract fine-tunes an encoder. a fine-tuned encoder is a different artifact and invalidates every cached embedding downstream of it.",
+
+    "raw_counts_only": "expression input must be raw integer counts. a pre-normalised or batch-corrected matrix silently changes what every statistic means, and file names are not trustworthy indicators of which one you have."
+  },
+
+  "known_defects": {
+    "note": "properties of the artifacts, not of the analysis. carried here so a consumer can check them rather than rediscover them.",
+    "entries": [
+      {"where": "niche join, sentinel fill", "what": "the -1 fill reaches subject-level coherence evaluation as an extra class because consumers filter with .notna() and -1 is not NaN", "status": "open"},
+      {"where": "H2-C permutation scope", "what": "permutation is performed at niche level while the label is per-subject; numerator and denominator may partly self-cancel", "status": "unverified"},
+      {"where": "legacy run grid", "what": "an earlier grid exists whose pathway side is not regenerable. several older documents point at it rather than the live grid", "status": "open - check the grid path before citing any number"},
+      {"where": "eda_summary platform field", "what": "previously recorded the wrong centre-to-centre pitch", "status": "FIXED 2026-08-24 - docs/data_structure_flow.md still lists this as open and is stale on that row"},
+      {"where": "scripts/, permutation count", "what": "N_PERMS is 1000 in some evaluation scripts and 500 in others, so p-value floors differ between evaluations that are reported together", "status": "open - detected by AST extraction 2026-08-31"},
+      {"where": "scripts/, default run set", "what": "the default run list omits one run of the grid in several scripts", "status": "open - detected by AST extraction 2026-08-31"},
+      {"where": "scripts/, encoder config", "what": "a superseded encoder configuration is still present in two scripts", "status": "open - detected by AST extraction 2026-08-31"}
+    ]
+  },
+
+  "evidence_contract": {
+    "note": "what a cohort must supply for this contract to be executable against it.",
+    "required": [
+      "platform descriptor, including same_section_as_image",
+      "an adapter mapping cohort files to the raw_counts schema",
+      "unit choice with its k or radius, and the pitch it is relative to",
+      "annotation coverage counts, where expert annotation exists",
+      "registration_error_um, when the registration node fires"
+    ],
+    "absent_cohort_file": "a cohort with no platform descriptor is NOT processable. do not infer the platform from file layout - infer nothing, and say so."
+  }
+}
