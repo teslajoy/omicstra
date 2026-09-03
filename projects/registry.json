@@ -1,7 +1,6 @@
 {
   "projects": [
-    "tnbc-92",
-    "hest-breast"
+    "tnbc-92"
   ],
   "default": "tnbc-92"
 }
