@@ -99,7 +99,7 @@ def test_inventory_halts_on_any_failure_not_only_unbound_roles():
     proceeded - letting eda measure data inventory could not describe.
     """
     import inspect
-    from omicstra import eda_graph
+    from omicstra.graphs import eda as eda_graph
     src = inspect.getsource(eda_graph.inventory)
     assert 'status") == "fail"' in src or "status') == 'fail'" in src, (
         "inventory must halt on any failed step, not only on unbound roles")
@@ -129,12 +129,12 @@ def test_platform_json_has_the_flat_samples_map(proj):
 
 def test_eda_graph_has_an_inventory_node_before_profile():
     """inventory produces the join key, platform and raw matrix that eda reads."""
-    from omicstra.eda_graph import build_eda_graph
+    from omicstra.graphs.eda import build_eda_graph
     nodes = set(build_eda_graph().get_graph().nodes)
     assert {"inventory", "profile", "gate"} <= nodes, f"nodes: {sorted(nodes)}"
 
 
 def test_step_registry_is_gone_from_the_graph():
     """the registry lives in protocols/. a graph that also owns one is two things."""
-    from omicstra import eda_graph
+    from omicstra.graphs import eda as eda_graph
     assert not hasattr(eda_graph, "STEP_REGISTRY")

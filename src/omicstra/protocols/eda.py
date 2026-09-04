@@ -16,7 +16,7 @@ absent. a missing check that says nothing is the defect this closes.
 """
 from __future__ import annotations
 
-from omicstra import eda_steps
+from omicstra.protocols import eda_steps
 from omicstra.protocols import Step
 from omicstra.records import DiagnosticRecord
 

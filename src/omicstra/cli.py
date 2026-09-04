@@ -173,7 +173,7 @@ def eda(project_dir, project_id, adata_path, steps):
     from langgraph.checkpoint.memory import InMemorySaver
     from langgraph.types import Command
     from omicstra.graph import build_omicstra_graph
-    from omicstra.eda_graph import build_eda_graph
+    from omicstra.graphs.eda import build_eda_graph
 
     if project_dir is not None:
         settings.project_dir = project_dir.expanduser()

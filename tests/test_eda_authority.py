@@ -22,7 +22,8 @@ from pathlib import Path
 
 import pytest
 
-from omicstra import eda, eda_graph
+from omicstra import eda
+from omicstra.graphs import eda as eda_graph
 
 AUTHORITIES = {"universal", "cohort_calibrated", "advisory"}
 
