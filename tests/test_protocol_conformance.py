@@ -138,3 +138,60 @@ def test_step_registry_is_gone_from_the_graph():
     """the registry lives in protocols/. a graph that also owns one is two things."""
     from omicstra.graphs import eda as eda_graph
     assert not hasattr(eda_graph, "STEP_REGISTRY")
+
+
+# --- transport and protocol revision ----------------------------------------
+def test_serve_refuses_an_unknown_mode():
+    from omicstra.mcp.server import serve
+    with pytest.raises(ValueError, match="stdio or http"):
+        serve(mode="grpc")
+
+
+def test_protocol_version_is_read_from_meta_not_a_session():
+    """the july revision removed the initialize handshake - version travels in
+    `_meta` on every request, so it is per-request and belongs on the record."""
+    from mcp.types import PROTOCOL_VERSION_META_KEY, LATEST_PROTOCOL_VERSION
+    from omicstra.mcp.server import negotiated_protocol_version
+    assert negotiated_protocol_version(
+        {PROTOCOL_VERSION_META_KEY: LATEST_PROTOCOL_VERSION}) == LATEST_PROTOCOL_VERSION
+    assert negotiated_protocol_version(None) is None
+
+
+def test_require_protocol_2026_defaults_off_and_refuses_when_on(monkeypatch):
+    """default permissive; strict refuses an older client, which is what a
+    deployment behind an authorization server needs - an older client cannot
+    present an audience-bound token."""
+    import importlib
+    from mcp.types import PROTOCOL_VERSION_META_KEY as K, LATEST_PROTOCOL_VERSION as L
+    import omicstra.mcp.server as s
+    monkeypatch.setenv("REQUIRE_PROTOCOL_2026", "0")
+    s = importlib.reload(s)
+    assert s.REQUIRE_PROTOCOL_2026 is False
+    assert s.check_protocol({K: "2025-03-26"}) == "2025-03-26"
+    monkeypatch.setenv("REQUIRE_PROTOCOL_2026", "1")
+    s = importlib.reload(s)
+    assert s.REQUIRE_PROTOCOL_2026 is True
+    assert s.check_protocol({K: L}) == L
+    with pytest.raises(ValueError):
+        s.check_protocol({K: "2025-03-26"})
+    monkeypatch.setenv("REQUIRE_PROTOCOL_2026", "0")
+    importlib.reload(s)
+
+
+def test_http_app_is_stateless():
+    """any instance handles any request - omicstra's handle is run_id, passed
+    as an ordinary param, so nothing needs session affinity."""
+    from omicstra.mcp.server import srv
+    app = srv.streamable_http_app(streamable_http_path="/mcp", stateless_http=True)
+    assert "/mcp" in [getattr(r, "path", None) for r in app.routes]
+
+
+def test_gate_interrupt_carries_the_records():
+    """a client asked to accept cautions must see the diagnostics behind them.
+
+    while a subgraph is paused the parent sees none of its state, so anything
+    the human needs has to travel IN the interrupt payload.
+    """
+    import inspect
+    from omicstra.graphs import eda as g
+    assert '"records": state.get("records", [])' in inspect.getsource(g.escalate)

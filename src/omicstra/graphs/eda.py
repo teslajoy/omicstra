@@ -145,6 +145,14 @@ def escalate(state: EDAState) -> dict:
     answer = interrupt({
         "question": "The gate returned proceed_with_caution. Accept the cautions and proceed?",
         "verdict": state.get("verdict"),
+        # the records MUST travel in the payload. whatever is passed to
+        # interrupt() is what the caller receives in `__interrupt__`, and while
+        # a subgraph is paused the parent sees none of its state - so without
+        # this a client is asked to accept cautions with no sight of the
+        # diagnostics that produced them. that is the difference between an
+        # informed decision and a rubber stamp, and it is the whole reason the
+        # gate asks a person at all.
+        "records": state.get("records", []),
         "cautions": state.get("cautions", []),
         # a calibrated criterion this cohort never derived is the sharper ask:
         # it names what accepting forecloses, not just what it risks.

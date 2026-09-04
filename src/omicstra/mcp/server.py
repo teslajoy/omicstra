@@ -14,8 +14,10 @@ note: mcp 2.0 renamed FastMCP -> MCPServer (mcp.server.fastmcp no longer exists)
 from __future__ import annotations
 
 import json
+import os
 
 from mcp.server import MCPServer
+from mcp.types import LATEST_PROTOCOL_VERSION
 
 from omicstra.config import ProjectConfig
 from omicstra.eda import load_contract, load_summary, run_gate
@@ -339,8 +341,68 @@ def eda_summary(project_id: str) -> str:
     return json.dumps(load_summary(project_id), indent=2)
 
 
+# --- transport --------------------------------------------------------------
+# stdio and http are the SAME server. the transport is a deployment choice, not
+# an architectural one - no tool, contract or record changes between them.
+#
+# on the protocol revision: this SDK's LATEST_PROTOCOL_VERSION is 2026-07-28,
+# which is NOT backward compatible with 2025-03-26 - a client on one cannot
+# talk to a server on the other. the SDK negotiates and will fall back, so the
+# default here is permissive. set REQUIRE_PROTOCOL_2026=1 to refuse anything
+# older, which is what a deployment behind an authorization server wants: the
+# july revision is where mcp servers became oauth 2.1 resource servers, and
+# accepting an older client silently means accepting one that cannot present
+# an audience-bound token.
+REQUIRE_PROTOCOL_2026 = os.environ.get("REQUIRE_PROTOCOL_2026", "0") == "1"
+
+
+def negotiated_protocol_version(meta: dict | None) -> str | None:
+    """the version the client declared, read off `_meta`.
+
+    the july revision removed the initialize handshake: version and capabilities
+    travel in `_meta` on every request instead. so this is per-request, not
+    per-session, and it belongs on the record - a run is only reproducible if
+    you know which protocol produced it.
+    """
+    from mcp.types import PROTOCOL_VERSION_META_KEY
+    return (meta or {}).get(PROTOCOL_VERSION_META_KEY)
+
+
+def check_protocol(meta: dict | None) -> str | None:
+    v = negotiated_protocol_version(meta)
+    if REQUIRE_PROTOCOL_2026 and v != LATEST_PROTOCOL_VERSION:
+        raise ValueError(
+            f"REQUIRE_PROTOCOL_2026=1 and this request declares {v!r}. the "
+            f"{LATEST_PROTOCOL_VERSION} revision is required: older clients "
+            "cannot present audience-bound tokens.")
+    return v
+
+
+def serve(mode: str = "stdio", mount: str = "/mcp", host: str = "127.0.0.1",
+          port: int = 8000) -> None:
+    """the one entry point. `mode` is the only thing that differs.
+
+    http is STATELESS by design - any instance handles any request, so n
+    servers sit behind one address with no session affinity. omicstra's own
+    handle is `run_id`, minted by a tool and passed back as an ordinary
+    parameter, so nothing needs a sticky session to resume.
+    """
+    if mode == "stdio":
+        srv.run()
+        return
+    if mode != "http":
+        raise ValueError(f"mode must be stdio or http, not {mode!r}")
+    import uvicorn
+    app = srv.streamable_http_app(streamable_http_path=mount, stateless_http=True,
+                                  host=host)
+    uvicorn.run(app, host=host, port=port)
+
+
 def main() -> None:
-    srv.run()
+    serve(mode=os.environ.get("OMICSTRA_TRANSPORT", "stdio"),
+          mount=os.environ.get("OMICSTRA_HTTP_MOUNT", "/mcp"),
+          host=os.environ.get("OMICSTRA_HTTP_HOST", "127.0.0.1"),
+          port=int(os.environ.get("OMICSTRA_HTTP_PORT", "8000")))
 
 
 if __name__ == "__main__":
