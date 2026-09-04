@@ -30,6 +30,8 @@ because more than one node appends to it; scalars do not.
 from __future__ import annotations
 
 import operator
+import os
+from pathlib import Path
 from typing import Annotated, Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -86,6 +88,35 @@ def discover(state: OmicstraState) -> dict:
 
 def _arm(state: OmicstraState) -> str:
     return state.get("arm", "compute")
+
+
+def make_checkpointer(spec: str | None = None):
+    """`memory` or `sqlite:<path>`. the http path needs the second.
+
+    InMemorySaver dies with the process, so `resume(run_id)` only works inside
+    one invocation - which quietly makes "any instance handles any request"
+    false: a second instance, or the same one after a restart, has never heard
+    of the thread. a durable saver is what turns that sentence from a claim
+    into a fact, and it is the difference between a gate a person can come back
+    to tomorrow and one they must answer before their shell exits.
+
+    gscratch cannot host the sqlite file - it has no POSIX locking and names
+    sqlite as unsupported. use node-local disk, RDS, or postgres there.
+    """
+    spec = spec or os.environ.get("OMICSTRA_CHECKPOINT", "memory")
+    if spec == "memory":
+        from langgraph.checkpoint.memory import InMemorySaver
+        return InMemorySaver(), "memory"
+    if spec.startswith("sqlite:"):
+        import sqlite3
+        from langgraph.checkpoint.sqlite import SqliteSaver
+        path = spec.split(":", 1)[1] or "omicstra_checkpoints.sqlite"
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(path, check_same_thread=False)
+        saver = SqliteSaver(conn)
+        saver.setup()
+        return saver, f"sqlite:{path}"
+    raise ValueError(f"OMICSTRA_CHECKPOINT must be memory or sqlite:<path>, not {spec!r}")
 
 
 def build_omicstra_graph(checkpointer: Any = None,

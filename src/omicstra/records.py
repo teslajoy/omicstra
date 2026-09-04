@@ -74,6 +74,14 @@ class Record(BaseModel):
     duration_s: float | None = None
     code_version: str | None = None  # git sha of the package at run time
 
+    # the mcp protocol revision this run was produced under, read from `_meta`
+    # per request. the 2026-07-28 revision removed the initialize handshake, so
+    # there is no session to ask - it travels with every request or not at all.
+    # a run is only reproducible if you know which protocol produced it, and
+    # this is also what makes REQUIRE_PROTOCOL_2026 mean something after the
+    # fact rather than only at the door.
+    protocol_version: str | None = None
+
     def headline(self) -> str:  # overridden per kind
         return f"{self.step_id}: {self.status}"
 

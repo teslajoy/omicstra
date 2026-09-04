@@ -368,6 +368,23 @@ def negotiated_protocol_version(meta: dict | None) -> str | None:
     return (meta or {}).get(PROTOCOL_VERSION_META_KEY)
 
 
+def request_protocol_version() -> str | None:
+    """the version of the CURRENT request, validated.
+
+    called from the tool path rather than a handshake, because the july
+    revision removed the handshake. every tool that stamps a record calls this,
+    so strict mode refuses at the door AND the version lands on the record.
+    """
+    try:
+        from mcp.server import context
+        ctx = context.request_ctx.get()
+        meta = getattr(ctx, "meta", None)
+        meta = meta if isinstance(meta, dict) else (meta.model_dump() if meta else None)
+    except Exception:
+        meta = None                       # stdio, or outside a request
+    return check_protocol(meta)
+
+
 def check_protocol(meta: dict | None) -> str | None:
     v = negotiated_protocol_version(meta)
     if REQUIRE_PROTOCOL_2026 and v != LATEST_PROTOCOL_VERSION:

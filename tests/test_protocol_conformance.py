@@ -195,3 +195,90 @@ def test_gate_interrupt_carries_the_records():
     import inspect
     from omicstra.graphs import eda as g
     assert '"records": state.get("records", [])' in inspect.getsource(g.escalate)
+
+
+# --- a,b: the version reaches the record ------------------------------------
+def test_protocol_version_is_a_field_on_the_base_record():
+    """b - without this every public-demo run carries a null forever, and
+    REQUIRE_PROTOCOL_2026 means something only at the door, never after."""
+    from omicstra.records import DiagnosticRecord, GateRecord, Record, TransformRecord
+    for cls in (Record, DiagnosticRecord, TransformRecord, GateRecord):
+        assert "protocol_version" in cls.model_fields, cls.__name__
+
+
+def test_request_protocol_version_is_on_the_request_path():
+    """a - a checker that is only ever called from a test refuses nothing."""
+    from omicstra.mcp.server import request_protocol_version
+    assert request_protocol_version() is None       # outside a request: stdio
+    import inspect
+    from omicstra.mcp.server import request_protocol_version as f
+    assert "check_protocol" in inspect.getsource(f), "must validate, not just read"
+
+
+# --- c: durability is what makes the stateless claim true -------------------
+def test_checkpointer_selector():
+    from omicstra.graph import make_checkpointer
+    m, label = make_checkpointer("memory")
+    assert type(m).__name__ == "InMemorySaver" and label == "memory"
+    with pytest.raises(ValueError, match="memory or sqlite"):
+        make_checkpointer("redis://nope")
+
+
+def test_sqlite_checkpoint_survives_a_new_saver(tmp_path):
+    """the point of c: a thread resumable by an instance that never ran it.
+
+    InMemorySaver dies with the process, which quietly makes "any instance
+    handles any request" false. this builds a SECOND saver over the same file -
+    the in-process stand-in for a restarted or second server.
+    """
+    from langgraph.checkpoint.memory import InMemorySaver  # noqa: F401
+    from omicstra.graph import make_checkpointer
+    db = tmp_path / "ck.sqlite"
+    s1, _ = make_checkpointer(f"sqlite:{db}")
+    assert db.exists(), "setup() must create the file"
+    s2, _ = make_checkpointer(f"sqlite:{db}")
+    assert s1 is not s2 and type(s2).__name__ == "SqliteSaver"
+
+
+# --- d: through the real http app -------------------------------------------
+def test_tools_served_over_http_with_meta():
+    """d - the same tools, over streamable-http, with the version in `_meta`.
+
+    note the transport rejects an unknown Host by default (DNS-rebinding
+    protection), so a deployment must declare its hostname.
+    """
+    import json as _json
+    from starlette.testclient import TestClient
+
+    from mcp.server.transport_security import TransportSecuritySettings
+    from mcp.types import LATEST_PROTOCOL_VERSION, PROTOCOL_VERSION_META_KEY
+    from omicstra.mcp.server import srv
+
+    sec = TransportSecuritySettings(allowed_hosts=["testserver"], allowed_origins=["*"])
+    app = srv.streamable_http_app(streamable_http_path="/mcp", stateless_http=True,
+                                  transport_security=sec)
+    with TestClient(app) as c:
+        r = c.post("/mcp",
+                   json={"jsonrpc": "2.0", "id": 1, "method": "tools/list",
+                         "params": {"_meta": {PROTOCOL_VERSION_META_KEY:
+                                              LATEST_PROTOCOL_VERSION}}},
+                   headers={"Accept": "application/json, text/event-stream",
+                            "Content-Type": "application/json",
+                            "Mcp-Method": "tools/list"})
+    assert r.status_code == 200, r.text[:200]
+    data = [l for l in r.text.splitlines() if l.startswith("data:")]
+    payload = _json.loads(data[0][5:]) if data else r.json()
+    names = {t["name"] for t in payload["result"]["tools"]}
+    assert {"check_eda_gate", "route", "decision_record"} <= names, sorted(names)
+
+
+def test_http_rejects_an_unknown_host():
+    """DNS-rebinding protection is ON by default and should stay on."""
+    from starlette.testclient import TestClient
+    from omicstra.mcp.server import srv
+    app = srv.streamable_http_app(streamable_http_path="/mcp", stateless_http=True)
+    with TestClient(app) as c:
+        r = c.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                   headers={"Accept": "application/json, text/event-stream",
+                            "Content-Type": "application/json"})
+    assert r.status_code == 421, "unknown Host must be refused"
