@@ -1,0 +1,349 @@
+{
+  "files": {
+    "step_id": "files",
+    "kind": "diagnostic",
+    "status": "pass",
+    "actor": "deterministic",
+    "record_id": "",
+    "params": {},
+    "inputs": [],
+    "outputs": [],
+    "caveats": [],
+    "started_at": "2026-09-02T16:50:29+00:00",
+    "duration_s": null,
+    "code_version": null,
+    "method": "",
+    "scope": "",
+    "observed": {
+      "n": 281,
+      "bytes": 1263536736,
+      "formats": {
+        ".RDS": 1609,
+        ".jpg": 1422,
+        ".RData": 958,
+        ".tsv": 568,
+        ".txt": 282,
+        ".bz2": 281
+      },
+      "examples": [
+        "CN1_C1",
+        "CN1_C2",
+        "CN1_D1",
+        "CN1_D2"
+      ]
+    },
+    "criterion": "",
+    "result": "281 sample files, 1.26 GB",
+    "decision": "proceed",
+    "guards": []
+  },
+  "platform": {
+    "step_id": "platform",
+    "kind": "diagnostic",
+    "status": "pass",
+    "actor": "deterministic",
+    "record_id": "",
+    "params": {},
+    "inputs": [],
+    "outputs": [],
+    "caveats": [],
+    "started_at": "2026-09-02T16:50:29+00:00",
+    "duration_s": null,
+    "code_version": null,
+    "method": "",
+    "scope": "",
+    "observed": {
+      "counts": {
+        "original_st": 281
+      },
+      "sha": "8c90555947cf94ed",
+      "defs": {
+        "original_st": {
+          "resolution": "spot",
+          "pitch_um": 150,
+          "scope": "whole_transcriptome"
+        }
+      }
+    },
+    "criterion": "",
+    "result": "1 platform(s): {'original_st': 281}",
+    "decision": "homogeneous",
+    "guards": []
+  },
+  "shape": {
+    "step_id": "shape",
+    "kind": "diagnostic",
+    "status": "pass",
+    "actor": "deterministic",
+    "record_id": "",
+    "params": {},
+    "inputs": [],
+    "outputs": [],
+    "caveats": [],
+    "started_at": "2026-09-02T16:50:32+00:00",
+    "duration_s": null,
+    "code_version": null,
+    "method": "",
+    "scope": "",
+    "observed": {
+      "per_sample": [
+        {
+          "sample": "CN1_C1",
+          "n_obs": 1075,
+          "n_var": 27567,
+          "platform": "original_st"
+        },
+        {
+          "sample": "CN1_C2",
+          "n_obs": 1554,
+          "n_var": 27028,
+          "platform": "original_st"
+        }
+      ],
+      "n_obs": [
+        1075,
+        1554
+      ],
+      "n_var": [
+        27028,
+        27567
+      ]
+    },
+    "criterion": "",
+    "result": "2/2 readable",
+    "decision": "proceed",
+    "guards": []
+  },
+  "coords": {
+    "step_id": "coords",
+    "kind": "diagnostic",
+    "status": "pass",
+    "actor": "deterministic",
+    "record_id": "",
+    "params": {},
+    "inputs": [],
+    "outputs": [],
+    "caveats": [],
+    "started_at": "2026-09-02T16:50:32+00:00",
+    "duration_s": null,
+    "code_version": null,
+    "method": "",
+    "scope": "",
+    "observed": {
+      "per_sample": [
+        {
+          "sample": "CN1_C1",
+          "platform": "original_st",
+          "objects": [
+            "cnts",
+            "spots"
+          ],
+          "declared": [
+            "pixel_x",
+            "pixel_y"
+          ],
+          "found_in": "spots",
+          "absent": [],
+          "ok": true
+        },
+        {
+          "sample": "CN1_C2",
+          "platform": "original_st",
+          "objects": [
+            "cnts",
+            "spots"
+          ],
+          "declared": [
+            "pixel_x",
+            "pixel_y"
+          ],
+          "found_in": "spots",
+          "absent": [],
+          "ok": true
+        }
+      ],
+      "failing": []
+    },
+    "criterion": "",
+    "result": "2/2 carry declared position",
+    "decision": "a pixel extent is not a micron extent - scale comes from platform.spot_pitch_um, never from these numbers",
+    "guards": []
+  },
+  "join_key": {
+    "step_id": "join_key",
+    "kind": "diagnostic",
+    "status": "pass",
+    "actor": "deterministic",
+    "record_id": "",
+    "params": {},
+    "inputs": [],
+    "outputs": [],
+    "caveats": [],
+    "started_at": "2026-09-02T16:50:32+00:00",
+    "duration_s": null,
+    "code_version": null,
+    "method": "",
+    "scope": "",
+    "observed": {
+      "per_sample": [
+        {
+          "sample": "CN1_C1",
+          "n": 1075,
+          "unique_within_sample": true,
+          "examples": [
+            "2x12",
+            "2x14"
+          ]
+        },
+        {
+          "sample": "CN1_C2",
+          "n": 1554,
+          "unique_within_sample": true,
+          "examples": [
+            "2x22",
+            "2x24"
+          ]
+        }
+      ],
+      "duplicated_within": [],
+      "image_side": "unchecked - the image index has not been compared against this system"
+    },
+    "criterion": "",
+    "result": "2 samples, 2629 distinct (sample_id, index) of 2629",
+    "decision": "composite key is cohort-unique",
+    "guards": []
+  },
+  "counts": {
+    "step_id": "counts",
+    "kind": "diagnostic",
+    "status": "pass",
+    "actor": "deterministic",
+    "record_id": "",
+    "params": {},
+    "inputs": [],
+    "outputs": [],
+    "caveats": [],
+    "started_at": "2026-09-02T16:50:32+00:00",
+    "duration_s": null,
+    "code_version": null,
+    "method": "",
+    "scope": "",
+    "observed": {
+      "per_sample": [
+        {
+          "sample": "CN1_C1",
+          "dtype": "float64",
+          "max": 888.0,
+          "nonzero_slice": true,
+          "integer_valued": true,
+          "sha256_1MB": "9b1584b2e6bbe1b4"
+        },
+        {
+          "sample": "CN1_C2",
+          "dtype": "float64",
+          "max": 929.0,
+          "nonzero_slice": true,
+          "integer_valued": true,
+          "sha256_1MB": "e2d0929c5555a156"
+        }
+      ],
+      "not_integer": []
+    },
+    "criterion": "",
+    "result": "2/2 integer-valued",
+    "decision": "raw integer counts",
+    "guards": []
+  },
+  "funnel": {
+    "step_id": "funnel",
+    "kind": "diagnostic",
+    "status": "pass",
+    "actor": "deterministic",
+    "record_id": "",
+    "params": {},
+    "inputs": [],
+    "outputs": [],
+    "caveats": [],
+    "started_at": "2026-09-02T16:50:32+00:00",
+    "duration_s": null,
+    "code_version": null,
+    "method": "",
+    "scope": "",
+    "observed": {
+      "declared": 281,
+      "found": 281,
+      "delta": 0
+    },
+    "criterion": "",
+    "result": "281 present",
+    "decision": "more files than the cohort claims is a finding too - an itemised funnel is the difference between a cohort and a convenience sample",
+    "guards": []
+  },
+  "bind": {
+    "step_id": "bind",
+    "kind": "diagnostic",
+    "status": "pass",
+    "actor": "deterministic",
+    "record_id": "",
+    "params": {},
+    "inputs": [],
+    "outputs": [],
+    "caveats": [],
+    "started_at": "2026-09-02T16:50:32+00:00",
+    "duration_s": null,
+    "code_version": null,
+    "method": "",
+    "scope": "",
+    "observed": {
+      "roles": {
+        "key": {
+          "bound": true,
+          "system": {
+            "system": "obs_names",
+            "composite": [
+              "sample_id",
+              "obs_names"
+            ],
+            "scope": "cohort",
+            "image_side": "unchecked"
+          }
+        },
+        "molecular": {
+          "bound": true,
+          "source": "X",
+          "tested": true
+        },
+        "platform": {
+          "bound": true,
+          "decl_sha": "8c90555947cf94ed"
+        },
+        "spatial": {
+          "bound": true,
+          "scale_from": "platform.spot_pitch_um"
+        },
+        "image": {
+          "bound": false,
+          "why": "declared in the contract, not bound by this chain"
+        },
+        "annotation": {
+          "bound": false,
+          "why": "declared in the contract, not bound by this chain"
+        },
+        "supervision": {
+          "bound": false,
+          "why": "declared in the contract, not bound by this chain"
+        },
+        "confounder_axis": {
+          "bound": true,
+          "column": "patient_id",
+          "source": "cohort.json"
+        }
+      },
+      "unbound_required": []
+    },
+    "criterion": "",
+    "result": "5/8 roles bound",
+    "decision": "conforms - eda may read roles, not columns",
+    "guards": []
+  }
+}

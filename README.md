@@ -83,7 +83,7 @@ omicstra/
 · MODELS.md                          # training provenance + tissue compatibility per model
 ○ MODALITY_TEMPLATE.md               # how to add a new modality - cited by README + CLAUDE.md
 · .mcp.json                          # MCP server entry
-· .env.example                       # COMPUTE_BACKEND=local|cloud|slurm
+· .env.example                       # LANGSMITH_* only - backends are cohort declarations
 │
 · design/                            # the planning tree - tracked, this is where "what next" lives
 │   · mcp_plan.md                    # the engineering plan
@@ -93,17 +93,32 @@ omicstra/
 │   · _scratch/                      # BACKLOG.md ("this is the plan") - ROADMAP - doc_drift_audit
 │
 · src/omicstra/                      # the pip-installable package - src layout
-│   · agents/                        # graph.py (orchestrator + judge) - modality.py
-│   · adapters/                      # a cohort's files -> AnnData
-│   · mcp/server.py                  # MCP server - read path, zero compute
-│   · eda.py  eda_steps.py  eda_graph.py    # the gate - steps - LangGraph subgraph
-│   · routing.py                     # task family -> method, four outcomes
-│   · records.py  guards.py          # the record contract - construct-validity guards
-│   · settings.py  config.py  stages.py  artifacts.py  figures.py  cli.py
+│   · graph.py                       # LEVEL 0 - the only entry, the only checkpointer
+│   ○ graphs/                        # LEVEL 1 - one file per gate, each can interrupt()
+│   │   ○ eda.py  encode.py          # <- eda_graph.py  agents/graph.py - not moved yet
+│   │   ○ route.py  promote.py       # named in the design - not split out yet
+│   · protocols/                     # LEVEL 2 - fixed order, no model, no interrupt
+│   │   · inventory.py               # 8 steps: files .. bind - "what is this data"
+│   │   · eda.py                     # 6 steps registered - "is it usable"
+│   │   ○ align.py  evaluate.py      # <- stages.py / guards.py - not moved yet
+│   ○ contracts/                     # reads declarations, no logic - not split out yet
+│   │   ○ data.py  routing.py        # data+cohort+platform · routing contract + evidence
+│   · adapters/                      # a cohort's files -> AnnData conforming to raw_counts
+│   │   · wang_st.py  ○ hest.py
+│   · agents/modality.py             # modality agents - encoder capability metadata
+│   · mcp/server.py                  # MCP server - read path, zero model calls
+│   · records.py  artifacts.py       # the record contract - inventory/eda_summary io
+│   · settings.py  cli.py            # omicstra inventory | eda | serve
+│   · eda_graph.py  agents/graph.py  # LEVEL 1 today, pending the move into graphs/
+│   · routing.py  eda.py  eda_steps.py  guards.py  stages.py  config.py  figures.py
+│
+│   the rule: a thing gets its own graph only if it can ask a human;
+│   everything else is a protocol. a new .py never lands in src/omicstra/ directly.
 │
 · configs/                           # contracts are generalizable, evidence is per-cohort
 │   · eda_contract.json              # which EDA steps, which criteria
 │   · routing_contract.json          # task taxonomy, outcome vocabulary, rules
+│   · data_contract.json             # 8 declared roles - bind checks conformance
 │   · v3/                            # R1_v3 .. R6_v3 run configs
 │   ○ qc_params.json                 # K1 editable asset - not built
 │   ○ alignment_config.json          # K2 editable asset - not built
@@ -112,9 +127,15 @@ omicstra/
 │   · registry.json
 │   · {project_id}/
 │       · project.json  program.md   # karpathy loop - search space + constraints + metric
+│       · cohort.json                # DECLARED: subject_id_column, compute_backend,
+│       │                            #   model_backend, data_classification - fail closed
+│       · platform.json              # DECLARED per sample: platform, position_columns, pitch
+│       · inventory.json             # inventory protocol output - conformance report
 │       · eda_summary.json           # EDA gate output
 │       · routing_evidence.json      # this cohort's measured evaluation - never inherited
 │
+· site/{institution}/  [ignored]     # compute.md governance.md - question -> answer,
+│                                    #   served as MCP resources, never parsed
 · scripts/                           # the chain behind the published results
 · tests/                             # test_eda_authority.py - test_routing.py
 · knowledge/                         # shared domain assets - committed
