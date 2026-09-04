@@ -1,10 +1,17 @@
 # omic<span style="color:#5DCAA5">stra</span>
 
-a multi-agent MCP server for cross-modal reasoning in spatial biology. modality-specialized components are orchestrated with LangGraph; foundation model encoders are pluggable; integration strategy is a configurable experimental dimension, not a fixed pipeline choice.
+an MCP server for cross-modal reasoning in spatial biology. it exposes fixed scientific protocols as tools and returns evidence; the client holds the model. foundation model encoders are pluggable; integration strategy is a configurable experimental dimension, not a fixed pipeline choice.
 
 the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) using H&E morphology (Virchow2 primary, UNI2 swap) and spatial transcriptomics (Novae GNN).
 
-`active development` `ResearchHub Foundation grant` `OHSU Knight Cancer Institute` `MIT`
+`v0.1` `ResearchHub Foundation grant` `Brenden-Colson Center / Sears Lab, OHSU` `MIT`
+
+**v0.1 is:** the inventory and EDA protocols, the admissibility gate with its
+human-in-the-loop interrupt, stdio and streamable-http transport, and a record
+contract - tested on two cohorts with different platforms, formats and
+declarations, and no code changes between them. **Alignment and evaluation run as
+scripts and are not yet protocols.** The v3 results below were produced by those
+scripts.
 
 ---
 
@@ -214,11 +221,33 @@ every run writes `runs/{project_id}/{run_id}/` - config, QC, embeddings, alignme
 
 ---
 
+## declared deviation from the proposal
+
+The registered report put a model **inside** the orchestration: one model for
+intent classification and routing, another for hypothesis evaluation, with
+conditional routing in the graph.
+
+**The build moved the model to the client and made routing a deterministic rule
+over evidence.** The server holds no model, generates no code, and executes
+nothing a model wrote. A model has three narrow jobs, all on the client side:
+classify a question into a closed task set, choose among enumerated options at a
+gate, and write the "why". Everything downstream resolves from lookup tables.
+
+The reason is reviewability. A server with no model is portable across clients,
+has no second router to reason about, and can be reviewed for what it does rather
+than what it might decide. It also means swapping the model cannot change a route
+- the same question reaches the same method, because the method came from
+recorded evidence rather than from inference.
+
+**Deliverables, metrics and hypotheses are unchanged.**
+
+---
+
 ## team
 
 **Nasim Sanati, M.S.** - AI/ML systems - MCP server - agent orchestration - embedding pipelines  
 
-OHSU Knight Cancer Institute - Department of Biomedical Engineering
+Brenden-Colson Center for Pancreatic Care / Sears Lab, OHSU
 
 ---
 
