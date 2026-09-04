@@ -2,7 +2,6 @@
   "contract_version": "1.0.0",
   "source": "lifted from docs/data_structure_flow.md (shapes read off artifacts on disk 2026-08-20), scripts/ AST extraction 2026-08-31, and the cross-section alignment sweep 2026-08-18",
   "note": "the DATA half of the pipeline contract. cohort-free by construction: this file declares shapes, axis semantics, units, and the method menus that are legitimate at each node. it holds NO cohort measurements - those live in {project_root}/eda_summary.json and {project_root}/routing_evidence.json. companion to configs/routing_contract.json, which does the same job for the evaluation half.",
-
   "authority": {
     "note": "what this file may and may not decide",
     "decides": [
@@ -18,7 +17,6 @@
     ],
     "why_this_matters": "a contract that carries one cohort's numbers stops being a contract. every value below is either a public fact about a platform or a method, or a symbolic dimension resolved at runtime."
   },
-
   "data_classification": {
     "note": "REQUIRED per cohort. this is the field every governance question turns on, and nothing in the pipeline could read it before. it is NOT the same question as 'may this be committed to git' - a public 6 GB cohort is committable in principle and a bad idea in practice. classification answers what is PERMITTED; size answers what is ADVISABLE.",
     "values": {
@@ -53,7 +51,51 @@
     },
     "guard": "classification is declared by a person at init and never inferred. no heuristic over file paths, filenames or content may set it - a wrong guess in the permissive direction is the one error this whole field exists to prevent."
   },
-
+  "roles": {
+    "note": "the conformance target. a cohort BINDS its concrete artifacts to these abstract roles, and downstream steps read the ROLE, never a column name. this is what lets one protocol run on original ST, Visium and Xenium without branching on file layout - the same way a profile binds elements rather than hardcoding a schema.",
+    "binding_rule": "a role is bound when inventory has produced evidence for it. a required role left unbound is a HALT, not a caution - a protocol that reads an unbound role would be inventing data.",
+    "definitions": {
+      "key": {
+        "required": true,
+        "what": "the identifier joining a measurement to its position and to the image",
+        "note": "may be COMPOSITE. per-sample-unique is not cohort-unique - original ST obs_names repeat across every sample, so the cohort-scoped key is (sample_id, obs_name)"
+      },
+      "molecular": {
+        "required": true,
+        "what": "the raw integer count matrix",
+        "note": "bound only when integrality is TESTED. a filename is not evidence"
+      },
+      "platform": {
+        "required": true,
+        "what": "per-sample platform declaration",
+        "note": "declared, never inferred. bound to the sha of the declaration so a changed declaration invalidates the inventory"
+      },
+      "spatial": {
+        "required": true,
+        "what": "position per unit, plus the scale that converts it to microns",
+        "note": "pixel extent is not micron extent - the scale comes from the platform, not the coordinates"
+      },
+      "image": {
+        "required": false,
+        "what": "the stained image and its mapping into the key's system",
+        "note": "unbound until a cohort needs cross-modal work. absent is legitimate; silently assumed is not"
+      },
+      "annotation": {
+        "required": false,
+        "what": "expert labels per unit, with their coverage and granularity"
+      },
+      "supervision": {
+        "required": false,
+        "what": "any signal used to define labels or positive pairs",
+        "note": "bound separately from `molecular` on purpose - a signal in both slots is the circularity guard's failure case"
+      },
+      "confounder_axis": {
+        "required": true,
+        "what": "the variable held out when splitting, and tested against every clustering claim",
+        "note": "declared in cohort.json as subject_id_column, never guessed. splitting below this axis leaks - consecutive sections of one block are near-duplicates. and NMI(label, this) must be computed before any coherence metric is believed"
+      }
+    }
+  },
   "platform_descriptor": {
     "note": "REQUIRED per cohort. the single field that changes the graph is same_section_as_image - it decides whether the registration node fires at all. everything downstream inherits the error term it emits.",
     "schema": {
@@ -107,7 +149,6 @@
       }
     }
   },
-
   "units": {
     "note": "the unit a stage operates on. changing it changes what every downstream metric means, so it is a declared decision with recorded evidence, not an implementation detail.",
     "spot": {
@@ -116,12 +157,23 @@
     },
     "niche": {
       "definition": "centre spot + K spatial neighbours",
-      "params_used": {"k_neighbors": 6},
+      "params_used": {
+        "k_neighbors": 6
+      },
       "derived": "7 spots, ~1400 cells, ~0.5mm across on a 150um lattice",
       "params_space": [
-        {"k": 6, "note": "first ring on this lattice"},
-        {"k": 15, "note": "the proposal's stated contingency if spot-level pathway embeddings prove too noisy"},
-        {"k": "radius_um", "note": "physical-radius neighbourhoods - platform-independent, preferable when comparing across pitches"}
+        {
+          "k": 6,
+          "note": "first ring on this lattice"
+        },
+        {
+          "k": 15,
+          "note": "the proposal's stated contingency if spot-level pathway embeddings prove too noisy"
+        },
+        {
+          "k": "radius_um",
+          "note": "physical-radius neighbourhoods - platform-independent, preferable when comparing across pitches"
+        }
       ],
       "chosen_because": "niche outperformed cell scale at predicting molecular class from the image on this platform - a measurement, not a preference",
       "validated_on": "original_st, 100um spots. the cell-vs-niche ordering is NOT assumed to transfer to subcellular platforms and must be re-measured there",
@@ -132,24 +184,28 @@
       "note": "the H&E side can express this; the 100um-spot molecular side cannot resolve it"
     }
   },
-
   "artifacts": {
     "note": "shapes are symbolic. D_he, D_st, D_pathway and D_shared are resolved from the encoder registry at runtime, never hardcoded - swapping an encoder must not require editing this file.",
-
     "raw_counts": {
       "phase": "data",
       "format": "RData",
       "path_pattern": "data/inputs/byArray/{slide}/{subarray}/selection.RData",
       "objects": {
         "cnts": {
-          "shape": ["n_spots_selected", "n_genes"],
+          "shape": [
+            "n_spots_selected",
+            "n_genes"
+          ],
           "dtype": "integer",
           "axis0": "spot_id, tissue-selected",
           "axis1": "versioned Ensembl gene ids",
           "semantics": "RAW INTEGER COUNTS. the only correct expression input."
         },
         "spots": {
-          "shape": ["n_spots_selected", 6],
+          "shape": [
+            "n_spots_selected",
+            6
+          ],
           "semantics": "the entire spot -> pixel coordinate story. there is no GeoJSON and no registration step in this pipeline."
         }
       },
@@ -159,89 +215,152 @@
       },
       "guard": "gene ids are versioned Ensembl throughout. symbols are for display only - never a join key."
     },
-
     "he_niche_cache": {
       "phase": "embed",
       "format": "npy + tsv sidecar",
       "path_pattern": "data/embeddings/virchow2_niche/{subarray}.npy",
-      "shape": ["n_niches_subarray", "D_he"],
+      "shape": [
+        "n_niches_subarray",
+        "D_he"
+      ],
       "dtype": "float32",
       "axis0": "niche index, row-aligned with {subarray}_meta.tsv",
       "axis1": "encoder feature dimension",
-      "sidecar": {"path": "{subarray}_meta.tsv", "columns": ["pixel_x", "pixel_y", "neighbor_count"]},
+      "sidecar": {
+        "path": "{subarray}_meta.tsv",
+        "columns": [
+          "pixel_x",
+          "pixel_y",
+          "neighbor_count"
+        ]
+      },
       "encoder_frozen": true,
       "note": "pre-join. row count exceeds the joined parquet because the join is an inner join against pathway coverage."
     },
-
     "st_niche_cache": {
       "phase": "embed",
       "format": "parquet",
       "path_pattern": "data/embeddings/novae_niche_full/{subarray}_novae_embeddings.parquet",
-      "shape": ["n_niches_subarray", "D_st"],
+      "shape": [
+        "n_niches_subarray",
+        "D_st"
+      ],
       "encoder_frozen": true,
       "guard": "raw GAT output - carries no normalisation of its own (mean norm ~2.6). every consumer MUST LayerNorm or z-score before use. it is z-scored per subarray at join time."
     },
-
     "pathway_cache": {
       "phase": "embed",
       "format": "parquet",
       "scope": "cohort-wide, not per subarray",
-      "shape": ["n_niches", "D_pathway"],
+      "shape": [
+        "n_niches",
+        "D_pathway"
+      ],
       "guard": "sha-locked to a named build. silently swapping the pathway build invalidates every H3 number measured against it."
     },
-
     "niche_join": {
       "phase": "join",
       "format": "parquet",
       "path_pattern": "data/embeddings/niches_v3/{subarray}.parquet",
       "note": "THE WAIST. every downstream stage reads this and nothing else.",
       "columns": {
-        "spot_id":              {"type": "string",   "semantics": "centre spot"},
-        "subarray":             {"type": "string"},
-        "patient_id":           {"type": "int64",    "semantics": "THE SPLIT KEY"},
-        "archetype":            {"type": "int64",    "semantics": "patient-level pseudobulk. DIAGNOSTIC ONLY - see guards.archetype_is_not_biology"},
-        "compartment":          {"type": "string|null", "semantics": "pathologist category, 15-class. null on most rows - see guards.annotation_coverage"},
-        "mc_megacluster":       {"type": "int64",    "semantics": "expression-derived class, or -1 join fill - see guards.fill_value_is_not_null"},
-        "mc_weights_niche":     {"type": "float[K_mc]", "semantics": "SUPERVISION ONLY. never an input feature - see guards.no_circular_supervision"},
-        "he_niche":             {"type": "float[D_he]", "semantics": "POOLED - mean of the K+1 tiles"},
-        "he_cell_tokens":       {"type": "float[K+1, D_he]", "semantics": "UN-POOLED tiles. the early-vs-late fusion variable lives here"},
-        "st_niche":             {"type": "float[D_st]", "semantics": "z-scored per subarray"},
-        "pathway_niche":        {"type": "float[D_pathway]", "semantics": "pathway anchor"},
-        "signature_score":      {"type": "double",   "semantics": "continuous gene-signature score"},
-        "neighbor_spot_ids":    {"type": "list[string]", "semantics": "provenance of the K+1 spots"}
+        "spot_id": {
+          "type": "string",
+          "semantics": "centre spot"
+        },
+        "subarray": {
+          "type": "string"
+        },
+        "patient_id": {
+          "type": "int64",
+          "semantics": "THE SPLIT KEY"
+        },
+        "archetype": {
+          "type": "int64",
+          "semantics": "patient-level pseudobulk. DIAGNOSTIC ONLY - see guards.archetype_is_not_biology"
+        },
+        "compartment": {
+          "type": "string|null",
+          "semantics": "pathologist category, 15-class. null on most rows - see guards.annotation_coverage"
+        },
+        "mc_megacluster": {
+          "type": "int64",
+          "semantics": "expression-derived class, or -1 join fill - see guards.fill_value_is_not_null"
+        },
+        "mc_weights_niche": {
+          "type": "float[K_mc]",
+          "semantics": "SUPERVISION ONLY. never an input feature - see guards.no_circular_supervision"
+        },
+        "he_niche": {
+          "type": "float[D_he]",
+          "semantics": "POOLED - mean of the K+1 tiles"
+        },
+        "he_cell_tokens": {
+          "type": "float[K+1, D_he]",
+          "semantics": "UN-POOLED tiles. the early-vs-late fusion variable lives here"
+        },
+        "st_niche": {
+          "type": "float[D_st]",
+          "semantics": "z-scored per subarray"
+        },
+        "pathway_niche": {
+          "type": "float[D_pathway]",
+          "semantics": "pathway anchor"
+        },
+        "signature_score": {
+          "type": "double",
+          "semantics": "continuous gene-signature score"
+        },
+        "neighbor_spot_ids": {
+          "type": "list[string]",
+          "semantics": "provenance of the K+1 spots"
+        }
       },
       "guard": "the join is an INNER join. niches without pathway coverage are dropped before this table exists, so the funnel must be reported as counts, not implied."
     },
-
     "split": {
       "phase": "split",
       "format": "json",
       "path_pattern": "runs/{grid}/{run}/split.json",
-      "fields": {"seed": "int", "train_patients": "int[]", "val_patients": "int[]", "test_patients": "int[]"},
+      "fields": {
+        "seed": "int",
+        "train_patients": "int[]",
+        "val_patients": "int[]",
+        "test_patients": "int[]"
+      },
       "guard": "BY SUBJECT, never by niche or by section. consecutive sections of one block are near-duplicates in z - splitting below subject level puts near-copies of the same tissue on both sides."
     },
-
     "shared_space": {
       "phase": "align",
       "format": "parquet",
       "path_pattern": "runs/{grid}/{run}/embeddings_test.parquet",
       "columns": {
-        "spot_id": "string", "subarray": "string", "patient_id": "int64",
-        "archetype": "int64", "compartment": "string|null",
-        "z_he": {"type": "float[D_shared]", "semantics": "L2-normalised"},
-        "z_st": {"type": "float[D_shared]", "semantics": "L2-normalised"},
-        "attn":  {"type": "float[K+1] | null", "semantics": "present only on runs with a cross-attention bridge; null on late-fusion runs"}
+        "spot_id": "string",
+        "subarray": "string",
+        "patient_id": "int64",
+        "archetype": "int64",
+        "compartment": "string|null",
+        "z_he": {
+          "type": "float[D_shared]",
+          "semantics": "L2-normalised"
+        },
+        "z_st": {
+          "type": "float[D_shared]",
+          "semantics": "L2-normalised"
+        },
+        "attn": {
+          "type": "float[K+1] | null",
+          "semantics": "present only on runs with a cross-attention bridge; null on late-fusion runs"
+        }
       },
       "guard": "both outputs are L2-normalised, so every downstream similarity is a cosine. a metric that assumes unnormalised magnitude is wrong here."
     }
   },
-
   "register_cross_section": {
     "phase": "data",
     "note": "SEGMENT 1b. declared, not exercised - no cohort in this project requires it.",
     "fires_when": "platform.same_section_as_image == false",
     "skipped_when": "same_section_as_image == true. the stained image and the molecular assay come off one physical section, so registration error is zero by construction.",
-
     "framing": {
       "note": "the benchmark literature reaches the same conclusion this project reaches for alignment: method choice is data-dependent, so the node offers a menu and records which was used, rather than hardcoding one.",
       "anchor": "Yan et al., Nat Comput Sci 6:524-541 (2026) - 295 alignment tasks over 240 datasets; best method is dataset-dependent. code: github.com/Yunzhi-Yan/SABench",
@@ -250,81 +369,140 @@
         "Dong et al., Genome Biol 26:318 (2025) - multi-slice integration and downstream effects"
       ]
     },
-
     "params_space": [
-      {"id": "VALIS", "scope": "WSI + point data", "ref": "Gatenbee et al., Nat Commun 2023",
-       "why": "warps POINT data, so it can carry molecular spot coordinates through the transform into image space. the only entry that directly performs 'map another assay's coordinates onto the stained image'."},
-      {"id": "RegWSI / DeeperHistReg", "scope": "WSI <-> WSI", "ref": "Wodzinski et al.",
-       "why": "ACROBAT 2023 winner. the strong general-purpose registration baseline."},
-      {"id": "CORE", "scope": "nuclei-level", "ref": "2025",
-       "why": "when the required correspondence is finer than a deformation field."},
-      {"id": "DFBR", "scope": "WSI <-> WSI", "why": "alternate in the ACROBAT family."},
-      {"id": "HistokatFusion", "scope": "WSI <-> WSI", "why": "alternate in the ACROBAT family."},
-      {"id": "PASTE / PASTE2", "scope": "ST <-> ST serial", "why": "slice-to-slice within the molecular modality. does not register to an image."},
-      {"id": "GPSA", "scope": "ST <-> ST serial", "why": "gaussian-process spatial alignment."},
-      {"id": "STalign", "scope": "ST <-> ST serial", "why": "diffeomorphic alignment of spatial transcriptomics."},
-      {"id": "PIVOT", "scope": "UNVERIFIED", "status": "placeholder",
-       "why": "named as in local use. capabilities, scope and publication status not confirmed - do not route to it until its fields are filled in."}
+      {
+        "id": "VALIS",
+        "scope": "WSI + point data",
+        "ref": "Gatenbee et al., Nat Commun 2023",
+        "why": "warps POINT data, so it can carry molecular spot coordinates through the transform into image space. the only entry that directly performs 'map another assay's coordinates onto the stained image'."
+      },
+      {
+        "id": "RegWSI / DeeperHistReg",
+        "scope": "WSI <-> WSI",
+        "ref": "Wodzinski et al.",
+        "why": "ACROBAT 2023 winner. the strong general-purpose registration baseline."
+      },
+      {
+        "id": "CORE",
+        "scope": "nuclei-level",
+        "ref": "2025",
+        "why": "when the required correspondence is finer than a deformation field."
+      },
+      {
+        "id": "DFBR",
+        "scope": "WSI <-> WSI",
+        "why": "alternate in the ACROBAT family."
+      },
+      {
+        "id": "HistokatFusion",
+        "scope": "WSI <-> WSI",
+        "why": "alternate in the ACROBAT family."
+      },
+      {
+        "id": "PASTE / PASTE2",
+        "scope": "ST <-> ST serial",
+        "why": "slice-to-slice within the molecular modality. does not register to an image."
+      },
+      {
+        "id": "GPSA",
+        "scope": "ST <-> ST serial",
+        "why": "gaussian-process spatial alignment."
+      },
+      {
+        "id": "STalign",
+        "scope": "ST <-> ST serial",
+        "why": "diffeomorphic alignment of spatial transcriptomics."
+      },
+      {
+        "id": "PIVOT",
+        "scope": "UNVERIFIED",
+        "status": "placeholder",
+        "why": "named as in local use. capabilities, scope and publication status not confirmed - do not route to it until its fields are filled in."
+      }
     ],
-
     "benchmarks": [
-      {"id": "HyReCo", "why": "restained plus consecutive serial sections - the closest published analogue to a restain/serial workflow."},
-      {"id": "ACROBAT 2022/2023", "why": "breast tissue, 4121 WSIs - matches the tissue type here."},
-      {"id": "ANHIR", "ref": "IEEE TMI 2020", "why": "landmark target-registration-error via the BIRL harness."},
-      {"id": "Learn2Reg 2024 COMULISglobe SHG/BF", "why": "first microscopy task in that series; hidden test set with manual landmarks."}
+      {
+        "id": "HyReCo",
+        "why": "restained plus consecutive serial sections - the closest published analogue to a restain/serial workflow."
+      },
+      {
+        "id": "ACROBAT 2022/2023",
+        "why": "breast tissue, 4121 WSIs - matches the tissue type here."
+      },
+      {
+        "id": "ANHIR",
+        "ref": "IEEE TMI 2020",
+        "why": "landmark target-registration-error via the BIRL harness."
+      },
+      {
+        "id": "Learn2Reg 2024 COMULISglobe SHG/BF",
+        "why": "first microscopy task in that series; hidden test set with manual landmarks."
+      }
     ],
-
     "emits": {
       "method_id": "string - which entry from params_space ran",
       "warp_field": "artifact ref",
       "registration_error_um": "number - REQUIRED, never null when this node fires",
       "landmark_tre": "number | null"
     },
-
     "guard": "registration_error_um propagates into every downstream niche-level cosine. evidence collected at error=0 does NOT transfer unwidened to a registered cohort - intervals must be widened by the error term before any recorded threshold is applied.",
-
     "recorded_exclusions": [
       "registration mismatch was tested and RULED OUT as a cause of the observed H2 fragmentation on this cohort. it is a same-section cohort; the fragmentation has another cause. do not re-open this."
     ],
-
     "bites_on": "serial-section cohorts sampled at intervals, and 3D reconstruction across a block. not this cohort."
   },
-
   "guards": {
     "note": "data-level invariants. these sit upstream of configs/routing_contract.json guards, which govern evaluation.",
-
     "no_circular_supervision": "a signal used to define positive pairs or labels may never also be an input feature. using one signal as both is the circularity that makes a result unfalsifiable.",
-
     "split_by_subject": "held-out units must be whole subjects. consecutive sections of one block are near-duplicates, so any split below subject level leaks.",
-
     "annotation_coverage": "expert annotation is typically partial. record the covered fraction and the covered unit count explicitly - absent annotation reads as a category in a figure unless it is stated otherwise, and a coverage figure is not a class.",
-
     "fill_value_is_not_null": "a sentinel fill (-1 and friends) is NOT NaN, so .notna() does not remove it and it reaches downstream metrics as an extra class. filter on the sentinel explicitly, and report whether the fill is enriched for any tissue type - a join that preferentially loses one tissue is a biased join.",
-
     "archetype_is_not_biology": "a label derived at subject level cannot serve as a biology-coherence target. compute NMI(label, subject_id) first - a label that tracks subject identity turns any clustering win into a restatement of which sample something came from.",
-
     "pitch_not_diameter": "spot pitch is centre-to-centre; spot diameter is the capture footprint. they are different numbers and confusing them mis-scales every micron-denominated figure and every physical niche footprint.",
-
     "encoder_tissue_compatibility": "an encoder's training distribution must be checked against the target platform and tissue, and the result recorded. where a pathway encoder was trained on a resolution class the cohort does not share, compatibility is an empirical question - measure it, never assume it.",
-
     "frozen_encoders": "no stage in this contract fine-tunes an encoder. a fine-tuned encoder is a different artifact and invalidates every cached embedding downstream of it.",
-
     "raw_counts_only": "expression input must be raw integer counts. a pre-normalised or batch-corrected matrix silently changes what every statistic means, and file names are not trustworthy indicators of which one you have."
   },
-
   "known_defects": {
     "note": "properties of the artifacts, not of the analysis. carried here so a consumer can check them rather than rediscover them.",
     "entries": [
-      {"where": "niche join, sentinel fill", "what": "the -1 fill reaches subject-level coherence evaluation as an extra class because consumers filter with .notna() and -1 is not NaN", "status": "open"},
-      {"where": "H2-C permutation scope", "what": "permutation is performed at niche level while the label is per-subject; numerator and denominator may partly self-cancel", "status": "unverified"},
-      {"where": "legacy run grid", "what": "an earlier grid exists whose pathway side is not regenerable. several older documents point at it rather than the live grid", "status": "open - check the grid path before citing any number"},
-      {"where": "eda_summary platform field", "what": "previously recorded the wrong centre-to-centre pitch", "status": "FIXED 2026-08-24 - docs/data_structure_flow.md still lists this as open and is stale on that row"},
-      {"where": "scripts/, permutation count", "what": "N_PERMS is 1000 in some evaluation scripts and 500 in others, so p-value floors differ between evaluations that are reported together", "status": "open - detected by AST extraction 2026-08-31"},
-      {"where": "scripts/, default run set", "what": "the default run list omits one run of the grid in several scripts", "status": "open - detected by AST extraction 2026-08-31"},
-      {"where": "scripts/, encoder config", "what": "a superseded encoder configuration is still present in two scripts", "status": "open - detected by AST extraction 2026-08-31"}
+      {
+        "where": "niche join, sentinel fill",
+        "what": "the -1 fill reaches subject-level coherence evaluation as an extra class because consumers filter with .notna() and -1 is not NaN",
+        "status": "open"
+      },
+      {
+        "where": "H2-C permutation scope",
+        "what": "permutation is performed at niche level while the label is per-subject; numerator and denominator may partly self-cancel",
+        "status": "unverified"
+      },
+      {
+        "where": "legacy run grid",
+        "what": "an earlier grid exists whose pathway side is not regenerable. several older documents point at it rather than the live grid",
+        "status": "open - check the grid path before citing any number"
+      },
+      {
+        "where": "eda_summary platform field",
+        "what": "previously recorded the wrong centre-to-centre pitch",
+        "status": "FIXED 2026-08-24 - docs/data_structure_flow.md still lists this as open and is stale on that row"
+      },
+      {
+        "where": "scripts/, permutation count",
+        "what": "N_PERMS is 1000 in some evaluation scripts and 500 in others, so p-value floors differ between evaluations that are reported together",
+        "status": "open - detected by AST extraction 2026-08-31"
+      },
+      {
+        "where": "scripts/, default run set",
+        "what": "the default run list omits one run of the grid in several scripts",
+        "status": "open - detected by AST extraction 2026-08-31"
+      },
+      {
+        "where": "scripts/, encoder config",
+        "what": "a superseded encoder configuration is still present in two scripts",
+        "status": "open - detected by AST extraction 2026-08-31"
+      }
     ]
   },
-
   "evidence_contract": {
     "note": "what a cohort must supply for this contract to be executable against it.",
     "required": [

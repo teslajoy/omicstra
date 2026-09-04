@@ -73,14 +73,23 @@ def init(project_dir: Path, project_id: str | None, force: bool, public: bool) -
         (project_dir / d).mkdir(parents=True, exist_ok=True)
         (project_dir / d / ".gitkeep").touch()
 
-    payload = dict(TEMPLATE,
-                   project_id=project_id or project_dir.resolve().name,
-                   data_classification=classification)
-    if public:
-        # public is a claim about redistribution rights. a claim with no
-        # provenance is not checkable, so the slots are created empty and named.
-        payload["provenance"] = {"source": "", "licence": "", "gated": ""}
+    payload = dict(TEMPLATE, project_id=project_id or project_dir.resolve().name)
+    payload.pop("data_classification", None)
     cfg_path.write_text(json.dumps(payload, indent=2) + "\n")
+
+    # every field a PERSON declares about the cohort goes in one file, beside
+    # subject_id_column and the two backend fields. platform.json holds every
+    # field a person declares about a PLATFORM. one file each, no third home.
+    cohort = {"note": "cohort-level declarations. read at runtime, never guessed.",
+              "contract": "configs/data_contract.json#roles",
+              "data_classification": classification,
+              "subject_id_column": "",
+              "compute_backend": "mac",
+              "model_backend": "anthropic"}
+    if public:
+        # a redistribution claim with no provenance is not checkable
+        cohort["provenance"] = {"source": "", "licence": "", "gated": ""}
+    (project_dir / "cohort.json").write_text(json.dumps(cohort, indent=2) + "\n")
 
     (project_dir / ".gitignore").write_text(_project_gitignore(classification))
     if not (project_dir / "program.md").exists():
@@ -94,6 +103,7 @@ def init(project_dir: Path, project_id: str | None, force: bool, public: bool) -
     click.echo(f"  data_classification: {classification}"
                + ("" if public else "  (default - pass --public to relax)"))
     for line in ("project.json   fill in platform, encoders, labels",
+                 "cohort.json    classification, subject_id_column, backends",
                  "program.md     search space, constraints, stopping criteria",
                  "data/inputs/   raw cohort data lands here",
                  "steps/         generated step bodies land here",
@@ -141,6 +151,66 @@ def _project_gitignore(classification: str) -> str:
         "data/inputs/\n"
         + common
     )
+
+
+@main.command()
+@click.option("--project-dir", default=None, type=click.Path(path_type=Path))
+@click.option("--project-id", default=None)
+@click.option("--adata-path", default=None, type=click.Path(path_type=Path),
+              help="TEMPORARY. the object inventory step A7 will produce. explicit "
+                   "until the inventory node exists.")
+@click.option("--step", "steps", multiple=True,
+              help="step id to run. repeatable. a step with no params is skipped, "
+                   "never guessed at.")
+def eda(project_dir, project_id, adata_path, steps):
+    """run the EDA through the level-0 graph, gates and all.
+
+    this is the whole orchestrator from a terminal: discover picks the arm, the
+    eda subgraph profiles and gates, and a caution PAUSES here and asks. the
+    same graph serves MCP as run/resume over a thread_id - the only difference
+    is who answers the question.
+    """
+    from langgraph.checkpoint.memory import InMemorySaver
+    from langgraph.types import Command
+    from omicstra.graph import build_omicstra_graph
+    from omicstra.eda_graph import build_eda_graph
+
+    if project_dir is not None:
+        settings.project_dir = project_dir.expanduser()
+
+    app = build_omicstra_graph(checkpointer=InMemorySaver(),
+                               eda=build_eda_graph(checkpointer=None))
+    cfg = {"configurable": {"thread_id": "cli"}}
+    payload = {"question": "", "project_id": project_id,
+               "params": {s: {} for s in steps} or {"count_statistics": {}}}
+    if adata_path:
+        payload["adata_path"] = str(adata_path.expanduser())
+
+    out = app.invoke(payload, cfg)
+    click.echo(f"cohort:  {settings.project_root(project_id).name}")
+    click.echo(f"arm:     {out.get('arm')}   (evidence present: {out.get('has_evidence')})")
+
+    while "__interrupt__" in out:
+        v = out["__interrupt__"][0].value
+        click.echo("\n" + "-" * 62)
+        click.echo(v.get("question", "the graph is asking."))
+        for c in v.get("cautions", []):
+            click.echo(f"  caution: {c}")
+        for e in v.get("escalations", []):
+            click.echo(f"  escalated: {e.get('check')} - {e.get('why_not_inherited','')}")
+        if v.get("consequence"):
+            click.echo(f"  if you accept: {v['consequence']}")
+        click.echo(f"  {v.get('no_default', 'the system does not pick')}")
+        click.echo("-" * 62)
+        out = app.invoke(Command(resume=click.confirm("accept and proceed?", default=False)), cfg)
+
+    click.echo(f"\nverdict: {out.get('verdict')}")
+    if out.get("halted"):
+        click.echo("halted - not accepted.")
+    for r in out.get("records", []):
+        click.echo(f"  [{r.get('status', r.get('verdict', '?')):<15}] {r.get('step_id')}"
+                   f"  {str(r.get('result', ''))[:52]}")
+    raise SystemExit(1 if out.get("halted") else 0)
 
 
 @main.command()
