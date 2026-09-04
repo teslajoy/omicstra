@@ -21,9 +21,12 @@ from typing import Any, Callable, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from omicstra import eda_steps
 from omicstra.eda import cohort_escalations, load_calibration, load_contract
+from omicstra.protocols import build_protocol
+from omicstra.protocols.eda import EDA_STEPS
+from omicstra.protocols.inventory import INVENTORY_STEPS
 from omicstra.records import DiagnosticRecord, GateRecord
+from omicstra.settings import settings
 
 
 # --- state -----------------------------------------------------------------
@@ -33,7 +36,9 @@ from omicstra.records import DiagnosticRecord, GateRecord
 # present, so it surfaces late. verified on 3.11 / 3.13 / 3.14.
 class EDAState(TypedDict, total=False):
     project_id: str
-    params: dict[str, Any]          # cohort-supplied, per step
+    params: dict[str, Any]          # cohort-supplied, per eda step
+    inventory_params: dict[str, Any]
+    inventory: dict[str, dict]
     adata_path: str                 # a REFERENCE, never the object
     records: list[dict]
     verdict: str
@@ -44,54 +49,43 @@ class EDAState(TypedDict, total=False):
     halted: bool
 
 
-# --- step registry ---------------------------------------------------------
-# name -> callable(adata, **params) -> DiagnosticRecord
-STEP_REGISTRY: dict[str, Callable[..., DiagnosticRecord]] = {
-    "count_statistics": eda_steps.count_statistics,
-    "marker_expression": eda_steps.marker_expression,
-    "spatial_autocorrelation": eda_steps.spatial_autocorrelation,
-    "batch_structure": eda_steps.batch_structure,
-}
-
-
-def register_step(name: str, fn: Callable[..., DiagnosticRecord]) -> None:
-    """a new modality registers its steps here; the graph does not change."""
-    STEP_REGISTRY[name] = fn
-
-
 # --- nodes -----------------------------------------------------------------
+# the step registry lives in protocols/, not here. a graph that also owns a
+# registry is two things; this file is the gate and the interrupt, nothing else.
+def inventory(state: EDAState) -> dict:
+    """"what is this data" - 8 steps, ending in a conformance bind.
+
+    runs FIRST because eda reads three of its answers: the join key, the
+    platform per sample, and which matrix is raw. a required role left unbound
+    halts here rather than letting eda measure something it cannot describe.
+    """
+    ctx = {"project_dir": str(settings.project_root(state.get("project_id"))),
+           "project_id": state.get("project_id"),
+           "params": state.get("inventory_params", {})}
+    recs = build_protocol(INVENTORY_STEPS, "inventory").invoke(ctx)
+    unbound = (recs.get("bind", {}).get("observed") or {}).get("unbound_required") or []
+    failed = [k for k, v in recs.items() if v.get("status") == "fail"]
+    # halt on ANY inventory failure, not only on unbound roles. bind reports
+    # unbound only when it RAN - if platform failed, bind is not_run and its
+    # empty unbound list would wave the run through, letting eda measure data
+    # inventory could not describe.
+    return {"records": list(state.get("records", [])) + list(recs.values()),
+            "inventory": recs,
+            "halted": bool(unbound or failed)}
+
+
 def profile(state: EDAState) -> dict:
-    """run every declared step that the registry can resolve and this cohort
-    supplies params for. a step with no params is skipped, not guessed at.
+    """"is it usable" - the eda protocol, run as one chain.
 
     loads from `adata_path` rather than receiving an object: checkpointed state
-    must be serialisable, so state carries references and nodes load. this is the
-    same discipline stages.py declares - artifact refs, not arrays - and it is
-    what makes the graph resumable.
+    must be serialisable, so state carries references and nodes load. that is
+    also why the protocol takes a path, not an AnnData.
     """
-    import anndata as ad
-    adata = ad.read_h5ad(state["adata_path"])
-    params = state.get("params", {})
-    records: list[dict] = list(state.get("records", []))
-
-    for name, kwargs in params.items():
-        fn = STEP_REGISTRY.get(name)
-        if fn is None:
-            records.append(DiagnosticRecord(
-                step_id=name, status="not_run",
-                result=f"no step registered under {name!r}",
-                decision="register the step or remove it from the contract",
-            ).model_dump())
-            continue
-        try:
-            records.append(fn(adata, **kwargs).model_dump())
-        except Exception as e:
-            records.append(DiagnosticRecord(
-                step_id=name, status="error",
-                result=f"{type(e).__name__}: {e}",
-                decision="step failed; the gate cannot judge this check",
-            ).model_dump())
-    return {"records": records}
+    ctx = {"adata_path": state["adata_path"],
+           "project_id": state.get("project_id"),
+           "params": state.get("params", {})}
+    recs = build_protocol(EDA_STEPS, "eda").invoke(ctx)
+    return {"records": list(state.get("records", [])) + list(recs.values())}
 
 
 def gate(state: EDAState) -> dict:
@@ -180,12 +174,18 @@ def halt(state: EDAState) -> dict:
 def build_eda_graph(checkpointer=None):
     """the EDA subgraph. cohort-free: everything specific arrives in state."""
     g = StateGraph(EDAState)
+    g.add_node("inventory", inventory)
     g.add_node("profile", profile)
     g.add_node("gate", gate)
     g.add_node("escalate", escalate)
     g.add_node("halt", halt)
 
-    g.add_edge(START, "profile")
+    g.add_edge(START, "inventory")
+    # inventory HALTS the run when a required role is unbound - eda cannot
+    # measure what inventory could not describe.
+    g.add_conditional_edges("inventory",
+                            lambda s: "halt" if s.get("halted") else "profile",
+                            {"halt": "halt", "profile": "profile"})
     g.add_edge("profile", "gate")
     g.add_conditional_edges("gate", _route,
                             {"proceed": END, "escalate": "escalate", "stop": "halt"})
