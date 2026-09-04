@@ -33,3 +33,17 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/omicstra"]
+
+# an ALLOWLIST, not exclusions. hatchling ships everything not gitignored by
+# default, which meant the sdist carried a whole virtualenv, the notebooks, the
+# cohort projects and 74 MB of demo video - 192 MB for a server that is a few
+# hundred KB of python and three json contracts. an end user installs the mcp
+# server and nothing else. exclusions rot; an allowlist cannot.
+[tool.hatch.build.targets.sdist]
+only-include = [
+  "src/omicstra",
+  "pyproject.toml",
+  "README.md",
+  "LICENSE",
+  "server.json",
+]

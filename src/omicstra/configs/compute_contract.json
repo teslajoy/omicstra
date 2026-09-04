@@ -1,0 +1,122 @@
+{
+  "contract_version": "1.0.0",
+  "note": "the interrupt points on the COMPUTE path, where embeddings are produced. companion to eda_contract.json, which owns the admissibility gate. cohort-free: this declares WHICH decisions exist, their enumerated options, and which cohort declaration pre-answers each. it carries no cohort's measurements.",
+
+  "authority": {
+    "decides": [
+      "which decisions on the compute path require a person",
+      "the enumerated options at each - the option set is closed",
+      "which cohort declaration, if present, pre-answers a gate",
+      "when a gate can be asked: before submission, or only mid-run"
+    ],
+    "does_not_decide": [
+      "what any cohort's answer is - that is a declaration or a person",
+      "where the gate is hosted - see hosting below"
+    ]
+  },
+
+  "gate_schema": {
+    "note": "ONE schema, two hosts. the contract does not know which host asks; the record looks identical either way, and the actor ledger reads the same.",
+    "fields": {
+      "id": "stable name, referenced by the workflow and by the record",
+      "when": "preflight | mid_run",
+      "question": "what the person is actually being asked",
+      "options": "the CLOSED set of answers. a person picks one; nothing is free text except the rationale",
+      "default": "always null. the system does not pick - see no_default",
+      "pre_answerable_by": "the cohort.json field that answers this in advance, or null if it cannot be",
+      "emits": "the record kind written whichever host asked",
+      "forecloses": "what accepting this answer gives up, stated before the answer"
+    },
+    "hosting": {
+      "preflight": "a langgraph interrupt() in the encode subgraph. same shape as the admissibility gate, same actor ledger, resumable from the checkpointer.",
+      "mid_run": "a signal on the durable workflow. the run is a long scheduled job, so a pause must not hold a compute allocation - the workflow waits, the allocation does not.",
+      "why_it_matters": "a scheduled job paused for a person is burning walltime, and if it hits its limit while waiting the answer is lost with it. that - not the number of human pauses - is what a durable workflow buys on a scheduler."
+    },
+    "declared_answers_do_not_fire": "a gate whose `pre_answerable_by` field is present in the cohort declaration resolves from it and does not interrupt. a fully declared cohort runs unattended until a mid_run gate fires. this lowers the number of pauses, never the bar - the answer is still recorded, with actor=human and the declaration as its source."
+  },
+
+  "gates": [
+    {
+      "id": "gated_weights",
+      "when": "preflight",
+      "question": "the encoder's weights require accepting terms and a token. supply one, or choose another encoder?",
+      "options": ["use_token_from_env", "choose_alternative_encoder", "halt"],
+      "default": null,
+      "pre_answerable_by": "cohort.json#encoder_token_source",
+      "emits": "SelectionRecord",
+      "forecloses": "an unattended run cannot accept terms on your behalf. this must resolve before submission or the job fails hours in on an auth wall.",
+      "note": "fails today as a raw 401 traceback. it should name the login command and the terms URL."
+    },
+    {
+      "id": "encoder_compatibility",
+      "when": "preflight",
+      "question": "the encoder's compatibility probe did not clear chance on this cohort. demote to the declared fallback, or halt?",
+      "options": ["demote_to_fallback", "proceed_anyway_recorded_as_dissent", "halt"],
+      "default": null,
+      "pre_answerable_by": "cohort.json#encoder_fallback",
+      "emits": "SelectionRecord",
+      "forecloses": "proceeding anyway means every downstream metric carries an encoder that could not be shown to separate this tissue. the dissent travels with the results.",
+      "measured_by": "a patient-grouped linear probe on a sampled subset, before any full extraction. cheap, and it runs before GPU time is spent."
+    },
+    {
+      "id": "platform_floor",
+      "when": "preflight",
+      "question": "some units fall below the encoder's declared minimum. drop them, or run and mark them?",
+      "options": ["drop_below_floor", "run_and_mark", "halt"],
+      "default": null,
+      "pre_answerable_by": "cohort.json#below_floor_policy",
+      "emits": "SelectionRecord",
+      "forecloses": "running below an encoder's floor produces values that look like every other value. marking them keeps them auditable; dropping them changes the cohort and must appear in the funnel.",
+      "reads": "the inventory record - the counts that decide this are already measured there. this gate re-asks nothing.",
+      "note": "the floor is a property of the ENCODER, declared in its capability metadata, not of the cohort."
+    },
+    {
+      "id": "scope_below_minimum",
+      "when": "preflight",
+      "question": "this run covers fewer units than the declared minimum for an authoritative result. illustrative, or authoritative?",
+      "options": ["illustrative_only", "authoritative", "halt"],
+      "default": null,
+      "pre_answerable_by": "cohort.json#scope_policy",
+      "emits": "SelectionRecord",
+      "forecloses": "an illustrative result must not be cited as a cohort verdict. this is the variable that silently changes conclusions - a statistic on one section and the same statistic on the cohort can disagree - so the answer is stamped on every record the run produces.",
+      "note": "on a laptop this is the knob that actually gets turned."
+    },
+    {
+      "id": "capacity",
+      "when": "preflight",
+      "question": "projected output exceeds the free space in the declared output location. continue, or write elsewhere?",
+      "options": ["continue", "change_output_location", "halt"],
+      "default": null,
+      "pre_answerable_by": "cohort.json#output_dir",
+      "emits": "GateRecord",
+      "forecloses": "a run that fills the volume mid-way loses the shards it has not yet written AND may take other work down with it.",
+      "operational_pause": {
+        "note": "capacity can ALSO fail mid-run, and then it is not a question. the run pauses and reports; it does not ask a person to choose between options that no longer exist.",
+        "distinct_from_a_gate": "a gate asks. an operational pause states. only the first needs an option set."
+      }
+    },
+    {
+      "id": "shard_failure_threshold",
+      "when": "mid_run",
+      "question": "shard failures have exceeded the declared threshold. retry the failed shards, skip them, or abort the run?",
+      "options": ["retry_failed", "skip_and_mark", "abort"],
+      "default": null,
+      "pre_answerable_by": null,
+      "emits": "SelectionRecord",
+      "forecloses": "skipping changes the cohort mid-run, so the funnel must record which units were skipped and why. aborting discards nothing - completed shards are sha-addressed and a re-run resumes from them.",
+      "why_it_cannot_be_preflight": "it depends on failures that have not happened yet. this is the ONLY gate on the compute path that genuinely cannot be asked before submission, and it is therefore the only one that needs a host that can wait without holding an allocation.",
+      "threshold_from": "cohort.json#shard_failure_threshold, defaulting to a fraction rather than a count so it scales with the cohort"
+    }
+  ],
+
+  "summary": {
+    "preflight": 5,
+    "mid_run": 1,
+    "note": "five of six can be asked, or declared, before a single unit is embedded. so an unattended run on a scheduler asks nothing until shards start failing - which is a narrower and more defensible reason for durable execution than 'people must be askable overnight'.",
+    "what_durable_execution_actually_buys": [
+      "waiting on a scheduled job without holding a compute allocation",
+      "surviving the worker process dying mid-run - a checkpointer saves state BETWEEN nodes, never inside one, and an embedding run is one long node",
+      "the single mid_run gate above"
+    ]
+  }
+}

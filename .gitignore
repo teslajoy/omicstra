@@ -95,3 +95,6 @@ design/pseudocode/
 # an approval or an account belongs here, not in docs/.
 site/
 
+
+# a second venv that was being packaged into the sdist
+venv_test/

@@ -340,3 +340,56 @@ def test_declared_protocol_version_matches_the_sdk():
     sj = json.loads((Path(__file__).resolve().parents[1] / "server.json").read_text())
     assert sj["_meta"]["io.github.teslajoy/omicstra"]["protocolVersion"] \
         == LATEST_PROTOCOL_VERSION
+
+
+# --- the compute path's interrupt points ------------------------------------
+COMPUTE = json.loads(
+    (Path(omicstra.__file__).parent / "configs" / "compute_contract.json").read_text())
+GATES = {g["id"]: g for g in COMPUTE["gates"]}
+
+
+def test_five_preflight_one_mid_run():
+    """the split is the argument. five of six can be asked before a unit is
+    embedded, so durable execution is justified by ONE mid-run gate plus
+    waiting-without-an-allocation - not by 'six human pauses overnight'."""
+    pre = [g for g in GATES.values() if g["when"] == "preflight"]
+    mid = [g for g in GATES.values() if g["when"] == "mid_run"]
+    assert len(pre) == COMPUTE["summary"]["preflight"] == 5
+    assert len(mid) == COMPUTE["summary"]["mid_run"] == 1
+    assert mid[0]["id"] == "shard_failure_threshold"
+    assert "cannot be asked before submission" in mid[0]["why_it_cannot_be_preflight"]
+
+
+@pytest.mark.parametrize("gid", sorted(GATES))
+def test_every_gate_has_a_closed_option_set_and_no_default(gid):
+    """the model or the person picks from an enumerated set; nothing is free
+    text but the rationale. and no gate has a default - the system does not
+    pick, which is what makes an override a decision someone took."""
+    g = GATES[gid]
+    assert isinstance(g["options"], list) and len(g["options"]) >= 2, gid
+    assert g["default"] is None, f"{gid} declares a default"
+    assert g["emits"] in {"SelectionRecord", "GateRecord", "DiagnosticRecord"}, gid
+    assert g["forecloses"], f"{gid} must say what accepting gives up"
+
+
+def test_preflight_gates_are_pre_answerable_and_the_mid_run_one_is_not():
+    """a gate with a declared answer does not fire. that is what makes an
+    unattended run possible without lowering the bar - the answer is still
+    recorded, with the declaration as its source."""
+    for g in GATES.values():
+        if g["when"] == "preflight":
+            assert g["pre_answerable_by"], f"{g['id']} has no cohort declaration"
+            assert g["pre_answerable_by"].startswith("cohort.json#"), g["id"]
+        else:
+            assert g["pre_answerable_by"] is None, (
+                f"{g['id']} is mid_run - it depends on failures that have not "
+                f"happened, so it cannot be declared in advance")
+
+
+def test_one_schema_two_hosts():
+    """the contract must not know which host asks. a preflight gate is a
+    langgraph interrupt; the mid-run one is a signal on a durable workflow;
+    both emit the same record."""
+    h = COMPUTE["gate_schema"]["hosting"]
+    assert "interrupt()" in h["preflight"] and "signal" in h["mid_run"]
+    assert {g["emits"] for g in GATES.values()} <= {"SelectionRecord", "GateRecord"}
