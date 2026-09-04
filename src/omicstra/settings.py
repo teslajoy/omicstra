@@ -71,6 +71,20 @@ class Settings(BaseSettings):
             return None
         return json.loads(reg.read_text()).get("default")
 
+    def _bound_project_id(self, root: Path) -> str:
+        """the cohort a project_dir actually holds.
+
+        project.json is authoritative; the directory name is the fallback, since
+        `init` defaults the id to the directory name anyway.
+        """
+        cfg = root / "project.json"
+        if cfg.exists():
+            try:
+                return json.loads(cfg.read_text()).get("project_id") or root.name
+            except (json.JSONDecodeError, OSError):
+                pass
+        return root.name
+
     def project_root(self, project_id: str | None = None) -> Path:
         """the one cohort directory this call may read.
 
@@ -78,7 +92,21 @@ class Settings(BaseSettings):
         passing a different project_id. falls back to the in-repo registry.
         """
         if self.project_dir is not None:
-            return self.resolve(self.project_dir)
+            root = self.resolve(self.project_dir)
+            # the boundary REFUSES; it does not substitute. winning outright
+            # while staying silent turns a security boundary into a data mixup -
+            # ask about cohort B, receive cohort A's evidence, with nothing said.
+            # that is precisely the "inheriting another cohort's winner" failure
+            # the package/project split exists to stop.
+            if project_id and project_id != self._bound_project_id(root):
+                raise ValueError(
+                    f"project_id={project_id!r} does not match the bound cohort "
+                    f"{self._bound_project_id(root)!r} (project_dir={root}). "
+                    "the boundary refuses rather than silently serving another "
+                    "cohort's data. unset OMICSTRA_PROJECT_DIR, or pass the "
+                    "matching project_id."
+                )
+            return root
         pid = project_id or self.default_project_id()
         if not pid:
             raise ValueError(
