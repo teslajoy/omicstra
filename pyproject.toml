@@ -1,6 +1,6 @@
 [project]
 name = "omicstra"
-version = "0.0.1"
+version = "0.1.0"
 description = "multi-agent MCP server for cross-modal reasoning in spatial biology"
 readme = "README.md"
 requires-python = ">=3.10"

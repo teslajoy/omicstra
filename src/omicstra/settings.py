@@ -32,11 +32,23 @@ def _package_repo_root() -> Path:
     from a project directory. this is the ONE place __file__ is consulted;
     every cohort path still comes through injected settings.
 
-    OPEN: `configs/` sits at repo root, so it is not inside the wheel. shipping
-    a non-editable install needs it moved under src/omicstra/ or declared as
-    package data. tracked as a packaging item, not a blocker for dev installs.
     """
     return Path(__file__).resolve().parents[2]
+
+
+def _package_configs() -> Path:
+    """the contracts, resolved from the PACKAGE - not from a repo checkout.
+
+    they were at repo root, which meant `pip install omicstra` shipped a server
+    that could not find its own contracts: in an installed wheel `parents[2]` is
+    site-packages, and there is no configs/ beside it. the contracts are package
+    data - generalizable, cohort-free, versioned with the code - so they live
+    inside the package and travel with it.
+
+    configs/v3/ stays at repo root. those are run configs for one cohort's grid,
+    which is exactly what package data must NOT contain.
+    """
+    return Path(__file__).resolve().parent / "configs"
 
 
 class Settings(BaseSettings):
@@ -49,7 +61,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     runs_dir: Path = Path("runs")
     knowledge_dir: Path = Path("knowledge")
-    configs_dir: Path = Path("configs")
+    # absolute, because the contracts ship inside the wheel
+    configs_dir: Path = _package_configs()
 
     # the cohort root. when set, it IS the boundary - project_id is not
     # consulted and nothing outside this directory is addressable.

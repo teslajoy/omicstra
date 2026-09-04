@@ -36,9 +36,9 @@
       "id": "below_reference",
       "description": "a reference is REPORTED, never decisive. it is the un-aligned modality's own score, carried so a reader can see what alignment bought. when the leader falls below it that shortfall leads the rationale; when the leader clears it, nothing is claimed",
       "authority": "rule",
-      "status_on_this_contract": "no live instance on tnbc-92 - both declared references sit below their leaders. exercised only by fixture in tests/test_routing.py",
       "basis": "a floor says the method removed information and is disqualifying. a reference says what the un-aligned modality already achieved and is not",
-      "interval_asymmetry": "a reference is typically a single point estimate while candidates carry intervals. it therefore cannot be adjudicated by the tie rule, and 'clears the reference' must never be stated as a separated claim. report the shortfall, do not resolve on the absence of one"
+      "interval_asymmetry": "a reference is typically a single point estimate while candidates carry intervals. it therefore cannot be adjudicated by the tie rule, and 'clears the reference' must never be stated as a separated claim. report the shortfall, do not resolve on the absence of one",
+      "note": "whether any cohort currently triggers this rule is a property of that cohort's evidence, not of the contract - look in routing_evidence.json. the rule is exercised by fixture in the test suite."
     },
     "multi_metric_rule": {
       "id": "metrics_must_agree",

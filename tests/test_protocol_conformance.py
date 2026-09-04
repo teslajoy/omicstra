@@ -13,12 +13,14 @@ from pathlib import Path
 
 import pytest
 
+import omicstra
+
 from omicstra.protocols import ProtocolOrderError, Step, build_protocol
 from omicstra.protocols.eda import EDA_STEPS
 from omicstra.protocols.inventory import INVENTORY_STEPS
 
 CONTRACT = json.loads(
-    (Path(__file__).resolve().parents[1] / "configs" / "eda_contract.json").read_text()
+    (Path(omicstra.__file__).parent / "configs" / "eda_contract.json").read_text()
 )
 CHECKS = {c["id"]: c for c in CONTRACT["checks"]}
 REGISTERED = {s.id: s for s in EDA_STEPS}
@@ -282,3 +284,59 @@ def test_http_rejects_an_unknown_host():
                    headers={"Accept": "application/json, text/event-stream",
                             "Content-Type": "application/json"})
     assert r.status_code == 421, "unknown Host must be refused"
+
+
+# --- packaging: the contracts must travel with the code ---------------------
+def test_contracts_resolve_from_the_package_not_a_repo_checkout():
+    """`pip install omicstra` shipped a server that could not find its own
+    contracts: configs/ was at repo root, and in an installed wheel
+    `parents[2]` is site-packages with no configs/ beside it. this is the
+    difference between "pip-installable mcp server" being true or a claim."""
+    from omicstra.settings import settings
+    pkg = Path(omicstra.__file__).parent
+    assert settings.configs_dir == pkg / "configs", settings.configs_dir
+    assert settings.configs_dir.is_absolute(), "must not depend on cwd"
+    for f in ("eda_contract.json", "routing_contract.json", "data_contract.json"):
+        assert (settings.configs_dir / f).exists(), f
+
+
+def test_no_cohort_data_inside_the_package():
+    """package data is generalizable and cohort-free. configs/v3/ is one
+    cohort's run grid and belongs at repo root, not in the wheel."""
+    pkg_cfg = Path(omicstra.__file__).parent / "configs"
+    names = {p.name for p in pkg_cfg.iterdir()}
+    assert "v3" not in names, "run configs are not package data"
+    for p in pkg_cfg.glob("*.json"):
+        d = json.loads(p.read_text())
+        # `source` is provenance - citing where a shape came from is legitimate.
+        # a cohort named anywhere ELSE is a measurement that escaped its evidence
+        # file into the contract that is supposed to be cohort-free.
+        d.pop("source", None)
+        assert "tnbc" not in json.dumps(d).lower(), (
+            f"{p.name} names a cohort outside its provenance field - that value "
+            f"belongs in routing_evidence.json")
+
+
+def test_server_json_matches_the_server():
+    """the registry entry is a claim about what this server serves. a tool list
+    that drifts from the code is how a client discovers a tool that is not
+    there."""
+    import asyncio
+    import tomllib
+    from omicstra.mcp.server import srv
+    root = Path(__file__).resolve().parents[1]
+    sj = json.loads((root / "server.json").read_text())
+    meta = sj["_meta"]["io.github.teslajoy/omicstra"]
+    actual = {t.name for t in asyncio.run(srv.list_tools())}
+    assert set(meta["tools"]) == actual, f"drift: {set(meta['tools']) ^ actual}"
+    pj = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+    assert sj["version"] == pj, f"server.json {sj['version']} != pyproject {pj}"
+    for pkg in sj["packages"]:
+        assert pkg["version"] == pj, f"package entry {pkg['version']} != {pj}"
+
+
+def test_declared_protocol_version_matches_the_sdk():
+    from mcp.types import LATEST_PROTOCOL_VERSION
+    sj = json.loads((Path(__file__).resolve().parents[1] / "server.json").read_text())
+    assert sj["_meta"]["io.github.teslajoy/omicstra"]["protocolVersion"] \
+        == LATEST_PROTOCOL_VERSION

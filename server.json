@@ -1,0 +1,74 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.teslajoy/omicstra",
+  "description": "Cross-modal reasoning for spatial biology. Exposes fixed scientific protocols as tools and returns evidence JSON; the client holds the model. Routes a question to a method from a cohort's own recorded evaluation, and refuses when that evidence is absent rather than inheriting another cohort's winner.",
+  "version": "0.1.0",
+  "websiteUrl": "https://teslajoy.github.io/omicstra/",
+  "repository": {
+    "url": "https://github.com/teslajoy/omicstra",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "omicstra",
+      "version": "0.1.0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        {
+          "name": "OMICSTRA_PROJECT_DIR",
+          "description": "The cohort directory. This is BOTH the cohort selector and the security boundary - nothing outside it is addressable, and passing a project_id that names a different cohort raises rather than silently serving this one.",
+          "isRequired": false
+        },
+        {
+          "name": "OMICSTRA_CHECKPOINT",
+          "description": "memory | sqlite:<path>. The admissibility gate is an interrupt; resuming it after the process exits needs a durable saver. memory is fine for one interactive session.",
+          "isRequired": false,
+          "default": "memory"
+        },
+        {
+          "name": "REQUIRE_PROTOCOL_2026",
+          "description": "0 | 1. Refuse clients older than the 2026-07-28 protocol revision. Set to 1 behind an authorization server: older clients cannot present audience-bound tokens.",
+          "isRequired": false,
+          "default": "0"
+        },
+        {
+          "name": "OMICSTRA_HTTP_HOST",
+          "description": "http transport only. The hostname the server is REACHED at - the transport refuses an unknown Host (DNS-rebinding protection, on by default). Behind a gateway this is the gateway's hostname, not the instance's.",
+          "isRequired": false,
+          "default": "127.0.0.1"
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "http://127.0.0.1:8000/mcp",
+      "description": "Stateless by design - any instance handles any request, because the run handle is a run_id passed as an ordinary parameter rather than a session. Set OMICSTRA_TRANSPORT=http. A public deployment substitutes its own URL."
+    }
+  ],
+  "_meta": {
+    "io.github.teslajoy/omicstra": {
+      "protocolVersion": "2026-07-28",
+      "modelInsideServer": false,
+      "generatesCode": false,
+      "note": "The server executes nothing a model wrote. A model has three narrow jobs, all client-side: classify a question into a closed task set, choose among enumerated options at a gate, and write the rationale. Every consequence resolves from lookup tables, so swapping the model cannot change a route.",
+      "tools": [
+        "check_eda_gate",
+        "describe_data_structure",
+        "list_task_families",
+        "route",
+        "decision_record",
+        "plot_evidence",
+        "run_eda_step",
+        "plot_spatial_autocorrelation"
+      ],
+      "humanInTheLoop": "The admissibility gate raises an interrupt carrying its full record set, so a client is never asked to accept cautions without seeing the diagnostics behind them. A client that cannot surface an interrupt cannot complete a gated protocol.",
+      "dataClassification": "Declared per cohort and defaulting to restricted, so a missing declaration fails closed. Public cohorts additionally require provenance - a redistribution claim with no source is not checkable.",
+      "license": "MIT",
+      "funding": "https://doi.org/10.55277/researchhub.6ou1w3h3"
+    }
+  }
+}
