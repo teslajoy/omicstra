@@ -36,18 +36,18 @@
   "headline_view": "z_he",
   "hypothesis_metric": "auc",
   "contrastive_runs": [
-    "R1",
-    "R2",
-    "R3",
-    "R4",
-    "R5",
-    "R6"
+    "R1_v3",
+    "R2_v3",
+    "R3_v3",
+    "R4_v3",
+    "R5_v3",
+    "R6_v3"
   ],
   "classical_runs": [
-    "B1",
-    "B2",
-    "B3",
-    "B4"
+    "B1_v3",
+    "B2_v3",
+    "B3_v3",
+    "B4_v3"
   ],
   "niches_dir": "../../data/embeddings/niches_v3",
   "runs_dir": "../../runs/tnbc-92_v3"

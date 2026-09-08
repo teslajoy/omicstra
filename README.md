@@ -225,6 +225,27 @@ every run writes `runs/{project_id}/{run_id}/` - config, QC, embeddings, alignme
 
 ---
 
+## how the evidence pack is produced
+
+The router reads `projects/{id}/routing_evidence.json`. **No script writes it.**
+
+```
+eval summaries  ──▶  proposed evidence   deterministic: winners, margins, refusals
+                ──▶  a person reviews, edits the notes, approves
+                ──▶  routing_evidence.json
+```
+
+Deciding which metric answers which task family, what the floors are, and which
+caveat attaches to which candidate is editorial work - the file's own notes
+argue with the report in places. Generating it would invent the judgements it
+records, so `run_eval` scores the grid and **resolves** the pack; it never
+produces one.
+
+**In v0.1 that promotion step is manual and recorded in `docs/`. In v0.2 it is
+`omicstra promote`** - a gate, not a protocol, because it asks a person.
+
+---
+
 ## declared deviation from the proposal
 
 The registered report put a model **inside** the orchestration: one model for
