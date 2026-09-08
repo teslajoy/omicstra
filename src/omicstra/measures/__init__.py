@@ -1,4 +1,20 @@
-"""EDA steps - each observes, compares against a declared criterion, emits a record.
+"""measures - the maths, and nothing else.
+
+a measure computes. it has no order, no applicability, no authority and no
+`ctx`: give it an AnnData and parameters, get a record back. that is the whole
+contract, and it is why this lives beside `protocols/` rather than inside it -
+a file's location says what it is allowed to do, and `protocols/` is where a
+thing gains an order and a criterion.
+
+so a measure is not owned by the protocol that happens to call it. Moran's I is
+a spatial statistic; if evaluation wants it later it imports the same function,
+not a copy named for a different stage.
+
+organised by WHAT is computed, not by which protocol calls it. one module today;
+it splits into counts / expression / spatial / batch / agreement when the
+evaluation guards arrive and there are genuinely two families to separate.
+
+each observes, compares against a declared criterion, emits a record.
 
 every step takes AnnData and returns a DiagnosticRecord. AnnData is the contract:
 cohort-specific loading is an adapter's job, so a step never learns a file format.

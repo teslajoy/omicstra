@@ -104,10 +104,14 @@ omicstra/
 │   ○ graphs/                        # LEVEL 1 - one file per gate, each can interrupt()
 │   │   ○ eda.py  encode.py          # <- eda_graph.py  agents/graph.py - not moved yet
 │   │   ○ route.py  promote.py       # named in the design - not split out yet
-│   · protocols/                     # LEVEL 2 - fixed order, no model, no interrupt
+│   · protocols/                     # LEVEL 2 - ORDER, applicability, authority. no maths
 │   │   · inventory.py               # 8 steps: files .. bind - "what is this data"
-│   │   · eda.py                     # 6 steps registered - "is it usable"
-│   │   ○ align.py  evaluate.py      # <- stages.py / guards.py - not moved yet
+│   │   · eda.py                     # 10 checks registered - "is it usable"
+│   │   ○ align.py  evaluate.py      # <- stages.py / guards.py - signatures only
+│   · measures/                      # the MATHS. pure functions, no ctx, no order,
+│   │                                #   no authority. callable from a notebook.
+│   │                                #   organised by what is computed, never by
+│   │                                #   which protocol calls it
 │   ○ contracts/                     # reads declarations, no logic - not split out yet
 │   │   ○ data.py  routing.py        # data+cohort+platform · routing contract + evidence
 │   · adapters/                      # a cohort's files -> AnnData conforming to raw_counts

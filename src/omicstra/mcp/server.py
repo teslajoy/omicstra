@@ -183,7 +183,7 @@ def plot_evidence(task_id: str, project_id: str | None = None) -> list:
     "stored verdict."))
 def run_eda_step(step: str, n_perm: int = 199) -> dict:
     import anndata as ad
-    from omicstra.protocols import eda_steps as st
+    from omicstra import measures as st
     from omicstra.eda import load_summary
 
     cache = settings.resolve(settings.data_dir) / "embeddings/_eda_cache/cohort_sample.h5ad"

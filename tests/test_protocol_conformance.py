@@ -393,3 +393,33 @@ def test_one_schema_two_hosts():
     h = COMPUTE["gate_schema"]["hosting"]
     assert "interrupt()" in h["preflight"] and "signal" in h["mid_run"]
     assert {g["emits"] for g in GATES.values()} <= {"SelectionRecord", "GateRecord"}
+
+
+# --- the layer boundary: measures compute, protocols order ------------------
+def test_measures_are_outside_protocols():
+    """a file's location says what it is allowed to do. a measure that lives
+    inside protocols/ makes that boundary stop meaning anything."""
+    import omicstra.measures
+    pkg = Path(omicstra.__file__).parent
+    assert (pkg / "measures" / "__init__.py").exists()
+    assert not (pkg / "protocols" / "measures.py").exists()
+    assert not (pkg / "protocols" / "eda_steps.py").exists()
+
+
+def test_measures_import_nothing_from_protocols():
+    """the dependency runs one way. protocols call measures; a measure that
+    imported a protocol would have acquired an order it is not allowed to have."""
+    src = (Path(omicstra.__file__).parent / "measures" / "__init__.py").read_text()
+    assert "omicstra.protocols" not in src and "from omicstra import protocols" not in src
+
+
+def test_measures_take_no_ctx():
+    """no ctx, no state, no conditions - give it data and parameters, get a
+    record. that is what makes it callable from a notebook."""
+    import inspect
+    from omicstra import measures
+    for name in ("count_statistics", "marker_expression",
+                 "spatial_autocorrelation", "batch_structure"):
+        params = list(inspect.signature(getattr(measures, name)).parameters)
+        assert "ctx" not in params, f"{name} takes ctx"
+        assert params[0] in ("adata", "load_sample_fn"), f"{name} first arg: {params[0]}"

@@ -16,7 +16,7 @@ absent. a missing check that says nothing is the defect this closes.
 """
 from __future__ import annotations
 
-from omicstra.protocols import eda_steps
+from omicstra import measures
 from omicstra.protocols import Step
 from omicstra.records import DiagnosticRecord
 
@@ -107,10 +107,10 @@ def _declared_field(field: str, unresolved=("", None)):
 
 EDA_STEPS: list[Step] = [
     Step(id="cohort_counts", produces=frozenset({"counts"}),
-         fn=lambda c: eda_steps.count_statistics(_adata(c), **c["params"])),
+         fn=lambda c: measures.count_statistics(_adata(c), **c["params"])),
 
     # the contract declares positive_markers and negative_markers as two
-    # required checks with two fields. eda_steps.marker_expression computes both
+    # required checks with two fields. measures.marker_expression computes both
     # halves and returns ONE record, so each step passes only its own half - the
     # verdict is a conjunction over whichever groups are non-empty, so an empty
     # opposite half is a no-op rather than a silent pass.
@@ -118,7 +118,7 @@ EDA_STEPS: list[Step] = [
          produces=frozenset({"positive_markers"}),
          authority="cohort_calibrated",
          params_space=("positive", "min_pct_positive"),
-         fn=lambda c: eda_steps.marker_expression(
+         fn=lambda c: measures.marker_expression(
              _adata(c), positive=c["params"]["positive"], negative={},
              min_pct_positive=c["params"].get("min_pct_positive", 1.0))),
 
@@ -126,7 +126,7 @@ EDA_STEPS: list[Step] = [
          produces=frozenset({"negative_markers"}),
          authority="cohort_calibrated",
          params_space=("negative", "max_pct_negative"),
-         fn=lambda c: eda_steps.marker_expression(
+         fn=lambda c: measures.marker_expression(
              _adata(c), positive={}, negative=c["params"]["negative"],
              max_pct_negative=c["params"].get("max_pct_negative", 10.0))),
 
@@ -136,14 +136,14 @@ EDA_STEPS: list[Step] = [
          applicable_when=_has_spatial,
          why_not_applicable="no spatial coordinates in obsm - not a spatial assay",
          params_space=("k", "n_perm", "threshold"),
-         fn=lambda c: eda_steps.spatial_autocorrelation(_adata(c), **c["params"])),
+         fn=lambda c: measures.spatial_autocorrelation(_adata(c), **c["params"])),
 
     Step(id="batch_structure", requires=frozenset({"counts"}),
          produces=frozenset({"batch_structure"}),
          authority="cohort_calibrated",   # contract: the absolute floor is calibrated
          applicable_when=_multi_sample,
          why_not_applicable="single sample - no batch axis to test",
-         fn=lambda c: eda_steps.batch_structure(_adata(c), **c["params"])),
+         fn=lambda c: measures.batch_structure(_adata(c), **c["params"])),
 
     # declared in the contract, not yet implemented. registered so their absence
     # is a RECORD rather than a silence.
