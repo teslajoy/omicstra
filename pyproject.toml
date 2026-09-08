@@ -1,7 +1,7 @@
 [project]
 name = "omicstra"
 version = "0.1.0"
-description = "multi-agent MCP server for cross-modal reasoning in spatial biology"
+description = "multi-agent MCP server for cross-modal embedding alignment and evidence-based routing in spatial biology"
 readme = "README.md"
 # 3.11, not 3.10: tomllib is stdlib only from 3.11 and the suite already imports
 # it. the floor is whatever the verify matrix actually runs, never a guess - an
@@ -47,6 +47,7 @@ dependencies = [
 [project.urls]
 Repository = "https://github.com/teslajoy/omicstra"
 Documentation = "https://teslajoy.github.io/omicstra/"
+DOI = "https://doi.org/10.5281/zenodo.22666752"
 Funding = "https://doi.org/10.55277/researchhub.6ou1w3h3"
 
 [project.scripts]

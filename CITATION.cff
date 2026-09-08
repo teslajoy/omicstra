@@ -1,17 +1,22 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "omicstra: cross-modal biomedical embedding alignment and reasoning via MCP orchestration"
+title: "omicstra: a multi-agent MCP server for cross-modal embedding alignment and evidence-based routing in spatial biology"
 abstract: >-
-  An MCP server for cross-modal reasoning in spatial biology. It exposes fixed
-  scientific protocols as tools and returns evidence; the client holds the
-  model. Routing is a deterministic rule over a cohort's own recorded
-  evaluation, and a cohort without that evidence is reported as not routable
-  rather than inheriting another cohort's result.
+  A multi-agent MCP server for spatial biology. Modality-specialized agents and
+  their integration are orchestrated with LangGraph; foundation-model encoders
+  are pluggable; integration strategy is a configurable experimental dimension.
+  Alignments are evaluated against declared metrics, and questions are routed
+  from a cohort's own recorded evidence, refusing when that evidence is absent
+  rather than inheriting another cohort's result. Agents are deterministic
+  components with persistent context; the server ships no model.
 type: software
 license: MIT
 version: 0.1.0
 repository-code: "https://github.com/teslajoy/omicstra"
 url: "https://teslajoy.github.io/omicstra/"
+doi: "10.5281/zenodo.22666752"
+# the reservation date. becomes the tag date when v0.1.0 is tagged.
+date-released: "2026-09-08"
 keywords:
   - model context protocol
   - spatial transcriptomics
@@ -22,7 +27,7 @@ keywords:
 authors:
   - family-names: Sanati
     given-names: Nasim
-    affiliation: "Brenden-Colson Center for Pancreatic Care, Oregon Health & Science University"
+    affiliation: "Sears Lab, Brenden-Colson Center, OHSU Knight Cancer Institute"
 references:
   - type: grant
     title: "A Multi-Agent MCP Server for Cross-Modal Biomedical Embedding Alignment Evaluated on Tumor Microenvironment Characterization"

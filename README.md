@@ -1,8 +1,10 @@
 # omic<span style="color:#5DCAA5">stra</span>
 
-an MCP server for cross-modal reasoning in spatial biology. it exposes fixed scientific protocols as tools and returns evidence; the client holds the model. foundation model encoders are pluggable; integration strategy is a configurable experimental dimension, not a fixed pipeline choice.
+a multi-agent MCP server for cross-modal embedding alignment and evidence-based routing in spatial biology. it exposes fixed scientific protocols as tools and returns evidence; the client holds the model. alignments are evaluated against declared metrics, and questions are routed from a cohort's own recorded evidence, refusing when that evidence is absent. foundation model encoders are pluggable; integration strategy is a configurable experimental dimension, not a fixed pipeline choice.
 
 the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) using H&E morphology (Virchow2 primary, UNI2 swap) and spatial transcriptomics (Novae GNN).
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22666752.svg)](https://doi.org/10.5281/zenodo.22666752)
 
 `v0.1` `ResearchHub Foundation grant` `Brenden-Colson Center / Sears Lab, OHSU` `MIT`
 
@@ -334,8 +336,10 @@ Brenden-Colson Center for Pancreatic Care / Sears Lab, OHSU
 ```bibtex
 @software{sanati2026omicstra,
   author  = {Sanati, Nasim},
-  title   = {omicstra: cross-modal biomedical embedding alignment + reasoning via MCP orchestration},
+  title   = {omicstra: a multi-agent MCP server for cross-modal embedding alignment
+             and evidence-based routing in spatial biology},
   year    = {2026},
+  doi     = {10.5281/zenodo.22666752},
   url     = {https://github.com/teslajoy/omicstra},
   license = {MIT}
 }
