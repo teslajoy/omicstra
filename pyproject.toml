@@ -3,38 +3,63 @@ name = "omicstra"
 version = "0.1.0"
 description = "multi-agent MCP server for cross-modal reasoning in spatial biology"
 readme = "README.md"
-requires-python = ">=3.10"
+# 3.11, not 3.10: tomllib is stdlib only from 3.11 and the suite already imports
+# it. the floor is whatever the verify matrix actually runs, never a guess - an
+# untested claim here is the same defect as a documented env var whose package
+# was never declared.
+requires-python = ">=3.11"
 license = { text = "MIT" }
+
+authors = [{ name = "Nasim Sanati", email = "nasim@plenary.org" }]
+keywords = ["mcp", "spatial-transcriptomics", "histopathology", "bioinformatics",
+            "multimodal", "model-context-protocol"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+]
+
+# a dependency that an unconditional module-level import needs is a core
+# dependency, not an extra. mcp is imported by mcp/server.py, langgraph by
+# graph.py and graphs/*, langchain-core by protocols/__init__.py, and
+# langgraph-checkpoint-sqlite backs the documented OMICSTRA_CHECKPOINT=sqlite:
+# value. shipping any of them as an extra means `pip install omicstra` installs a
+# server that cannot import itself, which is exactly what verify caught.
+#
+# NOT here, deliberately: anthropic, langchain-anthropic, pydantic-ai. the server
+# holds no model and makes no outbound call - a client supplies the model, so
+# nothing in src/ imports one. declaring them would put the model back inside the
+# server, which is the one thing the design says not to do.
 dependencies = [
   "pydantic>=2",
   "pydantic-settings>=2",
   "click>=8",
+  "mcp>=2",
+  "langgraph>=1",
+  "langgraph-checkpoint-sqlite>=2",
+  "langchain-core>=0.3",
 ]
+
+[project.urls]
+Repository = "https://github.com/teslajoy/omicstra"
+Documentation = "https://teslajoy.github.io/omicstra/"
+Funding = "https://doi.org/10.55277/researchhub.6ou1w3h3"
 
 [project.scripts]
 omicstra = "omicstra.cli:main"
 
 [project.optional-dependencies]
-# the read path. stays free of numpy and tensor libraries so a self-contained
-# bundle can ship without them - see mcp_plan.md section 12.
-mcp = ["mcp>=2"]
+# the numerics, and the only genuinely optional half. named `measure` rather than
+# `eda` because inventory needs it too and inventory is not eda: these are what
+# the measuring steps import, wherever they run. without them the server still
+# installs, imports, serves its tools, and routes on a published evidence pack.
+measure = ["numpy>=1.26", "scipy>=1.11", "scikit-learn>=1.3", "anndata>=0.10", "pandas>=2"]
 
-# computing EDA steps on real measurements
-eda = ["numpy>=1.26", "scipy>=1.11", "scikit-learn>=1.3", "anndata>=0.10", "pandas>=2"]
-
-# orchestration
-# langgraph-checkpoint-sqlite is not optional within this extra: the admissibility
-# gate is an interrupt, and resuming it after the process exits needs a durable
-# saver. OMICSTRA_CHECKPOINT=sqlite:<path> is a documented value, so the module
-# behind it ships rather than failing at the moment someone relies on it.
-agents = [
-  "langgraph>=1",
-  "langgraph-checkpoint-sqlite>=2",
-  "langchain-anthropic>=0.2",
-  "anthropic>=0.40",
-]
-
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "build"]
 
 [build-system]
 requires = ["hatchling"]

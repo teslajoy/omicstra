@@ -27,16 +27,39 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # the floor in pyproject.toml is a claim; this is what tests it. 3.11 is the
+      # lowest supported, 3.14 is what development happens on.
+      matrix:
+        python-version: ["3.11", "3.12", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
+        with: { python-version: "${{ matrix.python-version }}" }
 
-      - name: install
+      # the bare install goes FIRST and on its own. a core dependency shipped as
+      # an extra is invisible once the extras are installed, so this step is the
+      # one that catches it: no extras, and the server still has to run.
+      - name: install with no extras
         run: |
-          python -m pip install -q --upgrade pip build
-          python -m pip install -q -e ".[dev]" || python -m pip install -q -e .
-          python -m pip install -q pytest
+          python -m pip install -q --upgrade pip
+          python -m pip install -q -e .
+
+      - name: a bare install serves
+        run: |
+          set -e
+          cd /tmp && omicstra --help > /dev/null && echo "cli ok"
+          cd /tmp && python - <<'PY'
+          import asyncio
+          from omicstra.mcp.server import srv
+          tools = asyncio.run(srv.list_tools())
+          assert tools, "no tools served"
+          print("bare install serves", len(tools), "tools")
+          PY
+
+      - name: install the numerics and the test tooling
+        run: python -m pip install -q -e ".[measure,dev]"
 
       - name: tests
         run: python -m pytest tests/ -q
@@ -94,7 +117,11 @@ jobs:
           PY
         working-directory: ${{ github.workspace }}
 
+      # one artifact, from one version. the wheel is py3-none-any so every matrix
+      # leg builds the same thing, and upload-artifact@v4 rejects duplicate names.
+      # publish therefore uploads exactly what this leg built and verified.
       - uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.12'
         with: { name: dist, path: dist/ }
 
   publish:
