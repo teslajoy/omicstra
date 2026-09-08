@@ -427,7 +427,7 @@ def test_measures_take_no_ctx():
 
 # --- the alignment / evaluation port ----------------------------------------
 def _cfg():
-    from omicstra.config import ProjectConfig
+    from omicstra.contracts.project import ProjectConfig
     from omicstra.settings import settings
     settings.project_dir = Path(__file__).resolve().parents[1] / "projects" / "tnbc-92"
     return ProjectConfig.load("tnbc-92")
@@ -608,3 +608,35 @@ def test_declared_runs_dir_untouched_by_a_scratch_run(tmp_path):
         align.run_align(cfg, nj, project_id="tnbc-92", runs_root=tmp_path)
     after = {p: p.stat().st_mtime_ns for p in declared.rglob("*") if p.is_file()}
     assert before == after, "a scratch run modified the declared grid"
+
+
+# --- the contracts layer: reads a declaration, decides nothing --------------
+def test_contracts_only_read():
+    """a contract module answers "what did someone declare", never "what
+    follows from it". a decision in here would be a rule nobody could find."""
+    import inspect
+    from omicstra.contracts import eda as ceda, project as cproj, routing as crout
+    for mod in (ceda, cproj, crout):
+        src = inspect.getsource(mod)
+        assert "interrupt(" not in src, f"{mod.__name__} asks a human"
+        assert "subprocess" not in src, f"{mod.__name__} runs something"
+        for verb in ("def resolve(", "def evaluate(", "def run_gate("):
+            assert verb not in src, f"{mod.__name__} decides: {verb}"
+
+
+def test_settings_is_the_bottom_layer():
+    """settings imports nothing from omicstra. everything else may import it,
+    which is what keeps the package/project split from becoming a cycle -
+    and is why ProjectConfig belongs in contracts/, not merged into settings."""
+    src = (Path(omicstra.__file__).parent / "settings.py").read_text()
+    assert "from omicstra" not in src and "import omicstra" not in src
+
+
+def test_project_config_reads_a_cohort_declaration():
+    """ProjectConfig is a COHORT's declaration, not package settings. merging
+    it into settings.py would put a cohort-shaped object in the module that is
+    meant to know about no cohort at all."""
+    from omicstra.contracts.project import ProjectConfig
+    assert "project" in ProjectConfig.__module__
+    src = (Path(omicstra.__file__).parent / "contracts" / "project.py").read_text()
+    assert "project.json" in src

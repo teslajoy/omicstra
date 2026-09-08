@@ -19,7 +19,7 @@ import os
 from mcp.server import MCPServer
 from mcp.types import LATEST_PROTOCOL_VERSION
 
-from omicstra.config import ProjectConfig
+from omicstra.contracts.project import ProjectConfig
 from omicstra.eda import load_contract, load_summary, run_gate
 from omicstra.settings import settings
 

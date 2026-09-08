@@ -14,7 +14,7 @@ unit as an EDA step: method, scope, observed, criterion, result, decision.
 """
 from __future__ import annotations
 
-from omicstra.config import ProjectConfig
+from omicstra.contracts.project import ProjectConfig
 from omicstra.records import DiagnosticRecord
 from omicstra.routing import _blocks, load_routing_evidence
 

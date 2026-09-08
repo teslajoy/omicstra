@@ -36,39 +36,13 @@ import json
 from pathlib import Path
 from typing import Any
 
-from omicstra.records import Candidate, RecordStore, SelectionRecord, stable_id
+from omicstra.contracts.routing import (ledger, load_routing_contract,
+                                        load_routing_evidence)
+from omicstra.records import Candidate, SelectionRecord, stable_id
 from omicstra.settings import settings
 
 
 # --- loading ---------------------------------------------------------------
-def load_routing_contract(configs_dir: str | Path | None = None) -> dict:
-    """ships with the PACKAGE - cohort-free by construction."""
-    base = Path(configs_dir) if configs_dir else settings.configs_dir
-    return json.loads((settings.resolve(base) / "routing_contract.json").read_text())
-
-
-def load_routing_evidence(project_id: str | None = None) -> dict:
-    """belongs to the PROJECT. absent = this cohort has not been evaluated.
-
-    an absent file must not fall back to a default routing table. inheriting
-    another cohort's winner is the exact failure this split exists to stop.
-    """
-    try:
-        p = settings.project_root(project_id) / "routing_evidence.json"
-    except ValueError:
-        return {}
-    return json.loads(p.read_text()) if p.exists() else {}
-
-
-def ledger(project_id: str | None = None) -> RecordStore:
-    """the file-backed decision ledger for a cohort."""
-    try:
-        pid = project_id or settings.project_root(project_id).name
-    except ValueError:
-        pid = "unrouted"
-    return RecordStore(settings.resolve(settings.runs_dir) / pid / "records" / "decisions.jsonl")
-
-
 def list_task_families(contract: dict | None = None,
                        project_id: str | None = None) -> dict:
     """the taxonomy the caller classifies against, with per-cohort routability.

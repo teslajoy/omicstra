@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 
-from omicstra.config import ProjectConfig
+from omicstra.contracts.project import ProjectConfig
 
 
 class ArtifactStore:

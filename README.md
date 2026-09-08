@@ -112,8 +112,9 @@ omicstra/
 │   │                                #   no authority. callable from a notebook.
 │   │                                #   organised by what is computed, never by
 │   │                                #   which protocol calls it
-│   ○ contracts/                     # reads declarations, no logic - not split out yet
-│   │   ○ data.py  routing.py        # data+cohort+platform · routing contract + evidence
+│   · contracts/                     # READS a declaration, decides nothing
+│   │   · project.py                 # <- config.py - a cohort's project.json
+│   │   · routing.py  eda.py         # contract + evidence · contract + calibration
 │   · adapters/                      # a cohort's files -> AnnData conforming to raw_counts
 │   │   · wang_st.py  ○ hest.py
 │   · agents/modality.py             # modality agents - encoder capability metadata

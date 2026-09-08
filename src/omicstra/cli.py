@@ -11,7 +11,7 @@ from pathlib import Path
 
 import click
 
-from omicstra.config import ProjectConfig
+from omicstra.contracts.project import ProjectConfig
 from omicstra.eda import run_gate
 from omicstra.settings import settings
 

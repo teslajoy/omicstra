@@ -41,7 +41,7 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from omicstra.config import ProjectConfig  # merges into settings - deferred item 2
+from omicstra.contracts.project import ProjectConfig  # merges into settings - deferred item 2
 from omicstra.records import TransformRecord
 from omicstra.settings import settings
 
