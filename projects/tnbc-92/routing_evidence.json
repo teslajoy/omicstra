@@ -1,0 +1,606 @@
+{
+  "evidence_version": "v3",
+  "project_id": "tnbc-92",
+  "note": "this cohort's recorded evaluation, in the shape configs/routing_contract.json requires. every value traces to a named artifact. a second cohort does not inherit this file - it derives its own or is not routable.",
+  "eval_scope": {
+    "test_niches": 35594,
+    "test_subjects": 14,
+    "split": "patient-stratified, zero leakage across train / val / test",
+    "seed": 42,
+    "atomic_unit": "niche = centre spot + 6 spatial neighbours (~1200 cells, ~200um)"
+  },
+  "method_names": {
+    "note": "run ids are internal. the display name is what a decision should be spoken as.",
+    "R1_v3": "InfoNCE, late fusion",
+    "R2_v3": "SupCon, late fusion",
+    "R3_v3": "Barlow Twins, late fusion",
+    "R4_v3": "InfoNCE, cross-attention",
+    "R5_v3": "AnInfoNCE, late fusion",
+    "R6_v3": "InfoNCE, late fusion, molecular-only ST input",
+    "B1_v3": "CCA (classical)",
+    "B2_v3": "Procrustes (classical)",
+    "B3_v3": "unaligned PCA (sanity floor)",
+    "B4_v3": "random-init projection (untrained control)"
+  },
+  "tasks": {
+    "cross_modal_retrieval": {
+      "metric": "AUC, matched vs mismatched pairs, cross-subarray patient-held-out",
+      "source": "runs/tnbc-92_v3/eval/H1/summary.json; per-run AUC + bootstrap CI read from runs/tnbc-92_v3/{run}/metrics_h1_ci.json (200x, seed 42)",
+      "higher_is_better": true,
+      "candidates": [
+        {
+          "id": "R4_v3",
+          "value": 0.8591,
+          "ci": [
+            0.8576,
+            0.8608
+          ],
+          "note": "the only cross-attention run. CKA 0.631, alignment gap +0.233 - both top of grid"
+        },
+        {
+          "id": "R1_v3",
+          "value": 0.761,
+          "ci": [
+            0.7587,
+            0.7633
+          ]
+        },
+        {
+          "id": "R5_v3",
+          "value": 0.7606,
+          "ci": [
+            0.7585,
+            0.763
+          ],
+          "note": "read from R5_v3/metrics_h1_ci.json - distinct from R1 (0.7610), not identical as the report states"
+        },
+        {
+          "id": "R6_v3",
+          "value": 0.737,
+          "ci": [
+            0.7348,
+            0.7397
+          ]
+        },
+        {
+          "id": "R2_v3",
+          "value": 0.725,
+          "ci": [
+            0.7226,
+            0.7276
+          ]
+        },
+        {
+          "id": "B2_v3",
+          "value": 0.7064,
+          "ci": [
+            0.7036,
+            0.709
+          ]
+        },
+        {
+          "id": "R3_v3",
+          "value": 0.6742,
+          "ci": [
+            0.6714,
+            0.677
+          ],
+          "note": "the lone contrastive run that loses to classical Procrustes"
+        },
+        {
+          "id": "B1_v3",
+          "value": 0.5439,
+          "ci": [
+            0.5409,
+            0.5466
+          ]
+        },
+        {
+          "id": "B4_v3",
+          "value": 0.4961,
+          "ci": [
+            0.493,
+            0.4993
+          ],
+          "note": "CI straddles 0.500 - architecture alone contributes none of the gain"
+        },
+        {
+          "id": "B3_v3",
+          "value": 0.4405,
+          "ci": [
+            0.4373,
+            0.4433
+          ],
+          "note": "sub-chance. matched pairs anti-correlated before alignment"
+        }
+      ],
+      "floor": {
+        "id": "chance",
+        "value": 0.5,
+        "basis": "matched and mismatched pairs indistinguishable"
+      },
+      "supplementary": {
+        "R@1": 0.00014,
+        "median_rank": 3202,
+        "pool_size": 35594,
+        "chance_R@1": 2.5e-05,
+        "read_this_before_demoing": "absolute R@1 is ~1e-4 for every method at this pool size, including the winner. PLAN_RULES.md 3.8 records why AUC is the discriminating metric here. do not demo top-k retrieval - the true partner is not in the top 10 and the room will read that as failure."
+      }
+    },
+    "tissue_state_grouping": {
+      "metric": "KMeans ARI against mc_megacluster (Wang per-spot 14-class NMF, aggregated to niche)",
+      "source": "point estimates: runs/tnbc-92_v3/eval/H2/mc_coherence.parquet (z_he, KMeans k=14 n_init=10 seed 42, n=35,594 every row) - the table the published report cites. intervals: metrics_h2_ci.json -> h2a (200x patient bootstrap, all 10 runs). the published report prints intervals for R1/R4/R5/R6 only; B1-B4 intervals come from the artifact, not the report.",
+      "higher_is_better": true,
+      "candidates": [
+        {
+          "id": "R5_v3",
+          "value": 0.246,
+          "ci": [
+            0.213,
+            0.424
+          ]
+        },
+        {
+          "id": "R6_v3",
+          "value": 0.244,
+          "ci": [
+            0.202,
+            0.411
+          ],
+          "note": "parsimony winner - molecular-only ST input, no pathway embedding"
+        },
+        {
+          "id": "R1_v3",
+          "value": 0.234,
+          "ci": [
+            0.203,
+            0.396
+          ]
+        },
+        {
+          "id": "B1_v3",
+          "value": 0.211,
+          "ci": [
+            0.191,
+            0.458
+          ]
+        },
+        {
+          "id": "R3_v3",
+          "value": 0.159,
+          "ci": [
+            0.144,
+            0.237
+          ]
+        },
+        {
+          "id": "R2_v3",
+          "value": 0.152,
+          "ci": [
+            0.1,
+            0.279
+          ]
+        },
+        {
+          "id": "R4_v3",
+          "value": 0.101,
+          "ci": [
+            0.094,
+            0.154
+          ],
+          "note": "low ARI is metric-induced, not biology absence. patient-stratified linear probe 0.240 sits at parity with R1 0.282 and raw H&E 0.270 - the manifold is tight, KMeans assumes globular"
+        },
+        {
+          "id": "B2_v3",
+          "value": 0.194,
+          "ci": [
+            0.145,
+            0.482
+          ]
+        },
+        {
+          "id": "B3_v3",
+          "value": 0.194,
+          "ci": [
+            0.145,
+            0.482
+          ]
+        },
+        {
+          "id": "B4_v3",
+          "value": 0.189,
+          "ci": [
+            0.134,
+            0.443
+          ]
+        }
+      ],
+      "floor": {
+        "id": "raw_st",
+        "value": 0.046,
+        "basis": "mc_coherence.parquet raw_st row - molecular modality alone"
+      },
+      "reference": {
+        "id": "raw_he",
+        "value": 0.164,
+        "basis": "mc_coherence.parquet raw_he row - imaging modality alone, un-aligned. every aligned contrastive run clears it",
+        "interval": null,
+        "asymmetry": "the reference carries NO bootstrap interval - neither raw_he nor raw_st appears in h2a. so 'clears the reference' is a point-to-point comparison, not a separated claim under the interval rule applied to everything else here. do not state it as one.",
+        "role": "reported, not decisive. carried so a reader sees what alignment bought over the imaging modality alone; it has no interval and adjudicates nothing."
+      },
+      "caveat": "The lift over the raw modalities stands - 5.4x over raw ST (0.046 -> 0.246), 1.5x over raw H&E (0.164). That is not in dispute and the report's 'supported after correction' verdict holds. What this metric cannot do on this cohort is RANK the aligned methods against each other. Three independent signals: NMI(mc_megacluster, patient_id) = 0.539, above the 0.5 confounder bar this project applies elsewhere - the label is part patient identity. The linear probe moves 1.2 points (0.270 -> 0.282) against a 0.216 majority-class floor - the lift is geometric, not informational; alignment reshaped the manifold so KMeans could find what was already there. And the 200x patient-bootstrap intervals overlap for 8 of the 9 adjudicated methods (B1 excluded as contraindicated) - only cross-attention falls outside, as the lowest. Same species as the 9 spatial archetypes at NMI 0.89 that forced the label change: one confounder bar down, not cleared."
+    },
+    "subject_identity_suppression": {
+      "metric": "bio/patient ratio = TIME-signature biology z / patient-identity z, on z_he, 10k permutations",
+      "source": "runs/tnbc-92_v3/eval/H2/metrics_h2_ci.json -> h2c (delta method, unit-variance permutation null)",
+      "higher_is_better": true,
+      "candidates": [
+        {
+          "id": "R6_v3",
+          "value": 0.547,
+          "ci": [
+            0.476,
+            0.617
+          ]
+        },
+        {
+          "id": "R5_v3",
+          "value": 0.497,
+          "ci": [
+            0.428,
+            0.566
+          ]
+        },
+        {
+          "id": "R1_v3",
+          "value": 0.461,
+          "ci": [
+            0.394,
+            0.528
+          ]
+        },
+        {
+          "id": "R4_v3",
+          "value": 0.376,
+          "ci": [
+            0.279,
+            0.473
+          ],
+          "note": "lowest absolute patient z in the grid (21.5) - pick this one when leakage minimization matters more than ratio"
+        },
+        {
+          "id": "R2_v3",
+          "value": 0.372,
+          "ci": [
+            0.285,
+            0.459
+          ]
+        },
+        {
+          "id": "R3_v3",
+          "value": 0.25,
+          "ci": [
+            0.158,
+            0.343
+          ]
+        },
+        {
+          "id": "B1_v3",
+          "value": 0.071,
+          "ci": [
+            0.053,
+            0.088
+          ],
+          "note": "patient z 113.0 against raw_he 36.8 - CCA amplifies subject identity roughly threefold, by construction"
+        }
+      ],
+      "floor": {
+        "id": "raw_he",
+        "value": 0.137,
+        "basis": "docs/v2/tnbc92_results_summary.md H2 Part C. PROVENANCE FLAG: the raw_he and raw_st floors are not in metrics_h2_ci.json - only the 7 runs are. the floor is cited from the results summary, not read from the CI artifact"
+      }
+    },
+    "pathway_transfer": {
+      "metric": "per-pathway CCA on held-out patients, z against permutation null, BH-FDR < 0.05, z_he view",
+      "source": "runs/tnbc-92_v3/eval/H3/pathway_cca_gpath2vec_v3/per_pathway_cca.parquet + perm_nulls.parquet",
+      "higher_is_better": true,
+      "unit": "testable pathways significant, of 4",
+      "candidates": [
+        {
+          "id": "R4_v3",
+          "value": 4,
+          "note": "z 11.2-25.4: Immune 25.4, ECM 16.0, cell cycle 16.5, programmed cell death 11.2"
+        },
+        {
+          "id": "B1_v3",
+          "value": 4,
+          "note": "classical passes this task despite failing H1"
+        },
+        {
+          "id": "B2_v3",
+          "value": 4
+        },
+        {
+          "id": "R5_v3",
+          "value": 2
+        },
+        {
+          "id": "R1_v3",
+          "value": 1
+        },
+        {
+          "id": "R3_v3",
+          "value": 1
+        },
+        {
+          "id": "R2_v3",
+          "value": 0
+        },
+        {
+          "id": "R6_v3",
+          "value": 0,
+          "note": "the no-pathway-embedding ablation. 0/4 confirms the pathway anchor is load-bearing for cross-patient transfer"
+        }
+      ],
+      "floor": {
+        "id": "none_significant",
+        "value": 0,
+        "basis": "no pathway survives BH-FDR on held-out patients"
+      },
+      "excluded": {
+        "TGF-beta R-HSA-170834": "set_size = 2 on the v3 build - structurally underpowered, excluded from the FDR family and reported separately"
+      }
+    },
+    "pathway_discrimination": {
+      "source": "PROVENANCE FLAG: the v3 DAG decomposition is recorded as deferred in docs/v2/tnbc92_routing_matrix.md, yet the published report states v3 DAG percentages. the deck, the report and the session record disagree on R4 (78 vs 80 percent of 395 nodes). resolve to one artifact before this row is spoken on stage.",
+      "caveat": "coverage and specificity disagree here. the contract's tie rule cannot resolve a two-metric tradeoff - this task escalates rather than auto-picking.",
+      "metrics": [
+        {
+          "metric": "coverage - percent of 395 DAG nodes significant (v1, z_he, one-sided BH-FDR<0.05)",
+          "higher_is_better": true,
+          "candidates": [
+            {
+              "id": "R4_v3",
+              "value": 80.3,
+              "note": "317 of 395"
+            },
+            {
+              "id": "B2_v3",
+              "value": 67.8,
+              "note": "268 of 395"
+            },
+            {
+              "id": "B1_v3",
+              "value": 62.8,
+              "note": "248 of 395"
+            }
+          ]
+        },
+        {
+          "metric": "specificity - off-diagonal cosine between per-pathway axes (lower is more specific)",
+          "higher_is_better": false,
+          "candidates": [
+            {
+              "id": "B2_v3",
+              "value": 0.38,
+              "note": "per-pathway axes stay distinct"
+            },
+            {
+              "id": "R4_v3",
+              "value": 0.75,
+              "note": "detects broadly, attributes less specifically"
+            },
+            {
+              "id": "B1_v3",
+              "value": 0.4,
+              "note": "classical, per-pathway axes distinct"
+            }
+          ]
+        }
+      ],
+      "provenance_warning": "v1 NUMBERS. the v3 DAG decomposition is deferred (docs/v2/tnbc92_results_summary.md line 166). say 'v1' aloud if this row is spoken - every other row here is v3."
+    },
+    "morphology_decode": {
+      "metric": "univariate CCA z against permutation null, continuous TLS gene-signature score, cross-patient sub-split (11 train / 3 held out), 500 perms, BH-FDR < 0.05, z_he view",
+      "source": "runs/tnbc-92_v3/eval/H2/tls_signature_cca.parquet",
+      "higher_is_better": true,
+      "candidates": [
+        {
+          "id": "B4_v3",
+          "value": 25.5,
+          "note": "untrained random-init projection. the winner"
+        },
+        {
+          "id": "B1_v3",
+          "value": 16.6
+        },
+        {
+          "id": "R4_v3",
+          "value": 11.4
+        },
+        {
+          "id": "B2_v3",
+          "value": 11.3
+        },
+        {
+          "id": "B3_v3",
+          "value": 11.3
+        },
+        {
+          "id": "R5_v3",
+          "value": 2.4,
+          "note": "marginal"
+        },
+        {
+          "id": "R1_v3",
+          "value": 0,
+          "note": "fails BH-FDR"
+        },
+        {
+          "id": "R2_v3",
+          "value": 0,
+          "note": "fails BH-FDR"
+        },
+        {
+          "id": "R3_v3",
+          "value": 0,
+          "note": "fails BH-FDR"
+        },
+        {
+          "id": "R6_v3",
+          "value": 0,
+          "note": "fails BH-FDR"
+        }
+      ],
+      "floor": {
+        "id": "not_significant",
+        "value": 0,
+        "basis": "does not survive BH-FDR on held-out patients"
+      },
+      "interpretation": "the TLS signal already lives in the imaging encoder's feature space - any non-distorting projection preserves it, including an untrained one. contrastive late-fusion training actively degrades it. this is a real negative, not a null result."
+    },
+    "structural_agreement": {
+      "note": "two axes. both must name the same leader or the task escalates.",
+      "source": "runs/tnbc-92_v3/eval/H1/summary.json (CKA_after, alignment_gap)",
+      "metrics": [
+        {
+          "metric": "CKA, matched cross-modal representation similarity after alignment",
+          "higher_is_better": true,
+          "reference": {
+            "id": "raw_before_alignment",
+            "value": 0.119,
+            "basis": "CKA_before, identical across runs - the un-aligned starting point"
+          },
+          "candidates": [
+            {
+              "id": "R4_v3",
+              "value": 0.6306,
+              "note": "5x lift over the un-aligned starting point (0.119)"
+            },
+            {
+              "id": "R5_v3",
+              "value": 0.3138
+            },
+            {
+              "id": "R1_v3",
+              "value": 0.3116
+            },
+            {
+              "id": "R3_v3",
+              "value": 0.3061
+            },
+            {
+              "id": "R6_v3",
+              "value": 0.2393
+            },
+            {
+              "id": "B2_v3",
+              "value": 0.1255
+            },
+            {
+              "id": "B3_v3",
+              "value": 0.1255
+            },
+            {
+              "id": "B4_v3",
+              "value": 0.12
+            },
+            {
+              "id": "R2_v3",
+              "value": 0.1013
+            },
+            {
+              "id": "B1_v3",
+              "value": 0.0757
+            }
+          ]
+        },
+        {
+          "metric": "alignment gap, matched minus mismatched cosine",
+          "higher_is_better": true,
+          "floor": {
+            "id": "no_separation",
+            "value": 0.0,
+            "basis": "matched pairs no closer than mismatched"
+          },
+          "candidates": [
+            {
+              "id": "R4_v3",
+              "value": 0.233
+            },
+            {
+              "id": "R5_v3",
+              "value": 0.216
+            },
+            {
+              "id": "R1_v3",
+              "value": 0.194
+            },
+            {
+              "id": "B2_v3",
+              "value": 0.161
+            },
+            {
+              "id": "R6_v3",
+              "value": 0.154
+            },
+            {
+              "id": "R3_v3",
+              "value": 0.143
+            },
+            {
+              "id": "R2_v3",
+              "value": 0.036
+            },
+            {
+              "id": "B1_v3",
+              "value": 0.007
+            },
+            {
+              "id": "B4_v3",
+              "value": -0.0
+            },
+            {
+              "id": "B3_v3",
+              "value": -0.053,
+              "note": "negative - matched pairs anti-correlated before alignment"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "contraindications": [
+    {
+      "method": "B1_v3",
+      "display": "CCA",
+      "applies_to": [
+        "subject_identity_suppression",
+        "tissue_state_grouping"
+      ],
+      "scope": "any cohort-level biology interpretation",
+      "evidence": "bio/patient ratio 0.071 [0.053, 0.088], below the raw H&E floor of 0.137. patient z 113.0 against raw H&E 36.8",
+      "statement": "CCA scores below what the raw un-aligned modality already achieves. it is not the weakest option for this task - it is anti-helpful, because it amplifies subject identity by construction",
+      "does_not_apply_to": [
+        "pathway_transfer"
+      ],
+      "why_the_exception": "CCA passes 4/4 on cross-patient pathway transfer. a contraindication is task-scoped, not a verdict on the method"
+    }
+  ],
+  "open_flags": [
+    "RESOLVED 10 Aug - R5 H1 read from runs/tnbc-92_v3/R5_v3/metrics_h1_ci.json. AUC 0.7606, not 0.761 (that is R1). the published report states them as identical; they are not.",
+    "RESOLVED 10 Aug - DAG percentages are v1 (R4 80.3%, B2 67.8%, B1 62.8%), not 78 or 80 loose. v3 DAG is deferred, flagged on the task.",
+    "OPEN - the bio/patient raw_he (0.137) and raw_st (0.088) floors are cited from docs/v2/tnbc92_results_summary.md and exist in no machine-readable artifact. recomputing needs a fresh 10k-permutation run on raw features. declared, not chased."
+  ],
+  "scope_statement": "On this dataset - 92 TNBC patients (Wang et al. 2024, original ST platform, 100um spots), 14 patients held out, 35,594 niches across 38 subarrays, patient-stratified 85/15, seed 42.",
+  "scope_rule": "every routed answer states this scope before its recommendation. it travels in the record so it cannot be summarised away.",
+  "ablations": {
+    "gpath2vec": {
+      "run": "R6_v3",
+      "matched_control": "R1_v3",
+      "differs_only_in": "gpath2vec removed from the ST input",
+      "why_not_R4": "R4 differs from R6 in TWO things, the pathway input and the fusion mode, so R6 against R4 cannot attribute an effect to either. the matched comparison is R1 against R6: same loss, same late fusion, same H&E input, differing only in gpath2vec.",
+      "untested_run": "cross-attention with novae only. it does not exist in the grid, so the hypothesis that gpath2vec pays off only once an attention bridge can exploit it is untestable here. one training run would settle it, and it is the highest-value missing experiment."
+    }
+  }
+}

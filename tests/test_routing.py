@@ -19,8 +19,19 @@ from omicstra.routing import (
 )
 
 CONTRACT = load_routing_contract()
-EVIDENCE = load_routing_evidence("tnbc-92")
 FAMILIES = [f["id"] for f in CONTRACT["task_families"]]
+
+# the contract ships in the package; the evidence belongs to a cohort and may be
+# absent - a cohort that has not been evaluated is not routable, by design. the
+# tests below read tnbc-92's numbers, so they skip rather than fail when its pack
+# is missing. this is not a courtesy: collection itself must survive absence, or
+# anyone adding their own cohort hits an import error before writing a line.
+EVIDENCE = load_routing_evidence("tnbc-92")
+EVIDENCE_TASKS = sorted(EVIDENCE.get("tasks", {}))
+pytestmark = pytest.mark.skipif(
+    not EVIDENCE,
+    reason="tnbc-92 has no routing_evidence.json - cohort not evaluated, so not routable",
+)
 
 
 def route(task_id, **kw):
@@ -47,7 +58,7 @@ def test_families_without_evidence_are_listed_not_hidden():
 
 
 # --- resolution shape ------------------------------------------------------
-@pytest.mark.parametrize("task_id", sorted(EVIDENCE["tasks"]))
+@pytest.mark.parametrize("task_id", EVIDENCE_TASKS)
 def test_every_recorded_task_resolves(task_id):
     r = route(task_id)
     assert r.kind == "selection"

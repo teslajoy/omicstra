@@ -192,6 +192,48 @@ omicstra/
 
 ## quick start
 
+```bash
+pip install "omicstra[mcp]"                 # the read path - no numpy, no tensor libraries
+pip install "omicstra[mcp,eda,agents]"      # + computing EDA steps and running the graph
+```
+
+the package ships its contracts and no cohort. point it at one:
+
+```bash
+export OMICSTRA_PROJECT_DIR=/path/to/projects/tnbc-92
+omicstra --help                             # describe, families, gate, eda, decisions, init
+```
+
+**stdio** - the usual client config:
+
+```json
+{ "mcpServers": { "omicstra": {
+    "command": "python", "args": ["-c", "from omicstra.mcp.server import serve; serve()"],
+    "env": { "OMICSTRA_PROJECT_DIR": "/path/to/projects/tnbc-92" } } } }
+```
+
+**streamable-http** - `serve(mode="http")`, then note the envelope:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{
+        "io.modelcontextprotocol/protocolVersion":"2026-07-28",
+        "io.modelcontextprotocol/clientCapabilities":{}}}}'
+```
+
+the `_meta` block is not optional and is the first thing a new http caller gets
+wrong. protocol revision 2026-07-28 removed the initialize handshake, so the
+version travels on **every** request rather than being negotiated once. a call
+without it is refused with `-32602`, naming the two keys it wants.
+
+a cohort with no evidence pack is **not routable**, and the compute path refuses
+rather than improvising: `route` declines instead of inheriting another cohort's
+winner, and `run_align` raises `ComputeUnavailable` naming the missing artifact
+and the script that builds it. that refusal is the expected first response on a
+fresh install, not a failure.
+
 ---
 
 ## stack

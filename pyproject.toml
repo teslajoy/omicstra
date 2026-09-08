@@ -23,7 +23,16 @@ mcp = ["mcp>=2"]
 eda = ["numpy>=1.26", "scipy>=1.11", "scikit-learn>=1.3", "anndata>=0.10", "pandas>=2"]
 
 # orchestration
-agents = ["langgraph>=1", "langchain-anthropic>=0.2", "anthropic>=0.40"]
+# langgraph-checkpoint-sqlite is not optional within this extra: the admissibility
+# gate is an interrupt, and resuming it after the process exits needs a durable
+# saver. OMICSTRA_CHECKPOINT=sqlite:<path> is a documented value, so the module
+# behind it ships rather than failing at the moment someone relies on it.
+agents = [
+  "langgraph>=1",
+  "langgraph-checkpoint-sqlite>=2",
+  "langchain-anthropic>=0.2",
+  "anthropic>=0.40",
+]
 
 dev = ["pytest", "ruff"]
 
