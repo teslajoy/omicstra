@@ -1,0 +1,112 @@
+# release: build, verify, then publish only on a tag.
+#
+# trusted publishing - PyPI is configured to trust THIS workflow in THIS repo,
+# so no API token is stored anywhere. that is the point: a token in a secret is
+# a credential that outlives the person who made it.
+#
+# every step up to and including `verify` runs on a normal push and on
+# workflow_dispatch, so the release path is exercised continuously rather than
+# discovered on tag day. publish is the only step gated on a tag.
+name: release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "build and verify, publish nothing"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+
+      - name: install
+        run: |
+          python -m pip install -q --upgrade pip build
+          python -m pip install -q -e ".[dev]" || python -m pip install -q -e .
+          python -m pip install -q pytest
+
+      - name: tests
+        run: python -m pytest tests/ -q
+
+      - name: build
+        run: python -m build
+
+      - name: the sdist ships the server and nothing else
+        # it was 192 MB with a virtualenv inside it. an end user installs the
+        # MCP server, not the cohort, the notebooks or the demo video.
+        run: |
+          set -e
+          SD=$(ls dist/*.tar.gz)
+          SZ=$(python -c "import os,sys;print(os.path.getsize(sys.argv[1]))" "$SD")
+          echo "sdist bytes: $SZ"
+          test "$SZ" -lt 2000000 || { echo "sdist over 2 MB"; exit 1; }
+          ! tar tzf "$SD" | grep -E '(^|/)(venv|notebooks|projects|docs|runs|data|site)/' \
+            || { echo "sdist carries something it should not"; exit 1; }
+
+      - name: the contracts travel inside the wheel
+        # configs/ used to sit at repo root, so `pip install omicstra` shipped a
+        # server that could not find its own contracts.
+        run: |
+          set -e
+          for f in data_contract eda_contract routing_contract compute_contract; do
+            unzip -l dist/*.whl | grep -q "omicstra/configs/$f.json" \
+              || { echo "missing $f.json in the wheel"; exit 1; }
+          done
+
+      - name: install the wheel clean and use it from outside the repo
+        run: |
+          set -e
+          python -m venv /tmp/v
+          /tmp/v/bin/pip install -q dist/*.whl
+          cd /tmp && /tmp/v/bin/omicstra --help > /dev/null
+          cd /tmp && /tmp/v/bin/python -c "
+          import json, omicstra
+          from omicstra.settings import settings
+          d = json.loads((settings.configs_dir / 'eda_contract.json').read_text())
+          assert d['checks'], 'contract loaded empty'
+          print('installed package resolves its contracts:', len(d['checks']), 'checks')"
+
+      - name: server.json agrees with the server
+        run: |
+          /tmp/v/bin/python - <<'PY'
+          import asyncio, json, tomllib, pathlib
+          from omicstra.mcp.server import srv
+          sj = json.loads(pathlib.Path("server.json").read_text())
+          meta = sj["_meta"]["io.github.teslajoy/omicstra"]
+          actual = {t.name for t in asyncio.run(srv.list_tools())}
+          assert set(meta["tools"]) == actual, f"drift: {set(meta['tools']) ^ actual}"
+          pj = tomllib.loads(pathlib.Path("pyproject.toml").read_text())["project"]["version"]
+          assert sj["version"] == pj, f"{sj['version']} != {pj}"
+          print("server.json matches:", len(actual), "tools at", pj)
+          PY
+        working-directory: ${{ github.workspace }}
+
+      - uses: actions/upload-artifact@v4
+        with: { name: dist, path: dist/ }
+
+  publish:
+    # ONLY on a tag. a version can be deleted from PyPI but never re-uploaded,
+    # so this runs once per version and only after verify has passed.
+    needs: verify
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write        # trusted publishing; no token, no secret
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { name: dist, path: dist/ }
+      - uses: pypa/gh-action-pypi-publish@release/v1

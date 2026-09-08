@@ -6,11 +6,11 @@ about to mirror at the alignment layer. this is the template for
 
 ## repo boundary
 
-- **scripts** live in `/Users/sanati/BForePC/gpath2vec/scripts/` (use gpath2vec internals)
+- **scripts** live in `../gpath2vec/scripts/` (use gpath2vec internals)
 - **outputs** live here in omicstra at `data/embeddings/biological_signals/gpath2vec_output/full_cohort_tf_low/`
 - gpath2vec is the method; omicstra is the dataset + application
 
-## scripts in /Users/sanati/BForePC/gpath2vec/scripts/
+## scripts in ../gpath2vec/scripts/
 
 | script | purpose |
 |---|---|

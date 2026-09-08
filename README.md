@@ -88,7 +88,7 @@ omicstra/
 · EDA.md                             # gate - data quality checks before pipeline
 · PLAN_RULES.md                      # constraints - no alignment until EDA passes
 · MODELS.md                          # training provenance + tissue compatibility per model
-○ MODALITY_TEMPLATE.md               # how to add a new modality - cited by README + CLAUDE.md
+· MODALITY_TEMPLATE.md               # the contract a new modality generates against
 · .mcp.json                          # MCP server entry
 · .env.example                       # LANGSMITH_* only - backends are cohort declarations
 │
@@ -103,7 +103,8 @@ omicstra/
 │   · graph.py                       # LEVEL 0 - the only entry, the only checkpointer
 │   ○ graphs/                        # LEVEL 1 - one file per gate, each can interrupt()
 │   │   ○ eda.py  encode.py          # <- eda_graph.py  agents/graph.py - not moved yet
-│   │   ○ route.py  promote.py       # named in the design - not split out yet
+│   │   ○ route.py  promote.py       # v0.2 - route is inside routing.py today;
+│   │                                #   promote is the reviewed evidence step
 │   · protocols/                     # LEVEL 2 - ORDER, applicability, authority. no maths
 │   │   · inventory.py               # 8 steps: files .. bind - "what is this data"
 │   │   · eda.py                     # 10 checks registered - "is it usable"
@@ -172,7 +173,7 @@ omicstra/
 
 ## extending to a new modality
 
-`MODALITY_TEMPLATE.md` (**planned, not yet written**) is the contract a new modality agent (single-cell, protein, electron microscopy, etc.) must satisfy: a frozen foundation-model encoder, a niche-aggregation step, a clean ST/H&E-equivalent feature parquet shape, and the construct-validity guards the eval agent enforces. each modality adds one row to the alignment grid; the orchestrator's routing table and the karpathy-loop search space pick it up automatically.
+`MODALITY_TEMPLATE.md` is the contract a new modality agent (single-cell, protein, electron microscopy, etc.) must satisfy: a frozen foundation-model encoder, a niche-aggregation step, a clean ST/H&E-equivalent feature parquet shape, and the construct-validity guards the eval agent enforces. each modality adds one row to the alignment grid; the orchestrator's routing table and the karpathy-loop search space pick it up automatically.
 
 ---
 

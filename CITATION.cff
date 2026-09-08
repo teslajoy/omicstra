@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "omicstra: cross-modal biomedical embedding alignment and reasoning via MCP orchestration"
+abstract: >-
+  An MCP server for cross-modal reasoning in spatial biology. It exposes fixed
+  scientific protocols as tools and returns evidence; the client holds the
+  model. Routing is a deterministic rule over a cohort's own recorded
+  evaluation, and a cohort without that evidence is reported as not routable
+  rather than inheriting another cohort's result.
+type: software
+license: MIT
+version: 0.1.0
+repository-code: "https://github.com/teslajoy/omicstra"
+url: "https://teslajoy.github.io/omicstra/"
+keywords:
+  - model context protocol
+  - spatial transcriptomics
+  - computational pathology
+  - representation alignment
+  - foundation models
+  - reproducibility
+authors:
+  - family-names: Sanati
+    given-names: Nasim
+    affiliation: "Brenden-Colson Center for Pancreatic Care, Oregon Health & Science University"
+references:
+  - type: grant
+    title: "A Multi-Agent MCP Server for Cross-Modal Biomedical Embedding Alignment Evaluated on Tumor Microenvironment Characterization"
+    doi: "10.55277/researchhub.6ou1w3h3"
+    institution:
+      name: "ResearchHub Foundation"
+  - type: dataset
+    title: "Spatial transcriptomics reveals substantial heterogeneity in triple-negative breast cancer with potential clinical implications"
+    doi: "10.1038/s41467-024-54145-w"
+    year: 2024
+    notes: "seed cohort"

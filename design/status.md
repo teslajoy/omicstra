@@ -50,7 +50,7 @@ vs later) and D2 (LangGraph vs LCEL) are not invalidated by it.
 | check | result |
 |---|---|
 | secrets / API keys / credentials | **0** |
-| absolute paths | 1, in `_scratch/mc_pathway_embeddings.py` -> `/Users/sanati/BForePC/gpath2vec` |
+| absolute paths | 1, in `_scratch/mc_pathway_embeddings.py` -> `~/BForePC/gpath2vec` |
 | PHI | none - all inputs are the public Zenodo release |
 | `Path(__file__).resolve().parents[1]` coupling | 32 of 62 - real, but it is the port's problem; `settings.py` exists to replace it. not fixed now |
 
