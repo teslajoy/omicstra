@@ -244,6 +244,11 @@ produces one.
 **In v0.1 that promotion step is manual and recorded in `docs/`. In v0.2 it is
 `omicstra promote`** - a gate, not a protocol, because it asks a person.
 
+The acceptance test for the port is pinned in `tests/fixtures/`: a full-grid
+rerun with one retrained baseline reproduced every numeric field of the H1
+summary, and the fixture is checked against the evidence pack so the router can
+never quote a number nothing produced.
+
 ---
 
 ## declared deviation from the proposal

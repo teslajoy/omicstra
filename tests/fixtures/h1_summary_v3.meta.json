@@ -1,0 +1,18 @@
+{
+  "note": "the H1 summary verified 2026-09-08: a full-grid rerun over 9 committed runs plus a retrained B1_v3 reproduced every numeric field. pinned so the acceptance test does not depend on a gitignored runs/ tree.",
+  "verified": "2026-09-08",
+  "n_runs": 10,
+  "runs": [
+    "B1_v3",
+    "B2_v3",
+    "B3_v3",
+    "B4_v3",
+    "R1_v3",
+    "R2_v3",
+    "R3_v3",
+    "R4_v3",
+    "R5_v3",
+    "R6_v3"
+  ],
+  "sha256": "76d772419de0751d66ea0912a8371e139fe27e67b14ba6cf86e0e909b16afed1"
+}

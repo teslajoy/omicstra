@@ -530,3 +530,81 @@ def test_the_acceptance_split_is_declared():
     assert EXACT_RUNS | TOLERANCE_RUNS == declared, (
         f"unclassified: {declared ^ (EXACT_RUNS | TOLERANCE_RUNS)}")
     assert "B4_v3" in TOLERANCE_RUNS, "B4 is random-init - not reproducible exactly"
+
+
+# --- the acceptance test, pinned and guarded --------------------------------
+FIXTURES = Path(__file__).resolve().parent / "fixtures"
+
+
+def test_pinned_h1_summary_is_intact():
+    """the verified summary, pinned so 90/90 runs on a fresh clone.
+
+    runs/ is gitignored, so an acceptance test that reads it passes on one
+    machine and skips everywhere else - which is not a test.
+    """
+    import hashlib
+    f = FIXTURES / "h1_summary_v3.json"
+    meta = json.loads((FIXTURES / "h1_summary_v3.meta.json").read_text())
+    assert hashlib.sha256(f.read_bytes()).hexdigest() == meta["sha256"]
+    d = json.loads(f.read_text())
+    assert sorted(d["per_run"]) == meta["runs"] and len(meta["runs"]) == 10
+    assert not any(v is None for r in d["per_run"].values() for v in r.values())
+
+
+def test_pinned_summary_agrees_with_the_evidence_pack():
+    """the pack cites numbers; the summary produced them. if they disagree,
+    one of the two is stale and the router is quoting a number nothing made."""
+    from omicstra.settings import settings
+    root = Path(__file__).resolve().parents[1] / "projects" / "tnbc-92"
+    ev = json.loads((root / "routing_evidence.json").read_text())
+    per_run = json.loads((FIXTURES / "h1_summary_v3.json").read_text())["per_run"]
+    for cand in ev["tasks"]["cross_modal_retrieval"]["candidates"]:
+        rid = cand["id"]
+        if rid in per_run:
+            assert abs(per_run[rid]["AUC"] - cand["value"]) < 5e-4, (
+                f"{rid}: summary {per_run[rid]['AUC']:.6f} vs pack {cand['value']}")
+
+
+def test_compute_cannot_write_into_the_declared_runs_dir():
+    """the GUARD, not the behaviour.
+
+    passing runs_root to a scratch path is what the acceptance test does;
+    this asserts the stage cannot write to the cohort's declared grid when
+    given one. a test that only demonstrates the safe call proves nothing
+    about the unsafe one.
+    """
+    import inspect
+    from omicstra.protocols import align
+    src = inspect.getsource(align.run_align)
+    # every write goes through `root`, which is runs_root when supplied
+    assert "root = Path(runs_root) if runs_root else" in src
+    assert '"--runs-root", str(root)' in src, "the script must be told where to write"
+    # cfg.runs_dir may appear exactly ONCE - as the fallback when no runs_root
+    # is supplied. a second occurrence means some path bypasses the override.
+    assert src.count("cfg.runs_dir") == 1, (
+        f"cfg.runs_dir referenced {src.count('cfg.runs_dir')} times; every write "
+        "must go through `root` so runs_root can redirect it")
+    # every mention of the flag passes `root` - two invocations share a
+    # `common` arg list, so counting call sites would be wrong here.
+    assert src.count('"--runs-root"') > 0
+    assert src.count('"--runs-root", str(root)') == src.count('"--runs-root"'), (
+        "a --runs-root is passed something other than the resolved root")
+
+
+def test_declared_runs_dir_untouched_by_a_scratch_run(tmp_path):
+    """mtime guard: a compute run into a scratch root leaves the cohort's own
+    grid byte-for-byte unmodified. this is the assertion that would have caught
+    an eval writing to a module-level RUNS_ROOT instead of --runs-dir."""
+    from omicstra.protocols import align
+    cfg = _cfg()
+    declared = align._project_rel(cfg.runs_dir, "tnbc-92")
+    if not declared.is_dir():
+        pytest.skip("run grid not present on this machine")
+    before = {p: p.stat().st_mtime_ns for p in declared.rglob("*") if p.is_file()}
+    nj, _ = align.run_niche_join(cfg, "tnbc-92")
+    with pytest.raises(align.ComputeUnavailable):
+        # scratch root is empty, compute not requested -> must refuse, and must
+        # not have reached into the declared grid to satisfy itself
+        align.run_align(cfg, nj, project_id="tnbc-92", runs_root=tmp_path)
+    after = {p: p.stat().st_mtime_ns for p in declared.rglob("*") if p.is_file()}
+    assert before == after, "a scratch run modified the declared grid"

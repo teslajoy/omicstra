@@ -52,7 +52,7 @@ class EmbeddingArtifacts(BaseModel):
     encoder: str
     dim: int | None = None
     cache_ref: str | None = None
-    n_units: int | None = None
+    n_files: int | None = None   # files in the cache, NOT units of observation
     resolved: bool = False
     why_not: str | None = None
 
@@ -137,7 +137,7 @@ def _resolve_cache(modality: str, encoder: str, dim: int | None,
     files = sorted(cache_dir.glob("*.npy")) or sorted(cache_dir.glob("*.parquet"))
     return EmbeddingArtifacts(
         modality=modality, encoder=encoder, dim=dim, cache_ref=str(cache_dir),
-        n_units=len(files), resolved=bool(files),
+        n_files=len(files), resolved=bool(files),
         why_not=None if files else "cache directory is empty")
 
 
