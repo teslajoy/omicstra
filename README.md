@@ -10,8 +10,10 @@ the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https
 
 **v1.0** ships the read path (inventory, EDA, admissibility gate, routing) over
 stdio and HTTP, the alignment and evaluation stages verified bit-identical
-against the published grid, and the seed cohort's evidence pack so a fresh
-install can route.
+against the published grid, and the seed cohort's evidence pack in the repo, so a
+fresh clone can route without training anything. The package itself ships no
+cohort: `pip install omicstra` gets the contracts, and you point it at a cohort
+directory.
 
 **v1.1** is `omicstra run`: embeddings extracted here rather than resolved, the
 niche join, H1/H2/H3 as a chain, and a promotion step where a person approves the
