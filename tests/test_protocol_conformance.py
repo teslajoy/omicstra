@@ -678,3 +678,25 @@ def test_init_defaults_to_restricted(tmp_path):
     assert cohort["data_classification"] == "restricted"
     assert "provenance" not in cohort
     assert "data/inputs/" in (tmp_path / "d" / ".gitignore").read_text()
+
+
+def test_tensor_libraries_stay_out_of_core():
+    """`pip install omicstra` must serve, route and gate without torch.
+
+    the last packaging bug was the mirror of this one - core deps shipped as
+    extras, so a bare install could not import itself. this is the other
+    direction: an extra drifting inward would put a 2 GB tensor library in the
+    dependency list of a read-only server. the verify job's bare-install step
+    enforces it at runtime; this catches it at review time.
+    """
+    import tomllib
+    from pathlib import Path
+    pj = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
+    core = " ".join(pj["project"]["dependencies"])
+    for heavy in ("torch", "timm", "novae", "numpy", "scipy", "pandas", "scikit-learn"):
+        assert heavy not in core, f"{heavy} belongs in an extra, not core"
+    extras = pj["project"]["optional-dependencies"]
+    assert "encode" in extras, "the encode extra is where tensor libraries live"
+    assert any("torch" in d for d in extras["encode"])
+    # and the split stays meaningful: measure is numerics, encode is tensors
+    assert not any("torch" in d for d in extras["measure"])

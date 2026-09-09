@@ -8,12 +8,21 @@ the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https
 
 `v1.0` `ResearchHub Foundation grant` `Brenden-Colson Center / Sears Lab, OHSU` `MIT`
 
-**v1.0 is:** the inventory and EDA protocols, the admissibility gate with its
-human-in-the-loop interrupt, stdio and streamable-http transport, and a record
-contract - tested on two cohorts with different platforms, formats and
-declarations, and no code changes between them. **Alignment and evaluation run as
-scripts and are not yet protocols.** The v3 results below were produced by those
-scripts.
+**v1.0** ships the read path (inventory, EDA, admissibility gate, routing) over
+stdio and HTTP, the alignment and evaluation stages verified bit-identical
+against the published grid, and the seed cohort's evidence pack so a fresh
+install can route.
+
+**v1.1** is `omicstra run`: embeddings extracted here rather than resolved, the
+niche join, H1/H2/H3 as a chain, and a promotion step where a person approves the
+pack, with the report rendered from a cohort-agnostic template. Laptop-only for
+both.
+
+That report is a **template, not this cohort's report**. The renderer takes a
+pack and a record ledger and knows nothing about tnbc-92 - sections appear
+because a record exists, so a cohort that never ran H3 has no H3 section and says
+why. That is what makes a second cohort's report free: same code, different
+declarations. See `design/v1_1_scope.md`.
 
 ---
 
@@ -43,9 +52,11 @@ evaluated on **35,594 niches across 14 held-out TNBC patients** (zero patient le
 
 ---
 
-## architecture
+## the loop
 
-three layers:
+a **level** is what code is allowed to do (LEVEL 0/1/2 in the tree below); the
+**loop** is the order a cohort goes through. they are different axes and the
+words are easy to confuse:
 
 ```
 layer 0: EDA (gate)
@@ -81,7 +92,7 @@ alignment strategies (experimental variable):
 
 ## repo structure
 
-audited against the filesystem 2026-08-20. `·` is built, `○` is named in the design and **not yet built** - kept here because the name is referenced elsewhere, not because it exists.
+audited against the filesystem 2026-09-09. `·` is built, `○` is named in the design and **not yet built** - kept here because the name is referenced elsewhere, not because it exists.
 
 ```
 omicstra/
@@ -91,91 +102,73 @@ omicstra/
 · PLAN_RULES.md                      # constraints - no alignment until EDA passes
 · MODELS.md                          # training provenance + tissue compatibility per model
 · MODALITY_TEMPLATE.md               # the contract a new modality generates against
-· .mcp.json                          # MCP server entry
-· .env.example                       # LANGSMITH_* only - backends are cohort declarations
+· CITATION.cff  server.json          # citation metadata - MCP registry entry
+· .mcp.json  .env.example            # MCP server entry - optional tracing only
 │
 · design/                            # the planning tree - tracked, this is where "what next" lives
-│   · mcp_plan.md                    # the engineering plan
-│   · workflow.md                    # the executable graph - what runs, in what order
-│   · decisions.md                   # the decision graph - what is decided and by whom
+│   · v1_1_scope.md                  # the NEXT release's boundary. read before adding
+│   · mcp_plan.md  workflow.md       # engineering plan - the executable graph
+│   · decisions.md                   # what is decided, and by whom
 │   · progress.md  status.md         # build log - repo snapshot
-│   · _scratch/                      # BACKLOG.md ("this is the plan") - ROADMAP - doc_drift_audit
 │
 · src/omicstra/                      # the pip-installable package - src layout
 │   · graph.py                       # LEVEL 0 - the only entry, the only checkpointer
-│   ○ graphs/                        # LEVEL 1 - one file per gate, each can interrupt()
-│   │   ○ eda.py  encode.py          # <- eda_graph.py  agents/graph.py - not moved yet
-│   │   ○ route.py  promote.py       # v1.1 - route is inside routing.py today;
-│   │                                #   promote is the reviewed evidence step
-│   · protocols/                     # LEVEL 2 - ORDER, applicability, authority. no maths
-│   │   · inventory.py               # 8 steps: files .. bind - "what is this data"
-│   │   · eda.py                     # 10 checks registered - "is it usable"
-│   │   ○ align.py  evaluate.py      # <- stages.py / guards.py - signatures only
-│   · measures/                      # the MATHS. pure functions, no ctx, no order,
-│   │                                #   no authority. callable from a notebook.
-│   │                                #   organised by what is computed, never by
-│   │                                #   which protocol calls it
+│   · graphs/                        # LEVEL 1 - one per gate, each can interrupt()
+│   │   · eda.py                     #   inventory -> profile -> gate -> escalate
+│   │   · route.py                   #   orchestrator -> 3 agents -> judge -> ask_human
+│   │   ○ encode.py  promote.py      #   v1.1 - compute, and the reviewed evidence step
+│   · protocols/                     # LEVEL 2 - order, applicability, authority. no maths
+│   │   · inventory.py               #   8 steps: files .. bind - "what is this data"
+│   │   · eda.py                     #   10 checks registered - "is it usable"
+│   │   · align.py                   #   4 stages. resolve-only; compute is v1.1
+│   │   · evaluate.py                #   6 guards - becomes a chain in v1.1
+│   · measures/__init__.py           # the MATHS. pure functions, no ctx, no order,
+│   │                                #   no authority. callable from a notebook
 │   · contracts/                     # READS a declaration, decides nothing
-│   │   · project.py                 # <- config.py - a cohort's project.json
-│   │   · routing.py  eda.py         # contract + evidence · contract + calibration
-│   · adapters/                      # a cohort's files -> AnnData conforming to raw_counts
-│   │   · wang_st.py  ○ hest.py
-│   · agents/modality.py             # modality agents - encoder capability metadata
-│   · mcp/server.py                  # MCP server - read path, zero model calls
+│   │   · project.py                 #   a cohort's project.json
+│   │   · routing.py  eda.py         #   contract + evidence · contract + calibration
+│   · configs/                       # the CONTRACTS, inside the wheel so an
+│   │   · data_contract.json         #   installed server can find them. 8 declared
+│   │   · eda_contract.json          #   roles · which checks, which criteria
+│   │   · routing_contract.json      #   task taxonomy, outcome vocabulary, rules
+│   │   · compute_contract.json      #   6 gates: 5 preflight, 1 mid-run
+│   · adapters/wang_st.py            # a cohort's files -> AnnData conforming to raw_counts
+│   · agents/modality.py             # he / st / pathway agents - read recorded evidence
+│   · mcp/server.py                  # 8 tools, 3 resources, stdio + http. zero model calls
 │   · records.py  artifacts.py       # the record contract - inventory/eda_summary io
-│   · settings.py  cli.py            # omicstra inventory | eda | serve
-│   · eda_graph.py  agents/graph.py  # LEVEL 1 today, pending the move into graphs/
-│   · routing.py  eda.py  eda_steps.py  guards.py  stages.py  config.py  figures.py
+│   · settings.py  cli.py            # 8 commands. settings imports nothing from omicstra
+│   · routing.py  eda.py  figures.py # resolve + ledger · gate · plots
 │
 │   the rule: a thing gets its own graph only if it can ask a human;
 │   everything else is a protocol. a new .py never lands in src/omicstra/ directly.
 │
-· configs/                           # contracts are generalizable, evidence is per-cohort
-│   · eda_contract.json              # which EDA steps, which criteria
-│   · routing_contract.json          # task taxonomy, outcome vocabulary, rules
-│   · data_contract.json             # 8 declared roles - bind checks conformance
-│   · v3/                            # R1_v3 .. R6_v3 run configs
-│   ○ qc_params.json                 # K1 editable asset - not built
-│   ○ alignment_config.json          # K2 editable asset - not built
+· configs/v3/                        # R1_v3 .. R6_v3 run configs (cohort runs, not contracts)
 │
-· projects/                          # committed
-│   · registry.json
+· projects/                          # committed - one directory per cohort
 │   · {project_id}/
-│       · project.json  program.md   # karpathy loop - search space + constraints + metric
-│       · cohort.json                # DECLARED: subject_id_column, compute_backend,
-│       │                            #   model_backend, data_classification - fail closed
+│       · project.json  program.md   # encoders, runs, metric · search space + constraints
+│       · cohort.json                # DECLARED: subject_id_column, classification,
+│       │                            #   compute_backend, client_model_backend - fail closed
 │       · platform.json              # DECLARED per sample: platform, position_columns, pitch
 │       · inventory.json             # inventory protocol output - conformance report
 │       · eda_summary.json           # EDA gate output
 │       · routing_evidence.json      # this cohort's measured evaluation - never inherited
 │
-· site/{institution}/  [ignored]     # compute.md governance.md - question -> answer,
-│                                    #   served as MCP resources, never parsed
+· site/{institution}/  [ignored]     # compute.md governance.md - served as MCP resources
 · scripts/                           # the chain behind the published results
-· tests/                             # test_eda_authority.py - test_routing.py
-· knowledge/                         # shared domain assets - committed
-│   · reactome/  pathway_commons/
-│
+· tests/                             # 114 - conformance, routing, eda authority
+│   · fixtures/                      #   the pinned H1 summary, sha-guarded
+· knowledge/reactome/                # shared domain assets - committed
 · docs/                              # -> teslajoy.github.io/omicstra
-│   · index.html  timeline.html  images/  reports/internal/{project_id}/
-│   · TODO_*.md                      # parked work - untracked
-│
 · notebooks/                         # exploration - embeddings - experiments - final
-· runs/            [ignored]         # {project_id}/{run_id}/ - run_config, metrics, embeddings
-│   ○ winner.json                    # best validated run record - not written yet
-· data/            [ignored]         # inputs/ - embeddings/
-· demo/            [ignored]         # talk assets, figure scripts
-· logs/  venv/  venv_test/
-│
-○ .claude/skills/  .claude/hooks/    # named in the design - not built (.claude/ holds settings only)
-○ compute/slurm/                     # optional array jobs - not built
+· runs/  data/  demo/  [ignored]     # traces - inputs + embeddings - talk assets
 ```
 
 ---
 
 ## extending to a new modality
 
-`MODALITY_TEMPLATE.md` is the contract a new modality agent (single-cell, protein, electron microscopy, etc.) must satisfy: a frozen foundation-model encoder, a niche-aggregation step, a clean ST/H&E-equivalent feature parquet shape, and the construct-validity guards the eval agent enforces. each modality adds one row to the alignment grid; the orchestrator's routing table and the karpathy-loop search space pick it up automatically.
+`MODALITY_TEMPLATE.md` is the contract a new modality agent (single-cell, protein, electron microscopy, etc.) must satisfy: a frozen foundation-model encoder, a niche-aggregation step, a clean ST/H&E-equivalent feature parquet shape, and the construct-validity guards the eval agent enforces. each modality adds one row to the alignment grid and one entry to the routing contract.
 
 ---
 
@@ -255,30 +248,30 @@ fresh install, not a failure.
 | layer | tool |
 |---|---|
 | orchestration | LangGraph StateGraph |
-| routing | Claude Sonnet 4.6 |
-| synthesis | Claude Opus 4.6 |
-| tracing | LangSmith - observability only |
+| model | supplied by the MCP client; the server ships none |
+| tracing | OpenTelemetry-ready; LangSmith optional via env, not a dependency |
+| resources | `omicstra://eda-contract`, `routing-contract`, `project/{id}/routing-evidence` |
 | H&E foundation model | Virchow2 (primary, 1280-d) - UNI2 as swap (1536-d) |
 | ST foundation model | Novae GNN |
 | pathway | gpath2vec + biological pathway embeddings |
 | alignment | contrastive MLP + cross-attention bridge |
-| compute | laptop / cloud GPU / SLURM (ARC HPC at OHSU) |
-| vector retrieval | Qdrant *(planned - retrieval is currently exact cosine over the run's parquet)* |
-| graph store | Neo4j *(planned - not yet used)* |
+| compute | laptop (v1.0); SLURM planned |
 | interface | Model Context Protocol |
 
 ---
 
 ## reproducibility
 
-every run writes `runs/{project_id}/{run_id}/` - config, QC, embeddings, alignment, evaluation, synthesis. `notebooks/final/` contains the best run in notebook which is Opus-generated from the LangSmith trace, reruns can be done top-to-bottom with fixed seed.
+every run writes `runs/{project_id}/{run_id}/` - config, QC, embeddings, alignment, evaluation, synthesis. `notebooks/final/` contains the best run as a notebook, drafted with a model from the run trace and reviewed by hand; reruns go top-to-bottom with a fixed seed.
 
 ---
 
 ## deliverables
 
 - [x] v3 10-run alignment grid on TNBC-92 ([live report](https://teslajoy.github.io/omicstra/reports/internal/tnbc-92/))
-- [ ] pip-installable MCP server (MIT)
+- [x] pip-installable MCP server (MIT) - verified on python 3.11 / 3.12 / 3.14
+- [ ] alignment checkpoint + model card (Hugging Face)
+- [ ] embeddings and niche join deposited (Zenodo)
 - [ ] second-modality plug-in via `MODALITY_TEMPLATE.md` (target: CODA or CyCIF)
 
 ---
