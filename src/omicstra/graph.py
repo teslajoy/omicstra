@@ -64,6 +64,17 @@ class OmicstraState(TypedDict, total=False):
     # the reducer is why more than one node may append. without it the second
     # writer OVERWRITES the first - invisible until two nodes both write.
     records: Annotated[list[dict], operator.add]
+    # --- the route subgraph's half of the boundary --------------------------
+    # plain types, no reducer. the three modality agents ARE concurrent, but they
+    # fan in inside the subgraph, which carries the reducer on its own
+    # `modality`; the parent sees one completed list written once, by one node.
+    # a reducer here would be cargo - the rule that bites at this boundary is
+    # declaration, not merging: drop a name and the value silently vanishes.
+    proposed_method: str | None
+    modality: list[dict]
+    resolution: str | None
+    override: bool
+    awaiting_human: bool
     # outcomes
     verdict: str | None
     violations: list[str]
@@ -121,13 +132,18 @@ def make_checkpointer(spec: str | None = None):
 
 def build_omicstra_graph(checkpointer: Any = None,
                          eda: Any = None,
-                         encode: Any = None) -> Any:
+                         encode: Any = None,
+                         route: Any = None) -> Any:
     """the only graph a caller compiles.
 
-    `eda` and `encode` are injected compiled subgraphs so this file does not
-    import them at module scope - level 0 must stay importable in an
+    `eda`, `encode` and `route` are injected compiled subgraphs so this file does
+    not import them at module scope - level 0 must stay importable in an
     environment that has no encoder dependencies installed, which is the same
     reason `pyproject` keeps them in an extra.
+
+    the two arms take different subgraphs, and they are not interchangeable:
+    `eda` (and later `encode`) run the COMPUTE arm, for a cohort with no
+    evidence pack; `route` runs the ASK arm, for one that has it.
 
     pass `checkpointer=InMemorySaver()` for a single session, or a durable saver
     when a review must survive a restart. passing None means no interrupt in any
@@ -141,6 +157,8 @@ def build_omicstra_graph(checkpointer: Any = None,
         g.add_node("eda", eda)            # a compiled subgraph, added as ONE node
     if encode is not None:
         g.add_node("encode", encode)
+    if route is not None:
+        g.add_node("route", route)
 
     g.add_edge(START, "discover")
 
@@ -153,8 +171,15 @@ def build_omicstra_graph(checkpointer: Any = None,
     elif eda is not None:
         g.add_edge("eda", END)
 
-    # the ASK arm is rule-resolved and holds no interrupt of its own, so it is
-    # not a subgraph - it terminates here and the caller reads the record.
+    # the ASK arm resolves from a lookup table, but it is still a subgraph,
+    # because resolving is not the whole job: a contraindicated method stops the
+    # graph and asks a person, and that interrupt needs a node to live in. an
+    # arm that terminates here can report a contraindication; only one that can
+    # pause enforces it.
+    if route is not None:
+        targets["ask"] = "route"
+        g.add_edge("route", END)
+
     targets.setdefault("ask", END)
     targets.setdefault("compute", END)
     g.add_conditional_edges("discover", _arm, targets)

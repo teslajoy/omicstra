@@ -294,22 +294,60 @@ def families(project_dir: Path | None, project_id: str | None) -> None:
 def route(task_id: str, question: str, proposed_method: str | None,
           override_refusal: bool, project_dir: Path | None,
           project_id: str | None) -> None:
-    """route one question to the method this cohort's evidence supports."""
-    from omicstra.routing import resolve
+    """route one question to the method this cohort's evidence supports.
+
+    this goes through the level-0 graph, not `resolve` directly, because a
+    contraindicated method must ASK rather than report: the graph stops at
+    `ask_human`, checkpoints, and waits. the MCP tool of the same name answers
+    directly and returns the refusal with its options, since over a stateless
+    protocol a refusal is a result rather than a pause.
+
+    `--override-refusal` pre-answers the gate, so the run is unattended and the
+    dissent is still recorded - the same "a declared answer does not fire the
+    gate" rule the compute contract applies to its six.
+    """
+    from langgraph.checkpoint.memory import InMemorySaver
+    from langgraph.types import Command
+
+    from omicstra.graph import build_omicstra_graph
+    from omicstra.graphs.route import build_route_graph
+
     if project_dir is not None:
         settings.project_dir = project_dir.expanduser()
-    r = resolve(task_id, question=question, proposed_method=proposed_method,
-                override=override_refusal, project_id=project_id)
-    res = ("OVERRIDE_ACK" if (r.contraindicated and r.actor == "human")
-           else "REFUSE" if r.contraindicated
-           else "ESCALATE" if r.escalated
-           else "TIE" if r.tie else "RECOMMEND")
-    for c in r.caveats:
-        click.echo(click.style(f"  {c}", dim=True))
-    click.echo(f"\n[{res}] {r.chosen or '-'}")
-    click.echo(f"  why:         {r.why}")
-    click.echo(f"  consequence: {r.consequence}")
-    click.echo(click.style(f"  record_id:   {r.record_id}", dim=True))
+
+    app = build_omicstra_graph(checkpointer=InMemorySaver(),
+                               route=build_route_graph(checkpointer=None))
+    cfg = {"configurable": {"thread_id": f"route::{task_id}"}}
+    out = app.invoke({"question": question, "task_id": task_id,
+                      "proposed_method": proposed_method,
+                      "override": override_refusal,
+                      "project_id": project_id}, cfg)
+
+    if not out.get("has_evidence"):
+        click.echo(click.style(
+            "  this cohort has no evidence pack, so it is not routable. "
+            "another cohort's winner is not inherited.", fg="yellow"))
+        return
+
+    # the gate. resuming uses the PARENT's thread_id - the subgraph compiles
+    # with checkpointer=None and never had one of its own.
+    while "__interrupt__" in out:
+        v = out["__interrupt__"][0].value
+        click.echo("\n" + "-" * 62)
+        click.echo(v.get("question", "the graph is asking."))
+        for k in ("why", "consequence", "if_you_proceed"):
+            if v.get(k):
+                click.echo(click.style(f"  {k.replace('_', ' ')}: {v[k]}", dim=True))
+        out = app.invoke(Command(resume=click.confirm("\nproceed anyway?",
+                                                      default=False)), cfg)
+
+    d = out.get("decision") or {}
+    for m in out.get("modality", []):
+        click.echo(click.style(f"  {m['step_id'].split('::')[0]}: {m['decision']}", dim=True))
+    click.echo(f"\n[{(out.get('resolution') or '-').upper()}] {d.get('chosen') or '-'}")
+    click.echo(f"  why:         {d.get('why', '')}")
+    click.echo(f"  consequence: {d.get('consequence', '')}")
+    click.echo(click.style(f"  record_id:   {d.get('record_id', '')}", dim=True))
 
 
 @main.command(name="decisions")

@@ -164,3 +164,85 @@ def test_a_cohort_without_evidence_is_not_routable():
     r = resolve("cross_modal_retrieval", evidence={}, log=False)
     assert r.status == "not_run" and r.chosen is None
     assert "not inherited" in r.why or "has not been evaluated" in r.why
+
+# --- the route graph, wired into level 0 -----------------------------------
+#
+# the MCP tool answers directly; the graph exists so the CLI can PAUSE on a
+# contraindication. what is under test here is the boundary between level 0 and
+# the subgraph, which is where keys silently vanish and interrupts silently fail
+# to reach the caller.
+
+def _app():
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from omicstra.graph import build_omicstra_graph
+    from omicstra.graphs.route import build_route_graph
+    return build_omicstra_graph(checkpointer=InMemorySaver(),
+                                route=build_route_graph(checkpointer=None))
+
+
+def test_evidence_present_takes_the_ask_arm_into_the_subgraph():
+    out = _app().invoke({"task_id": "cross_modal_retrieval", "project_id": "tnbc-92"},
+                        {"configurable": {"thread_id": "a1"}})
+    assert out["arm"] == "ask" and out["has_evidence"] is True
+    assert out["resolution"] == "recommend"
+    assert out["decision"]["actor"] == "deterministic"
+
+
+def test_all_three_modality_reports_cross_the_boundary():
+    """declaration, not merging, is what this catches.
+
+    verified by deleting the key: with `modality` absent from OmicstraState the
+    value vanishes at the boundary and this raises KeyError. a reducer is NOT
+    what makes it work - the agents fan in inside the subgraph, so the parent
+    sees one completed list written once. dropping operator.add here changes
+    nothing, which is why the reducer does not belong on the parent.
+    """
+    out = _app().invoke({"task_id": "cross_modal_retrieval", "project_id": "tnbc-92"},
+                        {"configurable": {"thread_id": "a2"}})
+    assert len(out["modality"]) == 3
+
+
+def test_a_contraindication_interrupts_and_resumes_on_the_parent_thread():
+    """the subgraph compiles with checkpointer=None, so the thread it resumes on
+    is the PARENT's. a subgraph carrying its own saver would checkpoint to a
+    thread the caller cannot address, and the resume would hang."""
+    from langgraph.types import Command
+    app, cfg = _app(), {"configurable": {"thread_id": "a3"}}
+    payload = {"task_id": "tissue_state_grouping", "proposed_method": "B1_v3",
+               "project_id": "tnbc-92"}
+
+    out = app.invoke(payload, cfg)
+    assert "__interrupt__" in out, "a contraindicated method must ask, not report"
+    v = out["__interrupt__"][0].value
+    assert v["no_default"] == "the system does not pick"
+
+    assert app.invoke(Command(resume=False), cfg)["resolution"] == "refuse"
+
+    cfg2 = {"configurable": {"thread_id": "a4"}}
+    app.invoke(payload, cfg2)
+    out2 = app.invoke(Command(resume=True), cfg2)
+    assert out2["resolution"] == "override_ack"
+    assert out2["decision"]["actor"] == "human"
+
+
+def test_a_declared_answer_does_not_fire_the_gate():
+    """the compute contract's rule, applied here: a pre-answered gate resolves
+    from the declaration and does not interrupt. it lowers the number of pauses,
+    never the bar - the dissent is still recorded against a human actor."""
+    out = _app().invoke({"task_id": "tissue_state_grouping", "proposed_method": "B1_v3",
+                         "override": True, "project_id": "tnbc-92"},
+                        {"configurable": {"thread_id": "a5"}})
+    assert "__interrupt__" not in out, "a declared answer must not pause"
+    assert out["resolution"] == "override_ack"
+    assert out["decision"]["actor"] == "human"
+    assert out["decision"]["contraindicated"] is True, "the dissent must travel"
+
+
+def test_judge_is_the_only_node_that_emits_a_selection():
+    """CLAUDE.md agent constraints: modality agents cannot align, evaluate or
+    route. they emit diagnostics; only the judge emits a selection."""
+    out = _app().invoke({"task_id": "cross_modal_retrieval", "project_id": "tnbc-92"},
+                        {"configurable": {"thread_id": "a6"}})
+    assert {m["kind"] for m in out["modality"]} == {"diagnostic"}
+    assert out["decision"]["kind"] == "selection"
