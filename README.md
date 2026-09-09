@@ -4,9 +4,11 @@ a multi-agent MCP server for cross-modal embedding alignment and evidence-based 
 
 the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) using H&E morphology (Virchow2 primary, UNI2 swap) and spatial transcriptomics (Novae GNN).
 
+[![release](https://github.com/teslajoy/omicstra/actions/workflows/release.yml/badge.svg)](https://github.com/teslajoy/omicstra/actions/workflows/release.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22666752.svg)](https://doi.org/10.5281/zenodo.22666752)
 
-`v1.0` `ResearchHub Foundation grant` `Brenden-Colson Center / Sears Lab, OHSU` `MIT`
+`v1.0.0` `ResearchHub Foundation grant` `Brenden-Colson Center / Sears Lab, OHSU`
 
 **v1.0** ships the read path (inventory, EDA, admissibility gate, routing) over
 stdio and HTTP, the alignment and evaluation stages verified bit-identical
