@@ -207,8 +207,16 @@ the package ships its contracts and no cohort. point it at one:
 
 ```bash
 export OMICSTRA_PROJECT_DIR=/path/to/projects/tnbc-92
-omicstra --help                             # describe, families, gate, eda, decisions, init
+omicstra selftest        # start here: asserts the routing rules hold on this cohort
+omicstra describe        # what the cohort declares - platform, encoders, roles
+omicstra families        # which questions it can answer, and which it cannot yet
+omicstra route cross_modal_retrieval
 ```
+
+`omicstra --help` lists all eight: `selftest`, `describe`, `families`, `route`,
+`gate`, `eda`, `decisions`, `init`. **`selftest` first** - it tells a new cohort
+owner whether their declarations and evidence hang together before they spend
+time on anything else.
 
 **stdio** - the usual client config:
 
