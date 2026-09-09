@@ -6,9 +6,9 @@ the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22666752.svg)](https://doi.org/10.5281/zenodo.22666752)
 
-`v0.1` `ResearchHub Foundation grant` `Brenden-Colson Center / Sears Lab, OHSU` `MIT`
+`v1.0` `ResearchHub Foundation grant` `Brenden-Colson Center / Sears Lab, OHSU` `MIT`
 
-**v0.1 is:** the inventory and EDA protocols, the admissibility gate with its
+**v1.0 is:** the inventory and EDA protocols, the admissibility gate with its
 human-in-the-loop interrupt, stdio and streamable-http transport, and a record
 contract - tested on two cohorts with different platforms, formats and
 declarations, and no code changes between them. **Alignment and evaluation run as
@@ -105,7 +105,7 @@ omicstra/
 │   · graph.py                       # LEVEL 0 - the only entry, the only checkpointer
 │   ○ graphs/                        # LEVEL 1 - one file per gate, each can interrupt()
 │   │   ○ eda.py  encode.py          # <- eda_graph.py  agents/graph.py - not moved yet
-│   │   ○ route.py  promote.py       # v0.2 - route is inside routing.py today;
+│   │   ○ route.py  promote.py       # v1.1 - route is inside routing.py today;
 │   │                                #   promote is the reviewed evidence step
 │   · protocols/                     # LEVEL 2 - ORDER, applicability, authority. no maths
 │   │   · inventory.py               # 8 steps: files .. bind - "what is this data"
@@ -291,7 +291,7 @@ argue with the report in places. Generating it would invent the judgements it
 records, so `run_eval` scores the grid and **resolves** the pack; it never
 produces one.
 
-**In v0.1 that promotion step is manual and recorded in `docs/`. In v0.2 it is
+**In v1.0 that promotion step is manual and recorded in `docs/`. In v1.1 it is
 `omicstra promote`** - a gate, not a protocol, because it asks a person.
 
 The acceptance test for the port is pinned in `tests/fixtures/`: a full-grid

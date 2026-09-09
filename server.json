@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
   "name": "io.github.teslajoy/omicstra",
   "description": "Cross-modal embedding alignment and evidence-based routing for spatial biology. Exposes fixed scientific protocols as tools and returns evidence JSON; the client holds the model. Routes a question to a method from a cohort's own recorded evaluation, and refuses when that evidence is absent rather than inheriting another cohort's winner.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "websiteUrl": "https://teslajoy.github.io/omicstra/",
   "repository": {
     "url": "https://github.com/teslajoy/omicstra",
@@ -13,7 +13,7 @@
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "omicstra",
-      "version": "0.1.0",
+      "version": "1.0.0",
       "transport": { "type": "stdio" },
       "environmentVariables": [
         {

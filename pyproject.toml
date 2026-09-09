@@ -1,6 +1,6 @@
 [project]
 name = "omicstra"
-version = "0.1.0"
+version = "1.0.0"
 description = "multi-agent MCP server for cross-modal embedding alignment and evidence-based routing in spatial biology"
 readme = "README.md"
 # 3.11, not 3.10: tomllib is stdlib only from 3.11 and the suite already imports
@@ -14,7 +14,7 @@ authors = [{ name = "Nasim Sanati", email = "nasim@plenary.org" }]
 keywords = ["mcp", "spatial-transcriptomics", "histopathology", "bioinformatics",
             "multimodal", "model-context-protocol"]
 classifiers = [
-  "Development Status :: 4 - Beta",
+  "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3.11",

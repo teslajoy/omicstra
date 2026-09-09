@@ -11,11 +11,11 @@ abstract: >-
   components with persistent context; the server ships no model.
 type: software
 license: MIT
-version: 0.1.0
+version: 1.0.0
 repository-code: "https://github.com/teslajoy/omicstra"
 url: "https://teslajoy.github.io/omicstra/"
 doi: "10.5281/zenodo.22666752"
-# the reservation date. becomes the tag date when v0.1.0 is tagged.
+# the reservation date. becomes the tag date when v1.0.0 is tagged.
 date-released: "2026-09-08"
 keywords:
   - model context protocol
