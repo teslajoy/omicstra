@@ -17,8 +17,6 @@ from omicstra.settings import settings
 
 TEMPLATE = {
     "project_id": "",
-    "data_classification": "restricted",  # public | restricted. see configs/data_contract.json
-
     "platform": "",
     "k_neighbors": 6,
     "seed": 42,
@@ -40,7 +38,7 @@ TEMPLATE = {
 
 @click.group()
 def main() -> None:
-    """omicstra - cross-modal reasoning for spatial biology."""
+    """omicstra - cross-modal embedding alignment and evidence-based routing."""
 
 
 @main.command()
@@ -74,7 +72,6 @@ def init(project_dir: Path, project_id: str | None, force: bool, public: bool) -
         (project_dir / d / ".gitkeep").touch()
 
     payload = dict(TEMPLATE, project_id=project_id or project_dir.resolve().name)
-    payload.pop("data_classification", None)
     cfg_path.write_text(json.dumps(payload, indent=2) + "\n")
 
     # every field a PERSON declares about the cohort goes in one file, beside
@@ -85,7 +82,10 @@ def init(project_dir: Path, project_id: str | None, force: bool, public: bool) -
               "data_classification": classification,
               "subject_id_column": "",
               "compute_backend": "mac",
-              "model_backend": "anthropic"}
+              # the CONNECTING CLIENT supplies the model; this server ships none and
+              # holds no key. null until a deployment names its client's endpoint
+              # (anthropic, bedrock, ...), so a scaffold never claims otherwise.
+              "client_model_backend": None}
     if public:
         # a redistribution claim with no provenance is not checkable
         cohort["provenance"] = {"source": "", "licence": "", "gated": ""}
@@ -112,9 +112,9 @@ def init(project_dir: Path, project_id: str | None, force: bool, public: bool) -
                  "nothing was downloaded. point the server at it with:",
                  f"  OMICSTRA_PROJECT_DIR={project_dir} python -m omicstra.mcp.server"):
         click.echo(f"  {line}")
-    if public and not payload["provenance"]["source"]:
+    if public and not cohort["provenance"]["source"]:
         click.echo("\n  public cohort: fill provenance.source / licence / gated in "
-                   "project.json.\n  an unprovenanced public claim is not checkable.")
+                   "cohort.json.\n  an unprovenanced public claim is not checkable.")
 
 
 def _project_gitignore(classification: str) -> str:
@@ -157,8 +157,8 @@ def _project_gitignore(classification: str) -> str:
 @click.option("--project-dir", default=None, type=click.Path(path_type=Path))
 @click.option("--project-id", default=None)
 @click.option("--adata-path", default=None, type=click.Path(path_type=Path),
-              help="TEMPORARY. the object inventory step A7 will produce. explicit "
-                   "until the inventory node exists.")
+              help="override the object path. normally produced by the inventory "
+                   "protocol's A7 step and passed through state.")
 @click.option("--step", "steps", multiple=True,
               help="step id to run. repeatable. a step with no params is skipped, "
                    "never guessed at.")

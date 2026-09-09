@@ -4,8 +4,8 @@
   "subject_id_column": "patient_id",
   "subject_id_note": "the confounder axis. splitting below it leaks - the three subarrays per patient are consecutive 16um sections of one frozen block, near-duplicates in z. NMI(label, patient_id) must be computed before any coherence metric is believed.",
   "compute_backend": "mac",
-  "model_backend": "anthropic",
-  "backend_note": "independent. model_backend says nothing about where encoders run; compute_backend says nothing about which endpoint the loop calls. both fail closed when absent.",
+  "client_model_backend": "anthropic",
+  "backend_note": "independent, and the first is not the server's. client_model_backend names the endpoint the CONNECTING CLIENT calls - this server ships no model and holds no key - while compute_backend says where encoders run. neither implies the other, and both fail closed when absent.",
   "data_classification": "public",
   "provenance": {
     "source": "Zenodo doi:10.5281/zenodo.8135721 (Wang et al. 2024, Nat Commun 15:10232)",

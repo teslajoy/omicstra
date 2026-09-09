@@ -640,3 +640,41 @@ def test_project_config_reads_a_cohort_declaration():
     assert "project" in ProjectConfig.__module__
     src = (Path(omicstra.__file__).parent / "contracts" / "project.py").read_text()
     assert "project.json" in src
+
+
+def test_init_public_scaffolds_without_crashing(tmp_path):
+    """`init --public` read payload["provenance"], but provenance is written into
+    cohort.json - so the flag that matters most raised KeyError at the last line.
+    the assertion is exit 0; the rest guards the split that caused it."""
+    import json
+
+    from click.testing import CliRunner
+
+    from omicstra.cli import main
+    r = CliRunner().invoke(main, ["init", "--project-dir", str(tmp_path / "c"), "--public"])
+    assert r.exit_code == 0, r.output + str(r.exception)
+
+    cohort = json.loads((tmp_path / "c" / "cohort.json").read_text())
+    project = json.loads((tmp_path / "c" / "project.json").read_text())
+    assert cohort["data_classification"] == "public"
+    assert cohort["provenance"] == {"source": "", "licence": "", "gated": ""}
+    assert "cohort.json" in r.output, "the prompt must name the file provenance is in"
+    # one home per declaration: classification is cohort's, never project's
+    assert "data_classification" not in project
+    # a scaffold must not claim a model backend the server does not have
+    assert cohort["client_model_backend"] is None
+
+
+def test_init_defaults_to_restricted(tmp_path):
+    """forgetting the flag fails closed, and no provenance block is invented."""
+    import json
+
+    from click.testing import CliRunner
+
+    from omicstra.cli import main
+    r = CliRunner().invoke(main, ["init", "--project-dir", str(tmp_path / "d")])
+    assert r.exit_code == 0, r.output + str(r.exception)
+    cohort = json.loads((tmp_path / "d" / "cohort.json").read_text())
+    assert cohort["data_classification"] == "restricted"
+    assert "provenance" not in cohort
+    assert "data/inputs/" in (tmp_path / "d" / ".gitignore").read_text()
