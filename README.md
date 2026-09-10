@@ -30,6 +30,16 @@ declarations. See `design/v1_1_scope.md`.
 
 ---
 
+![the analysis pipeline: one section, two measurements, three representations, ten arms, three hypotheses](docs/images/analysis_pipeline.png)
+
+Same inputs, same split, **different join**. That is the whole experiment: the
+arms differ only in where the two sides meet - late fusion pools each side before
+matching, early fusion lets seven tiles keep their own vectors and meet the
+molecular side under cross-attention. Everything to the right of the join is held
+identical so the comparison means something.
+
+---
+
 ## hypotheses
 
 | | | metrics |
@@ -185,7 +195,6 @@ omicstra/
 | resource | url |
 |---|---|
 | processed data | [doi:10.5281/zenodo.14204217](https://doi.org/10.5281/zenodo.14204217) (mc-labels release also at [doi:10.5281/zenodo.8135721](https://doi.org/10.5281/zenodo.8135721)) |
-| original analysis code | [BCTL-Bordet/ST](https://github.com/BCTL-Bordet/ST) |
 
 ---
 
