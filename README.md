@@ -74,9 +74,11 @@ against a permutation null).
 
 | | | metrics |
 |---|---|---|
-| H1 | aligned embeddings retrieve better cross-modal matches than any unaligned baseline | Recall@K - MRR - CKA |
-| H2 | manifold alignment preserves biological structure better than either modality alone | ARI - silhouette - UMAP |
-| H3 | shared space encodes interpretable biological pathway signals | CCA - spatial maps |
+| **H1** | aligned embeddings retrieve better cross-modal matches than any unaligned baseline | Recall@K - MRR - median rank - alignment gap - AUC - CKA |
+| **H2** | manifold alignment preserves biological structure better than either modality alone | |
+| &nbsp;&nbsp;&nbsp;&nbsp;*A* | spatial states cluster more coherently in the aligned space than in either modality alone | ARI - silhouette |
+| &nbsp;&nbsp;&nbsp;&nbsp;*B* | alignment quality varies across compartments - morphologically distinct ones (tumour, TLS, necrosis) above ambiguous ones (high- vs low-TIL stroma) | matched-pair cosine per compartment |
+| **H3** | shared space encodes interpretable biological pathway signals | CCA vs permutation null |
 
 early vs late fusion is an experimental variable, not an assumption. 
 
