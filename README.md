@@ -233,10 +233,6 @@ pip install omicstra                # serves, routes, gates - no numpy, no tenso
 pip install "omicstra[measure]"     # + the numerics, for computing inventory and EDA steps
 ```
 
-omicstra ships no model and no client: any MCP client supplies the model. OHSU
-runs it behind a pydantic-ai front on ARC with Bedrock, and that front is a
-separate package. the server holds no key and makes no outbound call.
-
 the package ships its contracts and no cohort. point it at one:
 
 ```bash
