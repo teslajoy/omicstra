@@ -1,0 +1,16 @@
+# github's linguist ranks languages by BYTES, and a notebook is mostly base64
+# plot images rather than code. this repo is 242 MB of notebooks against 0.8 MB
+# of python, so it reported as 79% "Jupyter Notebook" while the thing it ships
+# is a python package - 4.5k lines in src/omicstra, 13k in scripts, 1.2k in
+# tests. the notebooks are exploration and the html is a generated report;
+# neither is the source.
+#
+# this changes the language bar only. nothing is hidden, ignored, or excluded
+# from the repository.
+
+*.ipynb                 linguist-documentation
+
+# generated report output. also collapses their diffs, which matters when a
+# single file is 60 MB.
+docs/**/*.html          linguist-generated
+docs/reports/**         linguist-generated
