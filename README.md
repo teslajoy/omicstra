@@ -62,31 +62,11 @@ components (B3), or a random projection as an untrained control (B4). Inputs, th
 patient-stratified split (85/15, seed 42) and all downstream evaluation are held
 identical across arms.
 
-**Right** - every arm projects to a shared 512-d space and is evaluated on 35,594
-niches from 14 held-out patients.
-
-**The three hypotheses are not scored against the same kind of truth.**
-
-**H1's is an identity matrix.** Niche *i*'s H&E embedding and niche *i*'s ST
-embedding are the same physical location, so for row *i* of the similarity matrix
-the correct answer is column *i*. Recall@K, MRR, median rank, alignment gap and
-AUC all just measure where that diagonal lands: AUC 0.859 means a true pair
-outranks a random false pair 85.9% of the time, over 35,594 positives and 355,940
-sampled negatives. Nothing here was labelled or asserted - the truth is geometry,
-and it comes free with the shared section.
-
-**H2's is a clustering.** The 14-class tissue-state label is obtained by
-factorising the same expression matrix that is under evaluation, and it carries
-NMI 0.539 with patient identity - above the 0.5 confounder bar this project
-applies elsewhere. ARI and silhouette are scored against it, so they inherit both
-properties.
-
-**H3's is a database.** Reactome pathway membership is curated prior knowledge,
-not a measurement of this tissue, and canonical correlation against a permutation
-null asks whether the shared space agrees with that prior.
-
-Only the first was measured. The second was computed from the data being tested,
-and the third was looked up.
+**Right** - every arm projects to a shared 512-d space and is evaluated on
+35,594 niches from 14 held-out patients: cross-modal retrieval (H1; Recall@K,
+MRR, median rank, alignment gap, AUC, CKA), preservation of biological structure
+(H2; ARI, silhouette) and pathway interpretability (H3; canonical correlation
+against a permutation null).
 
 ---
 
