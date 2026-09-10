@@ -218,7 +218,7 @@ omicstra/
 
 ## seed cohort
 
-[Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) - 92 TNBC patients, co-registered ST + H&E WSI. platform: original Spatial Transcriptomics (Stahl et al. 2016, KTH/Spatial Transcriptomics AB, acquired by 10x Genomics 2018) - 1934 spots/array, 100um diameter, 150um center-to-center. not 10x Visium.
+[Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) - 92 TNBC patients, co-registered ST + H&E WSI. platform: original Spatial Transcriptomics (Stahl et al. 2016, KTH/Spatial Transcriptomics AB) - 1934 spots/array, 100um diameter, 150um center-to-center.
 
 > corrected 2026-08-12: previously read 200um center-to-center. Wang 2024 Methods states 150um and the lattice measures to it - nearest neighbour 161.6 px with the (+2,0)/(0,+2) offsets at 216/240 px, i.e. NN x sqrt(2), so NN is centre-to-centre. at 150um that is 0.93 um/px and the array spans 6.5 x 6.9 mm, matching the stated capture area; at 200um it would span 8.7 x 9.2 mm, which no ST array is.
 
