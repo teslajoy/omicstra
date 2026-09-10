@@ -307,7 +307,7 @@ every run writes `runs/{project_id}/{run_id}/` - config, QC, embeddings, alignme
 
 - [x] v3 10-run alignment grid on TNBC-92
 - [x] pip-installable MCP server (MIT) - verified on python 3.11 / 3.12 / 3.14
-- [ ] alignment checkpoint + model card (Hugging Face)
+- [x] alignment checkpoint + model card ([teslajoy/omicstra-r4-v3](https://huggingface.co/teslajoy/omicstra-r4-v3))
 - [ ] embeddings and niche join deposited (Zenodo)
 - [ ] second-modality plug-in via `MODALITY_TEMPLATE.md` (target: CODA or CyCIF)
 
