@@ -1,16 +1,20 @@
 # github's linguist ranks languages by BYTES, and a notebook is mostly base64
-# plot images rather than code. this repo is 242 MB of notebooks against 0.8 MB
-# of python, so it reported as 79% "Jupyter Notebook" while the thing it ships
-# is a python package - 4.5k lines in src/omicstra, 13k in scripts, 1.2k in
-# tests. the notebooks are exploration and the html is a generated report;
-# neither is the source.
+# plot images rather than code. this repo carries 242 MB of notebooks and 63 MB
+# of exported html against 0.8 MB of python, so it reported as 79% "Jupyter
+# Notebook" and 21% "HTML" while the thing it ships is a python package -
+# 4.5k lines in src/omicstra, 13k in scripts, 1.2k in tests.
 #
-# this changes the language bar only. nothing is hidden, ignored, or excluded
-# from the repository.
+# none of the html here is source: it is exported notebooks, generated reports
+# and a slide deck. the first pass at this scoped the html rule to docs/ and
+# missed notebooks/final/05_summary_umaps_v3.html, which is 61.7 MB on its own -
+# so the rules below are deliberately unscoped.
+#
+# this changes the language bar and diff rendering only. nothing is hidden,
+# ignored, or excluded from the repository.
 
 *.ipynb                 linguist-documentation
 
-# generated report output. also collapses their diffs, which matters when a
-# single file is 60 MB.
-docs/**/*.html          linguist-generated
+# generated or exported output. `generated` also collapses their diffs, which
+# matters when a single file is 60 MB.
+*.html                  linguist-generated
 docs/reports/**         linguist-generated
