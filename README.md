@@ -34,9 +34,46 @@ declarations. See `design/v1_1_scope.md`.
 
 ![cross-modal alignment of histopathology and spatial transcriptomics at niche scale](docs/images/analysis_pipeline.png)
 
-<sub>
-<b>Figure 1 | Cross-modal alignment of histopathology and spatial transcriptomics at niche scale.</b> A single 16 µm section is stained and imaged for H&E, after which the coverslip is removed and the same section is permeabilised in situ for spatial transcriptomics, so morphology and expression share physical coordinates with no registration error between them (one of three consecutive sections per frozen block; Wang et al. 2024). The unit of analysis is a niche of seven neighbouring spots (100 µm spot diameter, 150 µm centre-to-centre; ~1,200-1,400 cells). <b>Left</b>, two measurements yield three representations: Virchow2 encodes seven H&E tiles per niche as a 7 × 1280 matrix; Novae encodes the spatial counts as a 64-d vector; and gpath2vec encodes Reactome pathway activity inferred from those same counts as a 512-d vector, concatenated with Novae to a 576-d molecular vector. All encoders are frozen. <b>Centre</b>, ten arms differ only in how the two sides are joined. Six are trained contrastively (labelled R in the figure) and four are closed-form baselines with no training (labelled B). Five of the contrastive arms mean-pool the seven tiles into a single 1280-d vector before the two sides meet - four over the full molecular vector (R1, R2, R3, R5) and one with the pathway representation removed (R6) - while a sixth leaves the tiles un-pooled and lets the molecular side attend over them individually (R4, cross-attention). The baselines join the two sides directly by canonical correlation (B1), orthogonal Procrustes rotation (B2), principal components (B3) or a random projection as an untrained control (B4). Inputs, the patient-stratified split (85/15, seed 42) and all downstream evaluation are held identical across arms. <b>Right</b>, every arm projects to a shared 512-d space and is evaluated on 35,594 niches from 14 held-out patients. <b>Each hypothesis is scored against a different referent, and they are not equally independent.</b> H1 (cross-modal retrieval; Recall@K, MRR, AUC, CKA) is scored against physical co-registration - which niche and which spot are the same location - an exact referent given by the shared section. H2 (preservation of biological structure; ARI, silhouette) is scored against a 14-class label derived by factorising the same expression matrix under evaluation, and that label carries NMI 0.539 with patient identity. H3 (pathway interpretability; canonical correlation against a permutation null) is scored against Reactome membership, which is external prior knowledge rather than a measured label. Only the first is ground truth in the strict sense.
-</sub>
+**Figure 1 | Cross-modal alignment of histopathology and spatial transcriptomics
+at niche scale.**
+
+A single 16 µm section is stained and imaged for H&E, after which the coverslip is
+removed and the same section is permeabilised in situ for spatial transcriptomics,
+so morphology and expression share physical coordinates with no registration error
+between them (one of three consecutive sections per frozen block; Wang et al.
+2024). The unit of analysis is a niche of seven neighbouring spots (100 µm spot
+diameter, 150 µm centre-to-centre; ~1,200-1,400 cells).
+
+**Left** - two measurements yield three representations. Virchow2 encodes seven
+H&E tiles per niche as a 7 × 1280 matrix; Novae encodes the spatial counts as a
+64-d vector; gpath2vec encodes Reactome pathway activity inferred from those same
+counts as a 512-d vector, concatenated with Novae to a 576-d molecular vector. All
+encoders are frozen.
+
+**Centre** - ten arms differ only in how the two sides are joined. Six are trained
+contrastively (labelled R) and four are closed-form baselines with no training
+(labelled B). Five contrastive arms mean-pool the seven tiles into a single 1280-d
+vector before the two sides meet - four over the full molecular vector (R1, R2,
+R3, R5) and one with the pathway representation removed (R6) - while a sixth
+leaves the tiles un-pooled and lets the molecular side attend over them
+individually (R4, cross-attention). The baselines join the two sides directly by
+canonical correlation (B1), orthogonal Procrustes rotation (B2), principal
+components (B3), or a random projection as an untrained control (B4). Inputs, the
+patient-stratified split (85/15, seed 42) and all downstream evaluation are held
+identical across arms.
+
+**Right** - every arm projects to a shared 512-d space and is evaluated on 35,594
+niches from 14 held-out patients.
+
+**Each hypothesis is scored against a different referent, and they are not equally
+independent.** H1 (retrieval; Recall@K, MRR, AUC, CKA) is scored against physical
+co-registration - which niche and which spot are the same location - an exact
+referent given by the shared section. H2 (biological structure; ARI, silhouette)
+is scored against a 14-class label derived by factorising the same expression
+matrix under evaluation, carrying NMI 0.539 with patient identity. H3 (pathway
+interpretability; canonical correlation against a permutation null) is scored
+against Reactome membership, which is prior knowledge rather than a measured
+label. Only the first is ground truth in the strict sense.
 
 ---
 
