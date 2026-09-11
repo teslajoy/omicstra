@@ -887,6 +887,78 @@ Local development never sees either, because the machine that writes the code ha
 everything installed. **That is what CI is for, and it took one push to prove
 it.**
 
+---
+
+## 2026-09-11 · 3.6 · durable execution, and which kill-and-resume was proven
+
+`dispatch` is **not a level.** Levels say what code is allowed to do; dispatch
+says where it runs, and that is orthogonal to all three.
+
+One activity per subarray, because **the unit of retry has to be the unit of
+work** - a 280-sample encode that dies at 200 must not redo 199. Three attempts,
+then the shard is recorded failed and the run continues. Idempotent on the
+**output file**, not a ledger: the file is what the next stage reads, so its
+existence is the only honest evidence the shard is done, and that is what makes
+resume need no coordinator.
+
+Fallthrough when `TEMPORAL_ADDRESS` is unset, and it is the **default** rather
+than a degraded mode. A laptop needs no server, CI has none, and a dependency
+exercised only in production is one nobody has tested.
+
+### two kill-and-resume proofs, and they are different claims
+
+| | what survives | proof |
+|---|---|---|
+| **local** | the OUTPUT FILE survives the process | SIGKILL a real subprocess mid-write, restart, finish without redoing what landed |
+| **temporal** | the WORKFLOW HISTORY survives the worker | submit once, destroy the worker mid-run, a NEW worker finishes from history with no resubmission |
+
+**The second is the acceptance for 3.6.** The first is the fallthrough and cannot
+stand in for it - it demonstrates that a file on disk is still there, which was
+never in doubt.
+
+Measured on the durable path: worker 1 finished `s0, s1`; worker 2 picked up at
+`s2` and finished `s2-s5`. Nothing ran twice, and the caller submitted once.
+
+Run against a **real** Temporal server started in-process by the SDK -
+`WorkflowEnvironment.start_local()` downloads the dev-server binary - so no
+`brew install temporal` and no running cluster. `temporalio` ships an abi3 wheel,
+so 3.14 needs no source build: the same bar every other dependency here cleared.
+
+### three things only running it on real files found
+
+**`np.save` appends `.npy`** to a path that lacks one. The temp file
+`x.npy.partial` became `x.npy.partial.npy`, so the rename target never existed,
+every shard failed all three retries, and the report read like a bad cohort. The
+temp name keeps the real suffix now - `x.partial.npy` - and `atomic_write` raises
+by name if a writer does not produce the file it was handed.
+
+**An async activity cannot heartbeat from an executor thread.** The activity
+context is a contextvar; a worker thread does not inherit one. Copying the
+context across only moves the failure from *"Not in activity context"* to *"no
+running event loop"*. The activity is **synchronous** with a thread-pool
+executor, which is the idiomatic form and the reason `build_worker` exists.
+
+**The workflow sandbox re-imports the workflow's module**, which pulls in
+`settings` and its path resolution, and validation fails before anything runs
+with *"Failed validating workflow omicstra_encode"* - a message naming neither
+cause nor fix. The package supplies the passthrough configuration rather than
+leaving each caller to rediscover it.
+
+### the guard that came out of it
+
+`AllShardsFailed` raises when nothing at all succeeded, on **both** backends. One
+failure is data; **every** failure is a missing model, a wrong path, a
+permissions wall, or a writer that never wrote - never a cohort. The np.save bug
+produced exactly that shape: three retries each, a quiet `failed` on every row,
+and a summary nobody would read until much later.
+
+### and the clone script earned itself immediately
+
+`verify_like_ci.sh` caught `test_an_explicit_address_selects_the_durable_backend`
+before CI did: it patches inside `dispatch.temporal`, which imports the extra
+even though it never connects to anything. **One commit old and it had already
+paid for itself.**
+
 ## next
 
 1. **3.4 `protocols/encode.py`** - the gate half landed 2026-09-11: the five
