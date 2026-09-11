@@ -15,8 +15,6 @@ that is not this one.
 """
 from __future__ import annotations
 
-import io
-import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +22,7 @@ import pytest
 
 from omicstra.measures.tiling import (
     TileGeometry,
+    cut_tiles,
     niche_neighbours,
     pool_niche,
     tile_boxes,
@@ -79,6 +78,116 @@ def test_edge_boxes_clamp_and_are_flagged():
     boxes = tile_boxes(coords, TileGeometry(scale=1.0, tile_px=40), (200, 200))
     assert (boxes[0] == [0, 0, 20, 20]).all(), "a corner spot clamps"
     assert (boxes[1] == [80, 80, 120, 120]).all(), "an interior spot does not"
+
+
+# --- cut_tiles: the branch this cohort never takes --------------------------
+#
+# zero tiles clip the image edge across all 280 subarrays, so the black-pad path
+# cannot be exercised on real data and is synthetic-only by necessity. that makes
+# it exactly the code most likely to rot, so it gets the same oracle treatment as
+# everything else: the pre-refactor body is reproduced verbatim below and the
+# package path is diffed against it pixel for pixel.
+
+def _cut_tiles_as_originally_written(image, coords, geom):
+    """scripts/extract_virchow2_niche.py's geometry, before the clamp was shared.
+
+    verbatim, including `int(round(...))` where the package now uses `np.rint`.
+    do not tidy this - its whole value is being the thing that was there.
+    """
+    from PIL import Image
+
+    w, h = image.size
+    half = geom.tile_px // 2
+    out = []
+    for x, y in np.asarray(coords, dtype=float):
+        # the redundant int(round(...)) is deliberate: it is what the script
+        # wrote, and tidying it here would silently retire the oracle.
+        cx, cy = int(round(x * geom.scale)), int(round(y * geom.scale))  # noqa: RUF046
+        x1, y1 = max(0, cx - half), max(0, cy - half)
+        x2, y2 = min(w, cx + half), min(h, cy + half)
+        patch = image.crop((x1, y1, x2, y2))
+        if patch.size != (geom.tile_px, geom.tile_px):
+            canvas = Image.new("RGB", (geom.tile_px, geom.tile_px), (0, 0, 0))
+            canvas.paste(patch, (half - (cx - x1), half - (cy - y1)))
+            patch = canvas
+        out.append(patch.resize((geom.out_px, geom.out_px), Image.LANCZOS))
+    return out
+
+
+def _noise_image(w, h, seed=0):
+    from PIL import Image
+
+    rng = np.random.default_rng(seed)
+    return Image.fromarray(rng.integers(0, 256, (h, w, 3), dtype=np.uint8), "RGB")
+
+
+def test_cut_tiles_matches_the_original_geometry_everywhere():
+    """every clamped case plus interior ones, against the body that was replaced.
+
+    noise rather than a flat fill on purpose: a constant image hides an offset,
+    because a tile shifted by a pixel is identical to one that is not.
+    """
+    img = _noise_image(200, 160, seed=7)
+    geom = TileGeometry(scale=1.0, tile_px=40, out_px=32)
+    coords = np.array([
+        [100.0, 80.0],    # interior, no pad
+        [0.0, 0.0],       # both axes clamped low
+        [199.0, 159.0],   # both clamped high
+        [5.0, 80.0],      # left only
+        [195.0, 80.0],    # right only
+        [100.0, 3.0],     # top only
+        [100.0, 157.0],   # bottom only
+        [10.5, 20.5],     # half-pixel: the rounding mode has to agree too
+    ])
+    got = cut_tiles(img, coords, geom)
+    want = _cut_tiles_as_originally_written(img, coords, geom)
+    assert len(got) == len(want) == len(coords)
+    for j, (a, b) in enumerate(zip(got, want)):
+        assert a.size == (geom.out_px, geom.out_px)
+        assert np.array_equal(np.asarray(a), np.asarray(b)), \
+            f"tile {j} at {coords[j].tolist()} differs from the original geometry"
+
+
+def test_a_padded_tile_keeps_the_spot_centred():
+    """the pad goes where the clamp took pixels from, not into the corner.
+
+    stated independently of the oracle above, because both could agree while both
+    being wrong - this asserts the property rather than the history.
+    """
+    img = _noise_image(200, 160, seed=3)
+    geom = TileGeometry(scale=1.0, tile_px=40, out_px=40)
+    tile = np.asarray(cut_tiles(img, np.array([[5.0, 80.0]]), geom)[0])
+    assert (tile[:, :15] == 0).all(), "the 15 clamped columns should be black"
+    assert tile[:, 15:].any(), "the rest must carry image, not more pad"
+
+
+def test_no_tile_in_this_cohort_actually_pads():
+    """the fact the two tests above rest on: the pad branch is unreachable here.
+
+    if a re-ingest ever puts a spot within half a tile of an image edge, this
+    fails and the synthetic-only justification stops being true.
+    """
+    import json
+
+    record = ROOT / "projects" / "tnbc-92" / "data" / "canonical" / "ingest.json"
+    if not record.is_file():
+        pytest.skip("no canonical ingest on this machine")
+    rec = json.loads(record.read_text())
+
+    import pandas as pd
+    plat = json.loads((ROOT / "projects" / "tnbc-92" / "platform.json").read_text())
+    st = plat["platforms"]["original_st"]
+    half = st["he_tile"]["tile_px_hd"] // 2
+    scale = st["image_pyramid"]["scale_to_hd"]
+
+    clipped = []
+    for sid in rec["samples"][:40]:            # 40 is enough to catch a systematic shift
+        df = pd.read_parquet(record.parent / f"{sid}_spots.parquet")
+        cx = np.rint(df["x"].to_numpy() * scale).astype(int)
+        cy = np.rint(df["y"].to_numpy() * scale).astype(int)
+        if (cx - half < 0).any() or (cy - half < 0).any():
+            clipped.append(sid)
+    assert not clipped, f"spots within half a tile of the origin in: {clipped[:3]}"
 
 
 # --- the oracle: only on a machine that has the cohort ----------------------
@@ -165,6 +274,5 @@ def test_the_smallest_subarray_is_still_above_the_niche_size():
     metas = sorted(CACHE.glob("*_meta.tsv"))
     if not metas:
         pytest.skip("cache not present on this machine")
-    import pandas as pd
-    smallest = min(sum(1 for _ in open(m)) - 1 for m in metas)
+    smallest = min(len(m.read_text().splitlines()) - 1 for m in metas)
     assert smallest > K, f"a subarray of {smallest} spots now exercises the sentinel drop"

@@ -478,21 +478,352 @@ A project home should be the shape of this repo minus the package - `data/inputs
 a `.gitignore` carrying the same policy as here, so a new cohort is its own git
 repo from minute one and the trace/commit coupling has something to attach to.
 
+---
+
+## 2026-08-04 .. 2026-09-11 · the month this log missed
+
+This file stopped on 2026-08-04 and the build did not. Reconstructed from the
+commit history and a repo audit on 2026-09-11, because a build log with a
+five-week hole is how the next session re-derives what was already known.
+
+### the levels reorg  (`e34e24c` `dd9027e` `9178416` `2719564`)
+
+The three-layer idea in `CLAUDE.md` was about the *loop* a cohort goes through.
+What the code needed was a different axis - what a piece of code is **allowed to
+do** - and conflating the two was why `eda_chains.py` and `eda_steps.py` kept
+growing into each other. They are now separate words:
+
+| level | is | rule |
+|---|---|---|
+| 0 `graph.py` | the only entry, the only checkpointer | `discover` picks the arm |
+| 1 `graphs/` | one per gate | **a thing gets its own graph only if it can ask a human** |
+| 2 `protocols/` | order, applicability, authority | no maths |
+| - `measures/` | the maths | no ctx, no order, no authority. callable from a notebook |
+
+`measures/` moving out of `protocols/` (`2719564`) is the load-bearing split:
+computing is not ordering, and a pure function is the only kind a notebook can
+borrow without inheriting the protocol layer.
+
+### the port  (`6937b45` `94ae635` `b353f04`)
+
+`align` and `eval` behind typed stages, **13/13 metrics at delta 0.00e+00**
+against the published grid. `contracts/` reads a declaration and decides nothing.
+Two modes on every stage, and the record says which ran: `compute=False` resolves
+what a previous run produced and refuses when absent; `compute=True` invokes the
+script. `resolves_only` on every record is what lets a reader of the ledger tell
+them apart.
+
+### v1.0.0  (`caa7f44`, tagged 2026-09-09)
+
+Ships the read path - inventory, EDA, gate, routing - over stdio and HTTP, plus
+the seed cohort's evidence pack, so a fresh clone routes without training
+anything. Packaging findings worth keeping:
+
+- **core deps are core.** `mcp`, `langgraph`, `langchain-core` and the sqlite
+  checkpointer are imported unconditionally at module scope, so shipping them as
+  extras meant `pip install omicstra` installed a server that could not import
+  itself. The CI job's bare-install step is what caught it, and it goes first.
+- **the sdist is an allowlist, not exclusions.** hatchling ships everything not
+  gitignored, which meant a whole virtualenv, the notebooks and 74 MB of demo
+  video - 192 MB for a few hundred KB of python. Exclusions rot; an allowlist
+  cannot. The wheel is 107 KB.
+- **`anthropic` is deliberately absent.** The server holds no model and makes no
+  outbound call. Declaring it would put the model back inside the server.
+
+### v1.1 opens  (`d6d532f` `a3ce73f` `6841b11` `f8ee99f` `bcd89de`)
+
+Encoder registry, tile geometry declared, tiling maths lifted, the oracle
+widened to five subarrays, and the canonical adapter. Each is in its own commit
+message; what they share is that none of them asserted anything it could measure.
+
+**The pitch correction had a second consequence, and it was found rather than
+remembered.** `extract_virchow2_niche.py` sizes the crop as
+`patch_px = 128 * nn_hd / pitch`, so the pitch is an **input to the crop size,
+not a label on it**. At the measured 150 um the crop covers 95.9 um, not the
+128 um the constant names - a half-width of 48.0 um against a 50 um spot radius,
+so every spot was clipped ~2 um per side and the H&E arm under-sampled every spot
+it represented. Ported **as built** and declared, because the ten-arm comparison
+is fair only while every arm saw identical tiles; the 128 um tile is recorded as
+a declared alternative arm, never a silent fix.
+
+---
+
+## 2026-09-11 · repo audit, and the eight findings
+
+A full read of the repo after a session was lost. Recorded here so it is not
+done a third time.
+
+**State:** 148 tests pass in 1.6s. `selftest` passes 23/23. The gate returns
+`proceed_with_caution` against a declared `proceed`. The read-path claim holds.
+
+Eight findings, all agreed, six closed the same day:
+
+| # | finding | state |
+|---|---|---|
+| 1 | `ingest.json` wrote absolute `/Users/...` paths | **closed** |
+| 2 | `omicstra eda` printed `verdict: None` on the fixture | **closed** |
+| 3 | five commits on one disk, no CI | branch added to `release.yml` |
+| 4 | `__version__` 0.0.1 vs pyproject 1.0.0 | **closed** |
+| 5 | doc drift: CLAUDE.md, `knowledge/`, this file | **closed** |
+| 6 | `protocols/evaluate.py` six stubs | known, v1.1 step 5 |
+| 7 | 449 MB `.git` | deferred - strip notebook outputs when next touched |
+| 8 | duplicated clamp in `tiling.py` | **closed** |
+
+### finding 1 · a record that is portable by construction
+
+`rel()` is now the only way a path enters `ingest.json`, and a source outside the
+repo root **raises** rather than falling back to an absolute path - the fallback
+is what put the home directory there. Three tests: the rule, the call sites, and
+the artifact.
+
+**Relative and wrong is not an improvement on absolute**, so a fourth test joins
+every recorded path back to the root and asserts it exists.
+
+### finding 2 · the arm decided correctly and the command did not say so
+
+`omicstra eda` on a cohort **with** an evidence pack routes to the ask arm and
+never enters the eda subgraph. That is the arm working. Printing `verdict: None`
+made it read as a broken gate. The fix is output, not a flag: the command now
+names the arm, says the gate did not run and why, and points at `omicstra gate`.
+
+### finding 5 · CLAUDE.md described an architecture that was never built
+
+`src/agents/`, `src/tools/`, `src/models/encoders/`, `src/eval/` and a top-level
+`config/` - **nine paths, none of which exist.** It is the first file a session
+reads, so it said the wrong thing first, and every session since the reorg paid
+for it. Rewritten against the filesystem. `knowledge/` is marked git-ignored,
+which it has always been despite two docs calling it committed; only
+`scripts/build_pathway_class.py` reads it, so the read path is unaffected.
+
+`mcp_plan.md` gets a header saying it predates the reorg, and is **not** edited -
+it is the reasoning that produced the design, not a description of the build.
+
+### finding 7 · 449 MB of git, deferred with a date rather than a shrug
+
+**Deferred 2026-09-11. Revisit when any of the three notebooks is next edited, or
+before the first external clone is asked for - whichever comes first.**
+
+`.git` is 449 MB. It is not the wheel (107 KB) and not the sdist, both of which
+are allowlisted and clean. It is the clone, and the readme's claim is that **a
+fresh clone routes** - which is true, and is a 449 MB proposition on whatever
+connection the reader has.
+
+Where it is, measured:
+
+| MB | file |
+|---:|---|
+| 73.0 | `docs/media/om-demo.mp4` |
+| 72.1 | `notebooks/final/05_summary_umaps.ipynb` |
+| 63.3 | `notebooks/final/05_summary_umaps_v3.ipynb` |
+| 60.3 | `notebooks/final/05_summary_umaps_v3.html` |
+| 35.0 | `docs/papers/komen_2025_pathorob.pdf` |
+
+The three notebooks are base64 cell outputs, not code. The fix is cheap per file
+and costs nothing scientifically - the outputs re-render from the notebook - but
+stripping them rewrites nothing already pushed, so it only shrinks **new**
+history unless the repo is filtered, which is a separate and more disruptive
+decision.
+
+**Why it is written down rather than fixed now:** it costs clone time and nothing
+else. No test, no result and no claim depends on it. Recording it with a trigger
+is the difference between a deferred decision and one that quietly disappears
+until someone on a slow connection finds it for us.
+
+### finding 8 · one clamp, and the branch nothing covered
+
+`tile_boxes` and `cut_tiles` each computed the crop geometry. Worse, one used
+`np.rint` and the other `int(round(...))`, which agree **only because both round
+half to even** - a coincidence of python and numpy sharing a rounding mode, not
+a decision. Both now go through `tile_centres` and one clamp.
+
+The dedupe touched code **no test exercised**: no tile in this cohort clips an
+image edge, so the black-pad branch never runs on real data, and there was no
+synthetic test either. Unreachable-here code is the most likely to rot, so it got
+the same oracle treatment as everything else - the pre-refactor body is
+reproduced verbatim in the test and diffed pixel for pixel across every clamped
+case plus a half-pixel coordinate, on noise rather than a flat fill, because a
+constant image hides an offset.
+
+---
+
+## 2026-09-11 · the canonical ingest runs - and two things it found
+
+`scripts/ingest_wang.py` over the whole cohort. **280 samples, 286,250 spots.**
+
+**Verified against the cache, which is the oracle.** Every ingested coordinate
+set diffed against `virchow2_niche/*_meta.tsv` - the script's own output while it
+built the cache: 280/280 samples, 0 row-count mismatches, **0 coordinate
+mismatches**. The counts were checked independently against R on named cells,
+total counts and both dims: exact.
+
+### the 281 -> 280 drop had the wrong reason attached
+
+`discover()` derived the patient from the HD image filename and skipped a sample
+when it could not. So `CN32/D2` was dropped as "no patient" when the patient is
+**known** - `TNBC64_CN32_D2.jpg` sits in `imagesLarge/` - and what is actually
+missing is the **HD image the morphology path cuts tiles from**.
+
+Those are different facts. The patient map now reads both pyramids, and the two
+reasons are separate and **recorded in `ingest.json` rather than dropped in
+silence**:
+
+| reason | meaning |
+|---|---|
+| `no_patient` | no image at any resolution names it. the confounder axis would be a guess |
+| `no_hd_image` | patient known, counts present, no HD tile source. half a sample |
+
+A count falling from 281 to 280 with no reason attached is exactly the kind of
+thing that gets rediscovered a year later. It matches the cached grid, which is
+280.
+
+### `counts_written` was about to lie
+
+The field was set to `not coords_only`, and **nothing in the script wrote a
+`.h5ad` at all.** A full run would have recorded counts it did not have. The
+counts path is now implemented, and the field reports what was **written**, never
+what was asked for. The record is also flushed per sample: an ingest interrupted
+at sample 200 otherwise leaves 200 files and no record of them.
+
+Three things the writer asserts rather than assumes, each a gate input:
+
+- **counts stay integer.** `% expressing` is a detection rate only on raw counts -
+  the check `eda_contract.json` calls universal. R stores them as double and they
+  are integerish; the writer narrows the dtype and rounds nothing.
+- **gene ids stay versioned Ensembl, unmapped.** Symbols are display. Mapping at
+  ingest would bake one annotation release into the artifact.
+- **counts rows are reindexed onto the coordinate order, never zipped to it.**
+  They agree on this cohort. A silent zip that is right by luck would not survive
+  a cohort where they disagree, and would be undetectable when it failed.
+
+R hands the matrix over as MatrixMarket rather than CSV: `cnts` is 1075 x 27567
+and 84% zero on the *smallest* sample, so dense CSV is ~30M numbers through a
+pipe, 280 times. MatrixMarket carries the nonzeros only - 3.2 s per sample.
+
+### the counts, in full
+
+**280 samples, 286,250 spots, 796,858,360 nonzero counts, 2.0 GB.** Spot-checked
+across the cohort: int32 throughout, versioned Ensembl ids, one patient per
+sample, and `.h5ad` row order identical to the `_spots.parquet` beside it.
+
+**19 of 280 subarrays fall below Novae's 512-spot prototype floor.** That figure
+was measured months ago by a different route entirely and is reproduced here from
+the fresh ingest through the `platform_floor` gate - two independent paths to the
+same number, which is the closest thing to an external check this cohort has.
+
+### recorded, not acted on · the gene set is not constant across samples
+
+**min 10,571 · median 25,033 · max 33,047 genes per sample.** Not a narrow spread
+around a fixed panel - a three-fold range. The per-sample `n_genes` is in
+`ingest.json#counts`, so the cohort's gene universe is computable rather than
+assumed.
+
+**This lands on the niche join (v1.1 step 4)**, which needs a declared common
+universe and a stated rule for a gene absent from a sample - dropped, or
+zero-filled. Zero-filling an absent gene and observing a zero are not the same
+statement, and at this spread the choice moves real numbers rather than edge
+cases. The existing pathway work already fixes a universe
+(`feedback_niche_ea_pipeline`), and the join should match that convention rather
+than re-decide it.
+
+The low end is worth a second look on its own: `TNBC34_CN17_D2` has 1,714 spots
+but only 209,928 nonzeros - about 122 detected genes per spot against roughly
+4,400 elsewhere. Whether that is a failed array or real biology is a QC question
+the funnel should answer explicitly rather than letting it average away.
+
+---
+
 ## next
 
-1. **`omicstra init` -> a real project home** (above), so cohorts have somewhere
-   to live that is not an arbitrary path
-2. **grow the contract** from 10 checks to what the notebooks declare
-3. **`MODALITY_TEMPLATE.md`** - the contract a modality agent generates against.
-   cited by three docs, does not exist. must land before the first generated step
-   or the step defines the contract by accident.
-4. **generated-step conventions** - `{project_dir}/steps/s{NN}_{modality}_{step}.py`
-   plus `MANIFEST.json`; header carries `contract@sha256` + `trace_id`; commit
-   message carries the trace id. the contract sha makes staleness computable.
-5. **first generated step** - `s05_st_spatial_autocorr`: its output is an edge
-   (it routes the encoder branch) and it is where the n=1 defect lives.
-6. remaining EDA gaps: input-provenance per check · itemised funnel · platform
-   floor · 3-way encoder routing · label-granularity NMI · annotation coverage.
-7. **packaging** - `configs/` sits at repo root, so it is not inside the wheel.
-   a non-editable install needs it under `src/omicstra/` or declared as package data.
-8. `docs/reports/internal/tnbc-92/index.html` stays **read-only** - spec and oracle.
+1. **3.4 `protocols/encode.py`** - the gate half landed 2026-09-11: the five
+   preflight gates computed from declarations plus the inventory's counts,
+   resolved where `cohort.json` answers them and returned open where it does not.
+   Nothing here interrupts - `graphs/encode.py` is what turns an open request
+   into an `interrupt()`, and is not built. `assert_clear` refuses compute while
+   any gate is open and names both what would answer it and what accepting
+   forecloses. **`ComputeRefused` is deliberately not `ComputeUnavailable`**:
+   "nobody has answered yet" and "the artifact is not there" are different states
+   and the ledger has to tell them apart.
+
+   **The five are now declared, and tnbc-92 fires zero preflight gates.** That is
+   the precondition step 8's `omicstra run` needs: a gate firing on this cohort
+   would be asking a question the published grid already answered.
+
+   `below_floor_policy: drop` is declared **as built**, not as a preference, and
+   the evidence is recorded rather than asserted:
+   `novae_niche_full/run_manifest.json` carries
+   `skip_too_small_for_novae: 19` against 281 enumerated, 262 parquets written
+   (241 ok + 21 pre-existing), and the niche join carries 259 subarrays. The
+   preflight gate recomputes the same 19 from the fresh canonical ingest against
+   the encoder's declared `min_units` of 512. **Two independent paths, one
+   number**, and a test fails if they ever diverge - at which point the
+   declaration has stopped describing what was run.
+
+   `mark` is a declared alternative with `run: false`, the same shape as the
+   128 um tile in `platform.json`.
+
+### the closed option set was closed on one path only
+
+Writing the declarations found it: the contract says a gate's options are a
+**closed** set, and that was enforced where a person picks one - but a
+declaration could put any string into `answer` and it would travel into the
+ledger looking exactly like a human choice. A set closed on one path is not
+closed.
+
+`_resolve_option` now lands every declared answer on exactly one option.
+A readable shorthand is allowed - `drop` for `drop_below_floor`, because a person
+writes this file - but only when it identifies one option; ambiguous or unknown
+raises and names what was offered. A near-miss silently ignored is how a cohort
+ends up running a policy nobody chose.
+
+Value gates are exempt and say why: a token source and an output path are
+**supplied, not selected**, so their `options` describe the shape of the decision
+rather than enumerating legal answers.
+
+### the pattern, now that it has happened three times
+
+| what | as built | declared alternative |
+|---|---|---|
+| H&E tile | 95.9 um (`tile_px_hd` 338) | 128 um, the first crop containing a whole spot |
+| below-floor subarrays | `drop` - 19 removed | `mark` - keep and flag |
+| join gene universe | whatever `build_niche_join.py` did | union vs intersect |
+
+Three instances is a pattern rather than a habit: **port the choice as built,
+name it in the declaration, and record the alternative as its own arm.** The
+reason is always the same one - the published grid is a fair comparison only
+because every arm saw identical inputs, so changing an input retires the oracle
+and every number that rests on it.
+
+**Step 4's job for the join is therefore fixed in advance:** port what the script
+did and name it in the manifest as `gene_handling: <what it did>`. The
+union-vs-intersect question becomes the third declared alternative rather than a
+decision made during the port. That is settled now so it is not reopened halfway.
+2. **3.5 the slice-diff** - extract a slice, diff against the 75 GB cache. Tests
+   our port rather than testing Virchow2, and runs in minutes. The same method
+   proved the align port at delta 0.00e+00
+3. **step 4, the niche join** - settle the gene universe question above first
+4. then step 5, `evaluate` as a chain: the six guards are still stubs
+
+### still open from the 2026-08-04 list, carried forward
+
+Three of that list closed in the meantime and are dropped: `omicstra init` now
+scaffolds a real project home, `MODALITY_TEMPLATE.md` exists, and `configs/`
+moved inside the wheel at `src/omicstra/configs/`. What remains:
+
+- **grow the contract** from 10 checks to what the notebooks declare - roughly
+  40-60 real decisions. `MIN_MEDIAN_GENES` 500 · `NOVAE_MIN_SPOTS` 512 ·
+  `RHO_THRESHOLD` -0.1 · the 3-way encoder routing · `MAD_TOP_FRACTION` ·
+  `MIN_NICHE_UMI` · `MIN_PATHWAY_SIZE/MAX` · `FDR_STRICT` · `OR_CUT` · IQR
+  outlier flags · gene-panel intersection · effective rank · clinical
+  missingness. Still the highest-value work left in the EDA layer.
+- **generated-step conventions** - `{project_dir}/steps/s{NN}_{modality}_{step}.py`
+  plus `MANIFEST.json`; header carries `contract@sha256` + `trace_id`; commit
+  message carries the trace id. The contract sha makes staleness computable.
+- **first generated step** - `s05_st_spatial_autocorr`: its output is an edge
+  (it routes the encoder branch) and it is where the n=1 defect lives.
+- **remaining EDA gaps**: input-provenance per check · itemised funnel · platform
+  floor · 3-way encoder routing · label-granularity NMI · annotation coverage.
+- `docs/reports/internal/tnbc-92/index.html` stays **read-only** - spec and oracle.
+- **the spatial-autocorrelation recomputation is recorded and unadjudicated.**
+  2 of 5 markers above threshold cohort-wide against 5 of 5 on CN1/C1. It closed
+  `eda_summary.json:risks[1]` and invalidates one justification, not the routing.
+  There is no external standard to fall back to, so a human decides.

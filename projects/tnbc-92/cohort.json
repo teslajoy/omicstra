@@ -12,5 +12,20 @@
     "licence": "see the Zenodo record",
     "gated": "no"
   },
-  "declaration_note": "every field a PERSON declares about the cohort lives here; every field a person declares about a PLATFORM lives in platform.json."
+  "declaration_note": "every field a PERSON declares about the cohort lives here; every field a person declares about a PLATFORM lives in platform.json.",
+  "encoder_token_source": "env:HF_TOKEN",
+  "encoder_fallback": "uni2",
+  "below_floor_policy": "drop",
+  "scope_policy": "authoritative",
+  "output_dir": "data/embeddings",
+  "preflight_note": "these five answer the compute contract's preflight gates, and they are declared AS BUILT - they reproduce the published grid rather than describing what one would choose today. with them present the graph fires zero preflight gates and this cohort runs unattended, which is what makes it usable as the end-to-end fixture.",
+  "below_floor_provenance": "drop is what the published numbers assume, not a preference. data/embeddings/novae_niche_full/run_manifest.json records skip_too_small_for_novae=19 against 281 enumerated, 262 parquets written (241 ok + 21 pre-existing); the niche join carries 259 subarrays. the preflight gate recomputes the same 19 from the fresh canonical ingest against the encoder's declared min_units of 512 - two independent paths to one number. below_floor_policy=mark is a DECLARED ALTERNATIVE and has not been run: it would change the cohort, so it is its own arm, the same way the 128um tile is in platform.json#he_tile.declared_alternative.",
+  "declared_alternatives": {
+    "below_floor_policy": {
+      "value": "mark",
+      "why": "keeps all 280 subarrays and marks the 19 as below-floor rather than removing them, so the funnel shows them and any metric can exclude them downstream instead of at extraction.",
+      "question": "does including below-floor subarrays, marked, change H1?",
+      "run": false
+    }
+  }
 }

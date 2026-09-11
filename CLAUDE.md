@@ -101,9 +101,14 @@ a run that does not beat all three baselines is not a winner.
 
 ## fast iteration
 
-use `config/debug.json` for loop development: 5 patients, 500 tiles, 5 epochs.
-debug runs write to `runs/{project_id}/debug_{run_id}/` — never candidates for winner.json.
-do not compare debug metrics to full run metrics.
+**`config/debug.json` does not exist and never did.** the reduced-grid idea it
+named is real and is now `design/v1_1_scope.md`'s three tiers - CI runs
+fixture-pinned tests only, the pre-tag gate runs a reduced grid by hand on this
+mac, and the full ten arms is a documented command rather than a test.
+
+the rule the missing file was carrying still holds: a reduced run is never a
+candidate for winner.json, and debug metrics are not comparable to full-run
+metrics.
 
 ---
 
@@ -128,22 +133,55 @@ do not compare debug metrics to full run metrics.
 
 ## key directories
 
-- `src/agents/` — orchestrator, he_agent, st_agent, alignment_agent, eval_agent, karpathy_loop
-- `src/tools/` — embed_he, embed_st, align, retrieve, evaluate
-- `src/models/encoders/` — foundation model wrappers
-- `src/models/alignment.py` — MLP + cross-attention bridge
-- `src/eval/` — h1, h2, h3 hypothesis evaluation + failure_modes.py
-- `src/mcp/` — MCP protocol server
-- `projects/` — registry, per-project config, program.md, eda_summary.json (committed)
-- `config/` — qc_params.json (K1 editable), alignment_config.json (K2 editable), debug.json
-- `knowledge/` — shared domain assets: pathways, annotations (committed)
+audited against the filesystem 2026-09-11. the previous version of this section
+described `src/agents/`, `src/tools/`, `src/models/encoders/`, `src/eda/` and a
+top-level `config/` - none of which were ever built. that plan was superseded by
+the three-level layout below, and this file is the first thing a session reads,
+so it said the wrong thing first.
+
+the package is `src/omicstra` (src layout), and a level is what code is allowed
+to do:
+
+- `src/omicstra/graph.py` — LEVEL 0. the only entry, the only checkpointer.
+  `discover` picks the arm: ask when an evidence pack exists, compute when not
+- `src/omicstra/graphs/` — LEVEL 1. one per gate, each can `interrupt()`.
+  `eda.py`, `route.py` built; `encode.py` and `promote.py` are v1.1
+- `src/omicstra/protocols/` — LEVEL 2. order, applicability, authority, no maths.
+  `inventory.py` (8 steps), `eda.py` (10 checks), `align.py` (4 stages,
+  resolve-only until v1.1), `evaluate.py` (6 guards, **stubs**)
+- `src/omicstra/measures/` — the maths. pure functions, no ctx, no order, no
+  authority. callable from a notebook
+- `src/omicstra/contracts/` — reads a declaration, decides nothing
+- `src/omicstra/configs/` — the four contracts, INSIDE the wheel so an installed
+  server finds them: data, eda, routing, compute
+- `src/omicstra/models/encoders.py` — the encoder registry, resolved by declared
+  name. `spec()` is metadata only and needs no tensor library; only `load()` does
+- `src/omicstra/adapters/canonical.py` — the package's input contract: .h5ad plus
+  a coordinates table. no format-specific reader lives in the package
+- `src/omicstra/mcp/server.py` — 8 tools, 4 resources, stdio + http, zero model calls
+- `scripts/` — the chain behind the published results, plus `ingest_<cohort>.py`.
+  a cohort's native format is converted here, ONCE, and never inside the package
+- `configs/v3/` — R1_v3..R6_v3 run configs. these are cohort runs, not contracts;
+  the contracts are in the wheel (above)
+- `projects/{id}/` — committed per cohort: project.json, cohort.json,
+  platform.json, program.md, eda_summary.json, routing_evidence.json
+- `projects/{id}/data/canonical/` — the ingested .h5ad + `_spots.parquet` +
+  ingest.json. the parquet and h5ad are git-ignored; ingest.json is the record
 - `runs/` — execution traces per run (git-ignored)
-- `data/inputs/` — raw data: byArray, Images, clinical (git-ignored except READMEs)
-- `data/embeddings/` — cached encoder outputs: uni2_raw/, uni2_reinhard/, novae/, pca_hvg/, etc. (git-ignored)
-- `notebooks/exploration/` — EDA notebooks (committed)
-- `notebooks/embeddings/` — modality encoder runs: he_agent writes uni2_*/virchow2_*, st_agent writes novae_*/pca_hvg_*/scvi_* (committed)
-- `notebooks/experiments/` — alignment runs consuming data/embeddings/, one per config (committed)
-- `notebooks/final/` — best-run notebooks from LangSmith traces (committed)
+- `data/inputs/` — raw data: byArray, Images, clinical (git-ignored)
+- `data/embeddings/` — cached encoder outputs: virchow2_niche/, novae/, niches_v3/,
+  gpath2vec/, pca_hvg/ etc (git-ignored). **this cache is the oracle** - the port
+  is verified by diffing against it, not by re-extracting
+- `knowledge/` — shared domain assets: pathways, annotations. **git-ignored, not
+  committed**, despite what this file said until 2026-09-11. only
+  `scripts/build_pathway_class.py` reads it, so the read path is unaffected
+- `notebooks/exploration|embeddings|experiments|final/` — this cohort's decision
+  record (committed)
+
+tnbc-92 is the one cohort whose `data/` and `runs/` sit at the repo root rather
+than under its own project root - its `project.json` declares `../../data/...`
+explicitly. a cohort scaffolded by `omicstra init` keeps its data inside its own
+root and needs no `../..`.
 
 ---
 

@@ -71,6 +71,19 @@ def niche_neighbours(coords: np.ndarray, k: int) -> tuple[np.ndarray, np.ndarray
     return idx, counts
 
 
+def tile_centres(coords: np.ndarray, geom: TileGeometry) -> np.ndarray:
+    """spot coordinates -> integer pixel centres in image space, (n, 2).
+
+    the ONE place the coordinate space is scaled and rounded. it was written
+    twice - `np.rint` on one path and `int(round(...))` on the other - and those
+    two agree only because both round half to even. that is a coincidence of
+    python and numpy sharing a rounding mode, not a decision anyone made, and it
+    is the kind of thing that stops being true under a refactor.
+    """
+    coords = np.asarray(coords, dtype=float).reshape(-1, 2)
+    return np.rint(coords * geom.scale).astype(int)
+
+
 def tile_boxes(coords: np.ndarray, geom: TileGeometry,
                image_size: tuple[int, int]) -> np.ndarray:
     """one clamped crop box per coordinate: (x1, y1, x2, y2), image space.
@@ -78,31 +91,40 @@ def tile_boxes(coords: np.ndarray, geom: TileGeometry,
     boxes at the image edge come back SMALLER than `tile_px` - `cut_tiles` pads
     those back to size. this function exists so a caller can see WHICH spots sat
     on the boundary without opening the image or re-deriving it from the vectors.
+
+    it is also the ONE place the clamp lives. `cut_tiles` calls it rather than
+    repeating the arithmetic: two copies of a clamp that must agree is how a tile
+    shifts by a pixel on one path and not the other, and the oracle would only
+    have caught it on the path it exercises.
     """
-    coords = np.asarray(coords, dtype=float)
     w, h = image_size
     half = geom.tile_px // 2
-    cx = np.rint(coords[:, 0] * geom.scale).astype(int)
-    cy = np.rint(coords[:, 1] * geom.scale).astype(int)
+    cx, cy = tile_centres(coords, geom).T
     return np.stack([np.maximum(0, cx - half), np.maximum(0, cy - half),
                      np.minimum(w, cx + half), np.minimum(h, cy + half)], axis=1)
 
 
 def cut_tiles(image, coords: np.ndarray, geom: TileGeometry) -> list:
-    """coordinates -> encoder-ready tiles. the whole geometry in one place."""
+    """coordinates -> encoder-ready tiles. the whole geometry in one place.
+
+    the centres and the boxes come from the two functions above; what happens
+    here is only the crop, the black pad for a box the edge shrank, and the
+    resize.
+    """
     from PIL import Image
 
-    w, h = image.size
     half = geom.tile_px // 2
+    centres = tile_centres(coords, geom)
+    boxes = tile_boxes(coords, geom, image.size)
     out = []
-    for x, y in np.asarray(coords, dtype=float):
-        cx, cy = int(round(x * geom.scale)), int(round(y * geom.scale))
-        x1, y1 = max(0, cx - half), max(0, cy - half)
-        x2, y2 = min(w, cx + half), min(h, cy + half)
-        patch = image.crop((x1, y1, x2, y2))
+    for (cx, cy), (x1, y1, x2, y2) in zip(centres, boxes, strict=True):
+        patch = image.crop((int(x1), int(y1), int(x2), int(y2)))
         if patch.size != (geom.tile_px, geom.tile_px):
+            # paste at the offset the clamp removed, so the spot stays centred in
+            # the padded tile rather than sliding into the corner. `cx - x1` is
+            # `half` for any unclamped side, giving offset 0 there.
             canvas = Image.new("RGB", (geom.tile_px, geom.tile_px), (0, 0, 0))
-            canvas.paste(patch, (half - (cx - x1), half - (cy - y1)))
+            canvas.paste(patch, (half - int(cx - x1), half - int(cy - y1)))
             patch = canvas
         out.append(patch.resize((geom.out_px, geom.out_px), Image.LANCZOS))
     return out

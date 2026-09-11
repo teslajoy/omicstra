@@ -7,11 +7,16 @@
 # every step up to and including `verify` runs on a normal push and on
 # workflow_dispatch, so the release path is exercised continuously rather than
 # discovered on tag day. publish is the only step gated on a tag.
+#
+# the release branch is listed alongside main because work lands there for weeks
+# before it merges, and a branch CI never sees is verified on one laptop against
+# one interpreter. publish stays safe: it is gated on `refs/tags/v`, and a push
+# to refs/heads/v1.1 does not match that.
 name: release
 
 on:
   push:
-    branches: [main]
+    branches: [main, v1.1]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:

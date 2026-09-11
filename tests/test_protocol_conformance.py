@@ -739,3 +739,21 @@ def test_encoders_are_not_imported_at_package_scope():
     head = src.split("# --- Virchow2")[0]
     for heavy in ("import timm", "import torch", "import novae"):
         assert heavy not in head, f"{heavy} at module scope"
+
+
+def test_version_comes_from_the_distribution_not_a_literal():
+    """__version__ drifted to 0.0.1 while pyproject said 1.0.0, and nothing
+    failed, because nothing read it. it is derived now; this is what keeps it so.
+    """
+    import tomllib
+
+    src = Path(omicstra.__file__).read_text()
+    assert 'version("omicstra")' in src, "__version__ restated as a literal; read the metadata"
+
+    pyproject = Path(omicstra.__file__).parents[2] / "pyproject.toml"
+    if not pyproject.is_file():          # installed, not a source tree
+        pytest.skip("not running from the source tree")
+    declared = tomllib.loads(pyproject.read_text())["project"]["version"]
+    assert omicstra.__version__ == declared, (
+        f"installed metadata {omicstra.__version__} != pyproject {declared} - "
+        "the editable install is stale; `pip install -e .` refreshes it")

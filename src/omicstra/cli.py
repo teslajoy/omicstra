@@ -169,6 +169,12 @@ def eda(project_dir, project_id, adata_path, steps):
     eda subgraph profiles and gates, and a caution PAUSES here and asks. the
     same graph serves MCP as run/resume over a thread_id - the only difference
     is who answers the question.
+
+    discover picks the arm, which means this command does NOT always gate: a
+    cohort that already carries an evidence pack routes to ask, and the eda
+    subgraph is never entered. that is the point of the arm, and the command
+    says so rather than printing an empty verdict. `omicstra gate` runs the gate
+    on any cohort, evidence or not.
     """
     from langgraph.checkpoint.memory import InMemorySaver
     from langgraph.types import Command
@@ -203,6 +209,18 @@ def eda(project_dir, project_id, adata_path, steps):
         click.echo(f"  {v.get('no_default', 'the system does not pick')}")
         click.echo("-" * 62)
         out = app.invoke(Command(resume=click.confirm("accept and proceed?", default=False)), cfg)
+
+    if out.get("verdict") is None:
+        # the arm decided correctly and the command said nothing about it, so it
+        # read as a broken gate. `verdict: None` is not a null result - it means
+        # the eda subgraph was never entered, because this cohort already carries
+        # an evidence pack and `discover` routed it to ask. say that, and name
+        # the command that does run the gate.
+        click.echo("\nthe eda gate did not run: this cohort has an evidence pack, so "
+                   "`discover`\nrouted it to the ask arm. that is the correct arm for a "
+                   "cohort with\nrecorded evidence - the gate is for one without.")
+        click.echo("\n  omicstra gate     runs the admissibility gate directly, on any cohort")
+        raise SystemExit(0)
 
     click.echo(f"\nverdict: {out.get('verdict')}")
     if out.get("halted"):
