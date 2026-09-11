@@ -102,13 +102,23 @@ def test_the_criterion_is_declared_with_its_reason():
 
 
 def test_provenance_records_what_the_cache_never_did():
-    """the whole reason the comparison is labelled cross-device."""
+    """the whole reason the comparison is labelled cross-device.
+
+    it reports torch and timm versions, so it needs them - both are in the
+    `encode` extra, which CI deliberately does not install.
+    """
+    pytest.importorskip("timm", reason="provenance reports the timm version")
     p = encoder_provenance("cpu")
     assert {"device", "torch", "timm", "model_revision", "dtype"} <= set(p)
     assert p["device"] == "cpu"
 
 
 # --- the oracle: only where the cohort and the cache exist ------------------
+# TNBC51_CN26_D1 is 8 spots - below Novae's 512 floor, one of the 19 that
+# `below_floor_policy: drop` removes, so it NEVER enters a real run. it is here
+# because it is pathological, not because it is representative: at 8 spots every
+# niche overlaps every other, the pooled vectors are duplicates, and it is the
+# only place in the cohort where the tie rule can be exercised on real data.
 PICKS = ["TNBC1_CN1_C1", "TNBC51_CN26_D1", "TNBC22_CN11_E2",
          "TNBC10_CN5_D2", "TNBC10_CN5_E2"]
 

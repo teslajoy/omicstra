@@ -58,7 +58,14 @@ omicstra = "omicstra.cli:main"
 # `eda` because inventory needs it too and inventory is not eda: these are what
 # the measuring steps import, wherever they run. without them the server still
 # installs, imports, serves its tools, and routes on a published evidence pack.
-measure = ["numpy>=1.26", "scipy>=1.11", "scikit-learn>=1.3", "anndata>=0.10", "pandas>=2"]
+# pyarrow is NOT optional-within-the-optional: the package's declared input
+# contract is ".h5ad plus a coordinates table", the coordinates table is parquet,
+# and adapters/canonical.py:load_spots calls pd.read_parquet. pandas does not
+# pull an engine, so without this the reader raises "Unable to find a usable
+# engine" on the one file format the contract names. found by CI, which is the
+# same lesson as core-deps-shipped-as-extras one layer down.
+measure = ["numpy>=1.26", "scipy>=1.11", "scikit-learn>=1.3", "anndata>=0.10",
+           "pandas>=2", "pyarrow>=14"]
 
 # extracting embeddings, which is the ONLY thing that needs a tensor library.
 # deliberately its own extra and deliberately not core: `pip install omicstra`

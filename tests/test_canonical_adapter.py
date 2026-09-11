@@ -77,9 +77,20 @@ def test_canonical_refuses_rather_than_falling_back():
 
 # --- only where the cohort has been ingested --------------------------------
 def _root():
+    """the cohort root, or a skip - and the predicate is the DATA, not the record.
+
+    `ingest.json` is committed; the `_spots.parquet` and `.h5ad` it names are
+    git-ignored. so a fresh clone has the record and none of the data, and gating
+    on the record alone turns every test below from a skip into a failure there.
+    that is exactly what happened on the first CI run against this branch.
+    """
     r = ROOT / "projects" / "tnbc-92"
-    if not (r / "data" / "canonical" / "ingest.json").exists():
+    canon = r / "data" / "canonical"
+    if not (canon / "ingest.json").exists():
         pytest.skip("cohort not ingested on this machine")
+    if not any(canon.glob("*_spots.parquet")):
+        pytest.skip("ingest record present, its data is not - a clone, not the machine "
+                    "that ran the ingest")
     return r
 
 
@@ -95,6 +106,8 @@ def test_ingested_coordinates_match_what_the_script_used():
 
     from omicstra.adapters.canonical import list_samples, load_spots
     cache = ROOT / "data" / "embeddings" / "virchow2_niche"
+    if not cache.is_dir():
+        pytest.skip("the virchow2 cache is a separate 75 GB artifact and is absent")
     compared = 0
     for s in list_samples(_root()):
         m = cache / f"{s.sample_id}_meta.tsv"
@@ -135,3 +148,31 @@ def test_the_morphology_path_needs_no_counts():
     from omicstra.adapters.canonical import list_samples, load_spots
     for s in list_samples(_root()):
         assert load_spots(s) is not None
+
+
+# --- the input contract must be readable with what the package declares ------
+def test_reading_the_declared_input_contract_needs_no_undeclared_package():
+    """the package says its input is ".h5ad plus a coordinates table".
+
+    that is a PROMISE about what an install can read, so the engines behind both
+    formats have to be declared. pandas pulls no parquet engine, so `measure`
+    without pyarrow gives a reader that raises "Unable to find a usable engine"
+    on the one file format the contract names - which is the bare-install lesson
+    one layer down, and CI is where it surfaced.
+    """
+    import tomllib
+
+    pyproject = ROOT / "pyproject.toml"
+    if not pyproject.is_file():
+        pytest.skip("not running from the source tree")
+
+    src = (ROOT / "src" / "omicstra" / "adapters" / "canonical.py").read_text()
+    extras = tomllib.loads(pyproject.read_text())["project"]["optional-dependencies"]
+    measure = " ".join(extras["measure"])
+
+    if "read_parquet" in src:
+        assert "pyarrow" in measure or "fastparquet" in measure, (
+            "canonical.py reads parquet but no engine is declared in the measure "
+            "extra; pandas does not pull one")
+    if "read_h5ad" in src:
+        assert "anndata" in measure, "canonical.py reads .h5ad with anndata undeclared"

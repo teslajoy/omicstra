@@ -88,6 +88,16 @@ def test_edge_boxes_clamp_and_are_flagged():
 # everything else: the pre-refactor body is reproduced verbatim below and the
 # package path is diffed against it pixel for pixel.
 
+def _needs_pillow():
+    """PIL ships with the `encode` extra, not with `measure`.
+
+    CI installs measure+dev, which is correct - the server must serve and gate
+    without a tensor library - so anything touching an image skips there rather
+    than failing.
+    """
+    return pytest.importorskip("PIL", reason="pillow is in the encode extra")
+
+
 def _cut_tiles_as_originally_written(image, coords, geom):
     """scripts/extract_virchow2_niche.py's geometry, before the clamp was shared.
 
@@ -127,6 +137,7 @@ def test_cut_tiles_matches_the_original_geometry_everywhere():
     noise rather than a flat fill on purpose: a constant image hides an offset,
     because a tile shifted by a pixel is identical to one that is not.
     """
+    _needs_pillow()
     img = _noise_image(200, 160, seed=7)
     geom = TileGeometry(scale=1.0, tile_px=40, out_px=32)
     coords = np.array([
@@ -154,6 +165,7 @@ def test_a_padded_tile_keeps_the_spot_centred():
     stated independently of the oracle above, because both could agree while both
     being wrong - this asserts the property rather than the history.
     """
+    _needs_pillow()
     img = _noise_image(200, 160, seed=3)
     geom = TileGeometry(scale=1.0, tile_px=40, out_px=40)
     tile = np.asarray(cut_tiles(img, np.array([[5.0, 80.0]]), geom)[0])
@@ -172,6 +184,9 @@ def test_no_tile_in_this_cohort_actually_pads():
     record = ROOT / "projects" / "tnbc-92" / "data" / "canonical" / "ingest.json"
     if not record.is_file():
         pytest.skip("no canonical ingest on this machine")
+    if not any(record.parent.glob("*_spots.parquet")):
+        pytest.skip("ingest record present, its data is not - a clone")
+    pytest.importorskip("pyarrow", reason="reading parquet needs pyarrow")
     rec = json.loads(record.read_text())
 
     import pandas as pd

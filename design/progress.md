@@ -786,8 +786,14 @@ cross-device by necessity. It is not, quite. On CN1/C1:
 Our CPU run sits as close to the cache as it sits to our own MPS run, and closer
 than MPS does. **The cache behaves like a CPU build.** So the comparison is run
 on CPU, and the criterion was never too tight - the BACKEND was mismatched.
-Relaxing a threshold because a mismatched backend missed it would have buried
-that. Recorded in `ACCEPTANCE.cache_device_inferred` as inferred, not declared.
+Recorded in `ACCEPTANCE.cache_device_inferred` as inferred, not declared.
+
+**The obvious move, had that table not been computed, was to relax 0.999 to
+0.998 because two subarrays missed it. That would have passed, and buried the
+finding.** A threshold that fails is evidence about the setup before it is
+evidence about the threshold, and which one it is has to be measured rather than
+assumed - that is the whole method, and it is the same move as the pitch
+correction and the `counts_written` field.
 
 ### a tie is not a disagreement
 
@@ -811,6 +817,14 @@ are tied at the k-th boundary, and reports `knn_set_exact` and
 away. This is a general statement about the measure, not a carve-out for one
 subarray - and the guard is a test asserting a genuine reordering still fails.
 
+**Footnote, so the pick is not misread as representative.** `TNBC51_CN26_D1` is
+8 spots, below Novae's 512 floor, and `below_floor_policy: drop` means **it never
+enters a real run** - it is one of the 19. It stays in the oracle picks precisely
+*because* it is pathological: it is the only subarray in the cohort where the
+niche construction degenerates to duplicate vectors, which makes it the one place
+the tie rule can be exercised on real data. It is a test of the measure, not a
+sample of the cohort, and nothing about the port's fitness rests on it.
+
 **Result: 5/5 accepted on BOTH backends**, `knn_set_agreement` 1.0000
 throughout, 0-5 rows per subarray resolved by tie. Written to
 `projects/tnbc-92/encode_slice_diff.json` with device, torch, timm and the model
@@ -824,6 +838,54 @@ built on `self_retrieval_at_1` that reports 0.25 for a correct port on 8 spots,
 and a test bar tighter than the declared criterion. None survived contact with
 real vectors, which is the argument for running the slice-diff before the
 interrupt wiring rather than after.
+
+---
+
+## 2026-09-11 · the first CI run on v1.1 was red, and it was right
+
+Two commits pushed, both failed, and **every failure was a test that could only
+pass on this machine.** The branch had never been verified anywhere else, which
+is the entire reason finding 3 was worth doing today.
+
+### committing the record made the data look present
+
+`ingest.json` is committed; the `_spots.parquet` and `.h5ad` it names are
+git-ignored. The cohort tests gated on the record - correct while the record was
+untracked, and **wrong the moment it was committed**: a fresh clone has the
+record and none of the data, so four tests went from skipping to failing.
+
+The predicate is now the DATA, not the record, and the skip message says which
+situation it is: *"ingest record present, its data is not - a clone, not the
+machine that ran the ingest."*
+
+Same for the assertion that every recorded path resolves. On this machine that
+is a real check; in a clone it reports 560 missing files, which is not a defect
+but the expected state.
+
+### tests reached for the encode extra, which CI deliberately does not install
+
+`PIL` and `timm` are in `[encode]`. CI installs `[measure,dev]` on purpose - the
+server must serve, gate and route without a tensor library - so the new
+`cut_tiles` tests and the provenance test now `importorskip` rather than fail.
+That is the correct outcome: those tests describe the compute path, and CI does
+not have one.
+
+### and one that was NOT a test problem
+
+`adapters/canonical.py` calls `pd.read_parquet`, and **pandas pulls no parquet
+engine**. The package's declared input contract is ".h5ad plus a coordinates
+table", the coordinates table is parquet, and `pip install "omicstra[measure]"`
+produced a reader that raises *"Unable to find a usable engine"* on the one file
+format that contract names.
+
+`pyarrow>=14` is now in `measure`, and a test asserts the rule rather than the
+instance: **if the adapter reads a format, the engine behind it is declared.**
+
+This is the bare-install lesson one layer down - the same shape as core
+dependencies shipped as extras, which the CI job's first step exists to catch.
+Local development never sees either, because the machine that writes the code has
+everything installed. **That is what CI is for, and it took one push to prove
+it.**
 
 ## next
 
