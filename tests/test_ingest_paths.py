@@ -77,7 +77,16 @@ def test_no_ingest_record_carries_a_home_directory(record):
                          ids=lambda p: p.parents[2].name)
 def test_recorded_sources_resolve_from_the_root(record):
     """relative and WRONG is not an improvement on absolute. every recorded
-    source must exist when joined to the root it declares."""
+    source must exist when joined to the root it declares.
+
+    only meaningful where the sources are. `ingest.json` is committed and
+    `data/inputs/` is git-ignored, so in a clone this reports 560 missing files -
+    which is the expected state of a clone, not a defect in the record. the check
+    that matters everywhere is the one above: no absolute paths.
+    """
+    if not (ROOT / "data" / "inputs").is_dir():
+        pytest.skip("raw inputs are git-ignored and absent - a clone, not the machine "
+                    "that ran the ingest")
     d = json.loads(record.read_text())
     missing = [v["rdata"] for v in d.get("sources", {}).values()
                if not (ROOT / v["rdata"]).exists()]
