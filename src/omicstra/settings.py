@@ -74,6 +74,14 @@ class Settings(BaseSettings):
 
     compute_backend: str = "local"  # local | cloud | slurm
 
+    # durable execution, opt-in by presence. unset means the dispatcher runs
+    # shards in-process - not a degraded mode, the normal one for a laptop. a
+    # value here is a deliberate act, so nothing silently starts depending on a
+    # server being up.
+    temporal_address: str | None = None
+    temporal_namespace: str = "default"
+    temporal_task_queue: str = "omicstra-encode"
+
     def resolve(self, p: Path) -> Path:
         # relative paths resolve under repo_root; absolute passthrough
         return p if p.is_absolute() else (self.repo_root / p)

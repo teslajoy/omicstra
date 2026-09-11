@@ -531,3 +531,62 @@ def encoder_provenance(device) -> dict:
 
     return {"device": str(device), "torch": torch.__version__, "timm": timm.__version__,
             "model_revision": "hf-hub:paige-ai/Virchow2", "dtype": "float32"}
+
+
+# --- the cohort run: N shards of run_one_he ---------------------------------
+def he_shards(samples, out_dir):
+    """one shard per subarray, named by the file that proves it finished.
+
+    the output is the `.npy` the next stage reads, which is what makes resume
+    free: `dispatch` asks the filesystem, not a ledger, so a run killed at
+    sample 200 restarts at 200 whether it was killed by a scheduler, a laptop
+    lid, or a SIGKILL.
+    """
+    from pathlib import Path
+
+    from omicstra.dispatch import Shard
+
+    out = Path(out_dir)
+    return [Shard(id=sid, output=out / f"{sid}.npy",
+                  params={"image": str(image), "coords": str(coords)})
+            for sid, image, coords in samples]
+
+
+def encode_he_cohort(samples, out_dir, geom: HeGeometry, *, encoder: str = "virchow2",
+                     device: str | None = None, address: str | None = None,
+                     max_attempts: int = 3, on_event=None):
+    """embed every subarray, durably if an address is configured.
+
+    the model is loaded ONCE per process and closed over, not per shard: a 631M
+    parameter load is ~20 s and doing it 280 times is an hour of nothing. on the
+    durable path the worker process holds it for the same reason, which is why
+    the activity body is registered rather than serialised.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from omicstra.dispatch import atomic_write, run_shards
+    from omicstra.models.encoders import load
+
+    dev = pick_device(device)
+    model = load(encoder)
+    if hasattr(model, "to"):
+        model = model.to(dev)
+
+    def one(shard, heartbeat):
+        heartbeat(shard.id)
+        coords = pd.read_parquet(shard.params["coords"])[["x", "y"]].to_numpy()
+        vecs, _ = run_one_he(coords, shard.params["image"], geom,
+                             encoder=encoder, device=str(dev), model=model)
+        heartbeat(f"{shard.id} encoded")
+        # a HANDLE, not a path. the temp name now keeps the .npy suffix so
+        # np.save would leave it alone anyway, but writing through a handle means
+        # this does not silently depend on that.
+        def save(p):
+            with p.open("wb") as fh:
+                np.save(fh, vecs)
+
+        atomic_write(shard.output, save)
+
+    return run_shards(he_shards(samples, out_dir), one, address=address,
+                      max_attempts=max_attempts, on_event=on_event)
