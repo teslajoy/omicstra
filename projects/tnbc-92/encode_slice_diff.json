@@ -1,0 +1,299 @@
+{
+  "run_type": "encode_he_slice_diff",
+  "purpose": "acceptance for the Virchow2 port. the cache is the oracle: extract a slice and diff against it. re-extracting and comparing to a fresh run would only prove the encoder is deterministic, which is not in question.",
+  "encoder": "virchow2",
+  "dim": 1280,
+  "geometry": {
+    "scale": 3.333403339283839,
+    "tile_px": 338,
+    "out_px": 224,
+    "k": 6,
+    "batch_size": 32,
+    "source": "projects/tnbc-92/platform.json#platforms.original_st"
+  },
+  "acceptance": {
+    "max_abs_over_row_norm": 1e-05,
+    "min_cosine": 0.999999,
+    "knn_set_agreement": 0.999,
+    "reason": "float32 transformer with backend-dependent kernels; cpu and mps on this machine differ by the same order as either differs from the cache, so bit-identity is not available and closeness alone is not the question. k-NN preservation is, because H1 is a retrieval metric and 'same neighbours' can hold exactly while vectors do not.",
+    "cross_device_footnote": "the cache does not record which device built it - the extraction script never wrote one. manifests from now on carry device, torch, timm and the model revision so this footnote stops being needed for anything built after 2026-09-11.",
+    "cache_device_inferred": "INFERRED, not declared. on TNBC1_CN1_C1 the top-6 neighbourhood agreement is cpu-vs-cache 0.9991, cpu-vs-mps 0.9991, mps-vs-cache 0.9981 - our CPU run sits as close to the cache as it sits to our own MPS run, and closer than MPS does. the cache therefore behaves like a CPU build. so the comparison is run on CPU: the criterion below was never too tight, the BACKEND was mismatched, and relaxing a threshold because a mismatched backend missed it would have buried that."
+  },
+  "oracle": "data/embeddings/virchow2_niche/{sid}.npy",
+  "backends": {
+    "mps": {
+      "provenance": {
+        "device": "mps",
+        "torch": "2.11.0",
+        "timm": "1.0.26",
+        "model_revision": "hf-hub:paige-ai/Virchow2",
+        "dtype": "float32"
+      },
+      "all_accepted": true,
+      "subarrays": {
+        "TNBC1_CN1_C1": {
+          "accepted": true,
+          "why": "drift 3.19e-06 vs 1e-05; cosine 0.9999998 vs 0.9999990; knn top-6 set 1.0000 vs 0.999",
+          "diff": {
+            "match": false,
+            "max_abs": 0.00010609626770019531,
+            "mean_abs": 4.7487755558588005e-06,
+            "max_rel_to_row_norm": 3.1920878670015827e-06,
+            "min_cosine": 0.9999999999111013,
+            "mean_cosine": 0.9999999999761175,
+            "n": 1075,
+            "dim": 1280,
+            "atol": 0.0
+          },
+          "invariance": {
+            "min_cosine": 0.9999997615814209,
+            "mean_cosine": 1.0,
+            "knn_set_agreement": 1.0,
+            "knn_set_exact": 0.9962790697674418,
+            "knn_resolved_by_tie": 4,
+            "knn_ordered_agreement": 0.987906976744186,
+            "k": 6,
+            "n": 1075
+          }
+        },
+        "TNBC51_CN26_D1": {
+          "accepted": true,
+          "why": "drift 8.47e-07 vs 1e-05; cosine 0.9999999 vs 0.9999990; knn top-6 set 1.0000 vs 0.999",
+          "diff": {
+            "match": false,
+            "max_abs": 2.7835369110107422e-05,
+            "mean_abs": 5.170500179474402e-06,
+            "max_rel_to_row_norm": 8.470464695463536e-07,
+            "min_cosine": 0.9999999999719955,
+            "mean_cosine": 0.999999999973658,
+            "n": 8,
+            "dim": 1280,
+            "atol": 0.0
+          },
+          "invariance": {
+            "min_cosine": 0.9999998807907104,
+            "mean_cosine": 0.9999999403953552,
+            "knn_set_agreement": 1.0,
+            "knn_set_exact": 0.875,
+            "knn_resolved_by_tie": 1,
+            "knn_ordered_agreement": 0.375,
+            "k": 6,
+            "n": 8
+          }
+        },
+        "TNBC22_CN11_E2": {
+          "accepted": true,
+          "why": "drift 2.73e-06 vs 1e-05; cosine 0.9999998 vs 0.9999990; knn top-6 set 1.0000 vs 0.999",
+          "diff": {
+            "match": false,
+            "max_abs": 8.907914161682129e-05,
+            "mean_abs": 4.683351571974039e-06,
+            "max_rel_to_row_norm": 2.7312078149890126e-06,
+            "min_cosine": 0.9999999998910897,
+            "mean_cosine": 0.999999999977081,
+            "n": 1813,
+            "dim": 1280,
+            "atol": 0.0
+          },
+          "invariance": {
+            "min_cosine": 0.9999998211860657,
+            "mean_cosine": 1.0,
+            "knn_set_agreement": 1.0,
+            "knn_set_exact": 0.9988968560397132,
+            "knn_resolved_by_tie": 2,
+            "knn_ordered_agreement": 0.9928295642581357,
+            "k": 6,
+            "n": 1813
+          }
+        },
+        "TNBC10_CN5_D2": {
+          "accepted": true,
+          "why": "drift 3.02e-06 vs 1e-05; cosine 0.9999998 vs 0.9999990; knn top-6 set 1.0000 vs 0.999",
+          "diff": {
+            "match": false,
+            "max_abs": 9.965896606445312e-05,
+            "mean_abs": 4.5487814944887824e-06,
+            "max_rel_to_row_norm": 3.019474860859791e-06,
+            "min_cosine": 0.9999999999050228,
+            "mean_cosine": 0.9999999999777024,
+            "n": 1111,
+            "dim": 1280,
+            "atol": 0.0
+          },
+          "invariance": {
+            "min_cosine": 0.9999998211860657,
+            "mean_cosine": 1.0,
+            "knn_set_agreement": 1.0,
+            "knn_set_exact": 0.9990999099909991,
+            "knn_resolved_by_tie": 1,
+            "knn_ordered_agreement": 0.9981998199819982,
+            "k": 6,
+            "n": 1111
+          }
+        },
+        "TNBC10_CN5_E2": {
+          "accepted": true,
+          "why": "drift 2.45e-06 vs 1e-05; cosine 0.9999998 vs 0.9999990; knn top-6 set 1.0000 vs 0.999",
+          "diff": {
+            "match": false,
+            "max_abs": 7.443130016326904e-05,
+            "mean_abs": 4.365289828229919e-06,
+            "max_rel_to_row_norm": 2.4489500335963676e-06,
+            "min_cosine": 0.9999999999304029,
+            "mean_cosine": 0.9999999999803638,
+            "n": 1209,
+            "dim": 1280,
+            "atol": 0.0
+          },
+          "invariance": {
+            "min_cosine": 0.9999998211860657,
+            "mean_cosine": 1.0,
+            "knn_set_agreement": 1.0,
+            "knn_set_exact": 0.9991728701406121,
+            "knn_resolved_by_tie": 1,
+            "knn_ordered_agreement": 0.9966914805624483,
+            "k": 6,
+            "n": 1209
+          }
+        }
+      }
+    },
+    "cpu": {
+      "provenance": {
+        "device": "cpu",
+        "torch": "2.11.0",
+        "timm": "1.0.26",
+        "model_revision": "hf-hub:paige-ai/Virchow2",
+        "dtype": "float32"
+      },
+      "all_accepted": true,
+      "subarrays": {
+        "TNBC1_CN1_C1": {
+          "accepted": true,
+          "why": "drift 3.14e-06 vs 1e-05; cosine 0.9999998 vs 0.9999990; knn top-6 set 1.0000 vs 0.999",
+          "diff": {
+            "match": false,
+            "max_abs": 0.00010478496551513672,
+            "mean_abs": 6.635539728199398e-06,
+            "max_rel_to_row_norm": 3.137440438267403e-06,
+            "min_cosine": 0.9999999998551923,
+            "mean_cosine": 0.9999999999540607,
+            "n": 1075,
+            "dim": 1280,
+            "atol": 0.0
+          },
+          "invariance": {
+            "min_cosine": 0.9999997615814209,
+            "mean_cosine": 1.0,
+            "knn_set_agreement": 1.0,
+            "knn_set_exact": 0.9962790697674418,
+            "knn_resolved_by_tie": 4,
+            "knn_ordered_agreement": 0.986046511627907,
+            "k": 6,
+            "n": 1075
+          }
+        },
+        "TNBC51_CN26_D1": {
+          "accepted": true,
+          "why": "drift 1.31e-06 vs 1e-05; cosine 1.0000000 vs 0.9999990; knn top-6 set 1.0000 vs 0.999",
+          "diff": {
+            "match": false,
+            "max_abs": 4.315376281738281e-05,
+            "mean_abs": 7.434654605731339e-06,
+            "max_rel_to_row_norm": 1.3131941029034133e-06,
+            "min_cosine": 0.9999999999378463,
+            "mean_cosine": 0.9999999999439558,
+            "n": 8,
+            "dim": 1280,
+            "atol": 0.0
+          },
+          "invariance": {
+            "min_cosine": 1.0,
+            "mean_cosine": 1.0,
+            "knn_set_agreement": 1.0,
+            "knn_set_exact": 0.375,
+            "knn_resolved_by_tie": 5,
+            "knn_ordered_agreement": 0.25,
+            "k": 6,
+            "n": 8
+          }
+        },
+        "TNBC22_CN11_E2": {
+          "accepted": true,
+          "why": "drift 2.72e-06 vs 1e-05; cosine 0.9999998 vs 0.9999990; knn top-6 set 1.0000 vs 0.999",
+          "diff": {
+            "match": false,
+            "max_abs": 8.472800254821777e-05,
+            "mean_abs": 6.4909956760549625e-06,
+            "max_rel_to_row_norm": 2.7204026181386345e-06,
+            "min_cosine": 0.9999999998897785,
+            "mean_cosine": 0.9999999999567866,
+            "n": 1813,
+            "dim": 1280,
+            "atol": 0.0
+          },
+          "invariance": {
+            "min_cosine": 0.9999997615814209,
+            "mean_cosine": 1.0,
+            "knn_set_agreement": 1.0,
+            "knn_set_exact": 0.9994484280198566,
+            "knn_resolved_by_tie": 1,
+            "knn_ordered_agreement": 0.9955874241588527,
+            "k": 6,
+            "n": 1813
+          }
+        },
+        "TNBC10_CN5_D2": {
+          "accepted": true,
+          "why": "drift 3.54e-06 vs 1e-05; cosine 0.9999998 vs 0.9999990; knn top-6 set 1.0000 vs 0.999",
+          "diff": {
+            "match": false,
+            "max_abs": 0.00011301040649414062,
+            "mean_abs": 6.479747833536879e-06,
+            "max_rel_to_row_norm": 3.5386877768998825e-06,
+            "min_cosine": 0.9999999998487891,
+            "mean_cosine": 0.9999999999552704,
+            "n": 1111,
+            "dim": 1280,
+            "atol": 0.0
+          },
+          "invariance": {
+            "min_cosine": 0.9999997615814209,
+            "mean_cosine": 1.0,
+            "knn_set_agreement": 1.0,
+            "knn_set_exact": 0.9990999099909991,
+            "knn_resolved_by_tie": 1,
+            "knn_ordered_agreement": 0.9972997299729973,
+            "k": 6,
+            "n": 1111
+          }
+        },
+        "TNBC10_CN5_E2": {
+          "accepted": true,
+          "why": "drift 3.01e-06 vs 1e-05; cosine 0.9999998 vs 0.9999990; knn top-6 set 1.0000 vs 0.999",
+          "diff": {
+            "match": false,
+            "max_abs": 9.581446647644043e-05,
+            "mean_abs": 6.160795179646102e-06,
+            "max_rel_to_row_norm": 3.0065118284241556e-06,
+            "min_cosine": 0.9999999998899445,
+            "mean_cosine": 0.9999999999612909,
+            "n": 1209,
+            "dim": 1280,
+            "atol": 0.0
+          },
+          "invariance": {
+            "min_cosine": 0.9999997615814209,
+            "mean_cosine": 1.0,
+            "knn_set_agreement": 1.0,
+            "knn_set_exact": 1.0,
+            "knn_resolved_by_tie": 0,
+            "knn_ordered_agreement": 0.9975186104218362,
+            "k": 6,
+            "n": 1209
+          }
+        }
+      }
+    }
+  }
+}

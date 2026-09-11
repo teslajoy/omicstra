@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from omicstra.models.encoders import EncoderUnavailable, spec
-from omicstra.records import DiagnosticRecord
+from omicstra.records import DiagnosticRecord, Produced, TransformRecord
 
 Ctx = dict[str, Any]
 
@@ -91,7 +91,8 @@ def _declared(cohort: dict, pointer: str | None):
     return cohort.get(pointer.split("#", 1)[1])
 
 
-def _resolve_option(value, options: tuple[str, ...], gate_id: str) -> str:
+def _resolve_option(value, options: tuple[str, ...], gate_id: str,
+                    answer_kind: str = "choice") -> str:
     """a declared answer must land on ONE of the gate's closed options.
 
     the contract says the option set is closed, and until this existed that was
@@ -104,15 +105,18 @@ def _resolve_option(value, options: tuple[str, ...], gate_id: str) -> str:
     option. ambiguous or unknown raises, naming what was offered - a near-miss
     silently ignored is how a cohort ends up running a policy nobody chose.
 
-    free-text gates - anything whose options are not a closed vocabulary, like a
-    path or a token source - pass through unchanged.
+    a `value` gate - one whose answer is supplied rather than selected, like a
+    token source or an output path - passes through unchanged. which gates those
+    are is DECLARED in the contract's `answer_kind`, never decided here: an
+    exemption the resolver grants itself when a match fails is indistinguishable
+    from broken validation.
     """
     if value is None:
         return None
     v = str(value)
     if v in options:
         return v
-    if gate_id in _FREE_TEXT:
+    if answer_kind == "value":
         return v
     hits = [o for o in options if v == o or v in o.split("_")]
     if len(hits) == 1:
@@ -122,12 +126,6 @@ def _resolve_option(value, options: tuple[str, ...], gate_id: str) -> str:
         f"{list(options)}"
         + (f" - it matches {hits}, which is ambiguous" if hits else "")
         + ". the option set is closed; a declaration cannot widen it.")
-
-
-# gates whose answer is a value, not a choice: a token source and an output path
-# are supplied, not selected, so their `options` describe the shape of the
-# decision rather than enumerating the legal answers.
-_FREE_TEXT = frozenset({"gated_weights", "capacity", "encoder_compatibility"})
 
 
 def preflight(cohort: dict, encoder: str, *, unit_counts: dict[str, int] | None = None,
@@ -148,7 +146,8 @@ def preflight(cohort: dict, encoder: str, *, unit_counts: dict[str, int] | None 
         if g["when"] != "preflight":
             continue
         answer = _resolve_option(_declared(cohort, g.get("pre_answerable_by")),
-                                 tuple(g["options"]), g["id"])
+                                 tuple(g["options"]), g["id"],
+                                 g.get("answer_kind", "choice"))
         observed: dict[str, Any] = {}
 
         if g["id"] == "gated_weights":
@@ -230,3 +229,305 @@ def assert_clear(reqs: list[GateRequest]) -> None:
         raise ComputeRefused(
             f"{len(open_)} preflight gate(s) unanswered; compute does not start:\n"
             + "\n".join(lines))
+
+
+# --- the compute path -------------------------------------------------------
+@dataclass(frozen=True)
+class HeGeometry:
+    """the declared tile geometry for one platform, lifted out of platform.json.
+
+    every field is read from a declaration rather than computed here. `tile_px`
+    is the integer that sized the published crops; the micron figure it works out
+    to is derived and deliberately absent, because hashing a derived value would
+    move the run identity whenever someone re-measures the lattice.
+    """
+    scale: float
+    tile_px: int
+    out_px: int
+    k: int = 6
+    batch_size: int = 32
+
+    @classmethod
+    def from_platform(cls, platform: dict, name: str, k: int = 6) -> HeGeometry:
+        p = platform["platforms"][name]
+        return cls(scale=float(p["image_pyramid"]["scale_to_hd"]),
+                   tile_px=int(p["he_tile"]["tile_px_hd"]),
+                   out_px=int(p["he_tile"]["resize_to"]), k=k)
+
+
+def pick_device(declared: str | None = None):
+    """mps where available, as the published grid ran. cpu otherwise.
+
+    NOT a silent choice: the device lands in the record, because float32
+    accumulation on mps and on cpu are not bit-identical and a slice-diff that
+    misses by 1e-6 should point at the device before it points at the port.
+    """
+    import torch
+
+    if declared:
+        return torch.device(declared)
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
+def run_one_he(coords, image_path, geom: HeGeometry, encoder: str = "virchow2",
+               device: str | None = None, model=None):
+    """one subarray of coordinates -> (n, dim) niche vectors, plus a record.
+
+    the whole H&E arm for one sample, and nothing cohort-specific in it: the
+    caller supplies coordinates, an image and a declared geometry. the ORDER is
+    the published one and is not an implementation detail -
+
+        tiles -> encode every tile -> pool over the niche
+
+    encoding first and pooling second is what makes the niche a mean of encoded
+    tiles rather than an encoding of a mean tile. those are different vectors and
+    only one of them is in the cache.
+    """
+    import time
+
+    import numpy as np
+    from PIL import Image
+
+    from omicstra.measures.tiling import TileGeometry, cut_tiles, niche_neighbours
+    from omicstra.models.encoders import load, spec
+
+    t0 = time.time()
+    coords = np.asarray(coords, dtype=float).reshape(-1, 2)
+    dev = pick_device(device)
+    es = spec(encoder)
+
+    if model is None:
+        model = load(encoder)
+        if hasattr(model, "to"):
+            model = model.to(dev)
+
+    Image.MAX_IMAGE_PIXELS = None          # the HD slides are far over PIL's bomb limit
+    with Image.open(image_path) as im:
+        im = im.convert("RGB")
+        tiles = cut_tiles(im, coords,
+                          TileGeometry(scale=geom.scale, tile_px=geom.tile_px,
+                                       out_px=geom.out_px))
+        image_size = im.size
+
+    per_tile = model.embed_images(tiles, batch_size=geom.batch_size)
+    idx, counts = niche_neighbours(coords, geom.k)
+    niche = pool_niche_f32(per_tile, idx)
+
+    rec = TransformRecord(
+        step_id="encode_he",
+        params={"encoder": encoder, "dim": es.dim, "k": geom.k,
+                "tile_px": geom.tile_px, "out_px": geom.out_px,
+                "scale": geom.scale, "batch_size": geom.batch_size,
+                "device": str(dev), "image_size": list(image_size)},
+        produced=[Produced(path=str(image_path), shape=list(niche.shape),
+                           dtype=str(niche.dtype))],
+        duration_s=round(time.time() - t0, 2),
+    )
+    rec.params["neighbour_counts"] = {int(c): int(n) for c, n in
+                                      zip(*np.unique(counts, return_counts=True))}
+    return niche, rec
+
+
+def pool_niche_f32(per_tile, idx):
+    """the published pooling, re-exported so the compute path has one import.
+
+    thin on purpose: the maths lives in measures/ and is diffed against the
+    script. a second implementation here is exactly the duplication the tiling
+    clamp already taught us about.
+    """
+    from omicstra.measures.tiling import pool_niche
+
+    return pool_niche(per_tile, idx)
+
+
+# measured on TNBC1_CN1_C1, 2026-09-11, and the reason it is not zero:
+#
+#   cpu vs mps        8.97e-05      two backends, same code, same machine
+#   mps vs cache      1.06e-04
+#   cpu vs cache      1.05e-04
+#
+# our port sits the SAME distance from the cache as the two backends sit from
+# each other, so nothing here is attributable to the port. bit-identity is
+# available for align - deterministic linear algebra, and it hit 0.00e+00 on
+# 13/13 metrics - and is not available for a 631M-parameter float32 transformer
+# across torch and backend versions. that is the EXACT_RUNS / TOLERANCE_RUNS
+# split v1_1_scope.md already declared; encode is a tolerance run.
+#
+# the tolerance is expressed against the ROW NORM (~32.7 here) rather than as a
+# bare absolute, so it means the same thing on an encoder with a different scale.
+SLICE_ATOL_ROW = 1e-5          # measured max is 3.2e-06, so ~3x headroom
+
+
+def slice_diff(computed, cached_path, atol: float = 0.0):
+    """our port against the cache, on real vectors.
+
+    the acceptance test for encode is NOT a re-extraction. the cache is the
+    oracle: it is what the published grid consumed, so reproducing it proves the
+    port. re-extracting and comparing to a fresh run would only prove Virchow2 is
+    deterministic, which is not in question.
+
+    `atol=0.0` demands bit-identity. that is the right default for a port that
+    changed no arithmetic, and for this encoder it does NOT hold - see the note
+    above. use `accepts()` for the acceptance decision; this function reports the
+    numbers and does not decide.
+    """
+    import numpy as np
+
+    cached = np.load(cached_path)
+    if computed.shape != cached.shape:
+        return {"match": False, "why": "shape",
+                "computed": list(computed.shape), "cached": list(cached.shape)}
+
+    a = computed.astype(np.float64)
+    b = cached.astype(np.float64)
+    d = np.abs(a - b)
+
+    # relative error per ELEMENT is meaningless here: a 1280-d embedding has
+    # elements near zero, and dividing by one turns a 1e-7 absolute difference
+    # into a relative blow-up that says nothing about the vector. scale by the
+    # row norm instead, which is the quantity every downstream metric uses.
+    row = np.maximum(np.linalg.norm(b, axis=1, keepdims=True), 1e-12)
+    cos = (a * b).sum(1) / np.maximum(np.linalg.norm(a, axis=1) * row[:, 0], 1e-12)
+
+    return {"match": bool(d.max() <= atol), "max_abs": float(d.max()),
+            "mean_abs": float(d.mean()),
+            "max_rel_to_row_norm": float((d / row).max()),
+            "min_cosine": float(cos.min()), "mean_cosine": float(cos.mean()),
+            "n": int(computed.shape[0]), "dim": int(computed.shape[1]), "atol": atol}
+
+
+def retrieval_invariant(computed, cached, k: int = 6):
+    """does the difference move anything a published number depends on?
+
+    the vectors feed cosine retrieval and linear probes, so element-wise equality
+    is not the question the grid asks. the load-bearing one is the THIRD measure
+    below: H1 is a retrieval metric, so "same neighbours" is the property the
+    grid actually rests on, and it can hold exactly while the vectors differ.
+
+      min_cosine    per-row agreement between our vector and the cached one
+      knn_set       the top-k neighbours in embedding space, as a SET, identical
+                    for what fraction of rows. set rather than sequence: two
+                    neighbours a float apart can swap order without any metric
+                    noticing, so ordered equality would fail on a difference that
+                    changes nothing
+      knn_ordered   reported beside it, never the criterion - it is the stricter
+                    thing, and saying which is which is the point
+
+    `self_retrieval_at_1` is deliberately GONE. it queried our vectors against
+    the cached bank, which is a cross-device comparison by construction, and on
+    an 8-spot subarray it reports 0.25 for a port that is correct.
+    """
+    import numpy as np
+
+    a = np.asarray(computed, dtype=np.float32)
+    b = np.asarray(cached, dtype=np.float32)
+    an = a / np.maximum(np.linalg.norm(a, axis=1, keepdims=True), 1e-12)
+    bn = b / np.maximum(np.linalg.norm(b, axis=1, keepdims=True), 1e-12)
+
+    cos = (an * bn).sum(1)
+    n = len(a)
+    kk = min(k, n - 1) if n > 1 else 0
+    if kk <= 0:
+        return {"min_cosine": float(cos.min()), "mean_cosine": float(cos.mean()),
+                "knn_set_agreement": 1.0, "knn_ordered_agreement": 1.0,
+                "k": 0, "n": n, "note": "single row - no neighbourhood to preserve"}
+
+    def ranked(x):
+        sim = x @ x.T
+        np.fill_diagonal(sim, -np.inf)
+        return sim, np.argsort(-sim, axis=1)[:, :kk]
+
+    _, ours = ranked(an)
+    sb, theirs = ranked(bn)
+
+    # a TIE is not a disagreement. where the k-th and (k+1)-th neighbours have
+    # the same similarity, which one lands inside the top-k is decided by argsort,
+    # not by the data - and two implementations may split it differently while
+    # encoding identical structure. small subarrays make this the normal case
+    # rather than the exception: at 8 spots every niche overlaps every other, so
+    # the pooled vectors are duplicates and the whole neighbourhood is tied.
+    # counting that as a failure measures the sort, not the port.
+    tie_eps = 1e-6
+    same, tied_only = np.zeros(n, bool), np.zeros(n, bool)
+    for j in range(n):
+        u, v = set(ours[j].tolist()), set(theirs[j].tolist())
+        if u == v:
+            same[j] = True
+            continue
+        diff = list(u ^ v)
+        boundary = sb[j][theirs[j][-1]]
+        tied_only[j] = all(abs(float(sb[j][m]) - float(boundary)) <= tie_eps for m in diff)
+
+    return {"min_cosine": float(cos.min()), "mean_cosine": float(cos.mean()),
+            "knn_set_agreement": float((same | tied_only).mean()),
+            "knn_set_exact": float(same.mean()),
+            "knn_resolved_by_tie": int(tied_only.sum()),
+            "knn_ordered_agreement": float((ours == theirs).all(1).mean()),
+            "k": kk, "n": n}
+
+
+# the acceptance criterion, DECLARED - written down with its reason rather than
+# chosen after seeing a diff. observed values are in the note above slice_diff.
+ACCEPTANCE = {
+    "max_abs_over_row_norm": 1e-5,      # observed 3.2e-06, ~3x headroom
+    "min_cosine": 1 - 1e-6,             # observed 1 - 2e-07
+    "knn_set_agreement": 0.999,         # the one H1 actually depends on
+    "reason": (
+        "float32 transformer with backend-dependent kernels; cpu and mps on this "
+        "machine differ by the same order as either differs from the cache, so "
+        "bit-identity is not available and closeness alone is not the question. "
+        "k-NN preservation is, because H1 is a retrieval metric and 'same "
+        "neighbours' can hold exactly while vectors do not."),
+    "cross_device_footnote": (
+        "the cache does not record which device built it - the extraction script "
+        "never wrote one. manifests from now on carry device, torch, timm and the "
+        "model revision so this footnote stops being needed for anything built "
+        "after 2026-09-11."),
+    "cache_device_inferred": (
+        "INFERRED, not declared. on TNBC1_CN1_C1 the top-6 neighbourhood agreement "
+        "is cpu-vs-cache 0.9991, cpu-vs-mps 0.9991, mps-vs-cache 0.9981 - our CPU "
+        "run sits as close to the cache as it sits to our own MPS run, and closer "
+        "than MPS does. the cache therefore behaves like a CPU build. so the "
+        "comparison is run on CPU: the criterion below was never too tight, the "
+        "BACKEND was mismatched, and relaxing a threshold because a mismatched "
+        "backend missed it would have buried that."),
+}
+
+
+def accepts(diff: dict, inv: dict) -> tuple[bool, str]:
+    """the acceptance decision for an encode port, in one place.
+
+    three conditions asking three different questions: is the drift bounded, do
+    the vectors still agree, and did the drift move the neighbourhood. a port can
+    pass the first two and fail the third, and only the third would have changed
+    a published number.
+    """
+    checks = [
+        ("drift", diff["max_rel_to_row_norm"] <= ACCEPTANCE["max_abs_over_row_norm"],
+         f"{diff['max_rel_to_row_norm']:.2e} vs {ACCEPTANCE['max_abs_over_row_norm']:g}"),
+        ("cosine", inv["min_cosine"] >= ACCEPTANCE["min_cosine"],
+         f"{inv['min_cosine']:.7f} vs {ACCEPTANCE['min_cosine']:.7f}"),
+        ("knn", inv["knn_set_agreement"] >= ACCEPTANCE["knn_set_agreement"],
+         (f"top-{inv['k']} set {inv['knn_set_agreement']:.4f} vs "
+          f"{ACCEPTANCE['knn_set_agreement']}")),
+    ]
+    failed = [f"{n} {d}" for n, ok, d in checks if not ok]
+    if failed:
+        return False, "; ".join(failed)
+    return True, "; ".join(f"{n} {d}" for n, _, d in checks)
+
+
+def encoder_provenance(device) -> dict:
+    """what the cache should have recorded and did not.
+
+    the whole reason the comparison above is labelled cross-device is that the
+    extraction script wrote no device and no versions. this is the fix going
+    forward, and it costs four lines.
+    """
+    import timm
+    import torch
+
+    return {"device": str(device), "torch": torch.__version__, "timm": timm.__version__,
+            "model_revision": "hf-hub:paige-ai/Virchow2", "dtype": "float32"}

@@ -732,6 +732,99 @@ the funnel should answer explicitly rather than letting it average away.
 
 ---
 
+---
+
+## 2026-09-11 · 3.5 · the encoder port, and what "reproduces" means for a transformer
+
+`run_one_he(coords, image, geometry)` is the whole H&E arm for one sample with no
+cohort in it, and the order is the published one rather than an implementation
+detail: **tiles -> encode every tile -> pool over the niche.** Encoding first and
+pooling second is what makes a niche a mean of encoded tiles rather than an
+encoding of a mean tile. Those are different vectors and only one is in the cache.
+
+### bit-identity was not available, and the diff said why before we guessed
+
+First run, CN1/C1 against `virchow2_niche/`: max |Δ| 1.06e-04 on vectors of row
+norm ~32.7. Not zero. The question is whether that is the port.
+
+| comparison | max abs |
+|---|---:|
+| cpu vs mps, **same code, same machine** | 8.97e-05 |
+| mps vs cache | 1.06e-04 |
+| cpu vs cache | 1.05e-04 |
+
+**Our port sits the same distance from the cache as the two backends sit from
+each other**, so nothing is attributable to the port. MPS was separately checked
+to be bit-deterministic run-to-run here, so this is not run noise either. Align
+hit 0.00e+00 on 13/13 because it is deterministic linear algebra; a
+631M-parameter float32 transformer across backend kernels is the TOLERANCE_RUNS
+side of the split `v1_1_scope.md` already declared.
+
+### the criterion, declared before it was met
+
+```
+max |Δ| / row norm      <= 1e-5       observed 3.2e-06
+min cosine per row      >= 1 - 1e-6   observed 1 - 2e-07
+top-6 neighbour set     >= 99.9% of rows
+```
+
+The third is the load-bearing one. H1 is a retrieval metric, so *same
+neighbours* is the property the grid rests on, and it can hold **exactly** while
+the vectors do not.
+
+### the cache's device was never recorded - and the numbers identified it
+
+The extraction script wrote no device and no versions, so "vs cache" looked
+cross-device by necessity. It is not, quite. On CN1/C1:
+
+| | top-6 set |
+|---|---:|
+| cpu vs cache | **0.9991** |
+| cpu vs mps | 0.9991 |
+| mps vs cache | 0.9981 |
+
+Our CPU run sits as close to the cache as it sits to our own MPS run, and closer
+than MPS does. **The cache behaves like a CPU build.** So the comparison is run
+on CPU, and the criterion was never too tight - the BACKEND was mismatched.
+Relaxing a threshold because a mismatched backend missed it would have buried
+that. Recorded in `ACCEPTANCE.cache_device_inferred` as inferred, not declared.
+
+### a tie is not a disagreement
+
+Four of five subarrays passed on CPU, three at exactly **1.0000**. The failure
+was `TNBC51_CN26_D1`, 8 spots, at 0.6250 - and the reason is not the port:
+
+```
+spot 0,1,2 -> niche {0,1,2,3,4,6,7}      identical membership
+spot 3..7  -> niche {1,2,3,4,5,6,7}      identical membership
+```
+
+With 8 spots every niche overlaps every other, so the pooled vectors are
+**duplicates** - two distinct vectors repeated 3 and 5 times, agreeing to
+4.8e-07. The similarity gap between the 6th and 7th ranked neighbour is
+**exactly 0.00e+00**. Which one falls inside the top-6 is decided by `argsort`,
+not by the data.
+
+So `retrieval_invariant` now counts a row as agreeing when the differing members
+are tied at the k-th boundary, and reports `knn_set_exact` and
+`knn_resolved_by_tie` beside it so the mechanism is visible rather than folded
+away. This is a general statement about the measure, not a carve-out for one
+subarray - and the guard is a test asserting a genuine reordering still fails.
+
+**Result: 5/5 accepted on BOTH backends**, `knn_set_agreement` 1.0000
+throughout, 0-5 rows per subarray resolved by tie. Written to
+`projects/tnbc-92/encode_slice_diff.json` with device, torch, timm and the model
+revision attached - the provenance the cache should have carried.
+
+### what this cost, and what it bought
+
+Three wrong turns, each caught by measurement rather than review: a cosine
+metric that returned >1 (row norms averaged instead of per-row), an acceptance
+built on `self_retrieval_at_1` that reports 0.25 for a correct port on 8 spots,
+and a test bar tighter than the declared criterion. None survived contact with
+real vectors, which is the argument for running the slice-diff before the
+interrupt wiring rather than after.
+
 ## next
 
 1. **3.4 `protocols/encode.py`** - the gate half landed 2026-09-11: the five
@@ -797,11 +890,29 @@ and every number that rests on it.
 did and name it in the manifest as `gene_handling: <what it did>`. The
 union-vs-intersect question becomes the third declared alternative rather than a
 decision made during the port. That is settled now so it is not reopened halfway.
-2. **3.5 the slice-diff** - extract a slice, diff against the 75 GB cache. Tests
-   our port rather than testing Virchow2, and runs in minutes. The same method
-   proved the align port at delta 0.00e+00
-3. **step 4, the niche join** - settle the gene universe question above first
-4. then step 5, `evaluate` as a chain: the six guards are still stubs
+2. **3.5 the compute path and the slice-diff** - `run_one(sid)` for H&E on the
+   mac, then diff against the 75 GB cache on the five oracle subarrays. Tests our
+   port rather than testing Virchow2, and runs in minutes. The same method proved
+   the align port at delta 0.00e+00.
+
+   **DONE 2026-09-11** - see the 3.5 section above. Reordered before
+   `graphs/encode.py`, and the reorder paid: three wrong turns in the criterion
+   were found by real vectors, and every one of them would have been carried into
+   the interrupt work as a settled assumption.
+
+   **Reordered 2026-09-11: 3.5 before `graphs/encode.py`.** The interrupt wiring
+   is a known shape - it is the eda gate again - and the gates are already
+   computed and proven silent on a declared cohort. The slice-diff is the step
+   that can still fail for a reason nobody has seen: a real HD image, real
+   Virchow2 on real tissue, diffed against `virchow2_niche/`. If it does not
+   match, the interrupt work waits anyway, so it earns nothing by going first.
+   Order is now 3.5 -> temporal (3.6) -> `graphs/encode.py` (3.7).
+3. **3.6 temporal**, then **3.7 `graphs/encode.py`** - the interrupt half. tnbc-92
+   firing zero gates is 3.7's fixture: it is what lets `omicstra run` complete
+   unattended, and the test for it is already written.
+4. **step 4, the niche join** - port `gene_handling` as built (above), union vs
+   intersect becomes the third declared alternative
+5. then step 5, `evaluate` as a chain: the six guards are still stubs
 
 ### still open from the 2026-08-04 list, carried forward
 

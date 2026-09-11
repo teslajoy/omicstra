@@ -15,8 +15,9 @@ and a sentence in a README nobody reads.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 
 class EncoderUnavailable(RuntimeError):
@@ -77,7 +78,7 @@ def spec(name: str) -> EncoderSpec:
 
 def load(name: str) -> Any:
     """materialise the model. THIS is the call that needs torch."""
-    s = spec(name)
+    spec(name)          # refuse an undeclared name BEFORE importing a tensor library
     try:
         return _REGISTRY[name][1]()
     except ImportError as e:
@@ -89,12 +90,18 @@ def load(name: str) -> Any:
 def _load_virchow2():
     import timm
     import torch
+    from timm.data import resolve_data_config
+    from timm.data.transforms_factory import create_transform
     from timm.layers import SwiGLUPacked
 
     m = timm.create_model("hf-hub:paige-ai/Virchow2", pretrained=True,
                           mlp_layer=SwiGLUPacked, act_layer=torch.nn.SiLU)
     m.eval()
-    return _Virchow2(m)
+    # the transform travels WITH the encoder. it is resolved from the model's own
+    # pretrained_cfg - mean, std and interpolation are properties of the weights,
+    # not of the cohort - so a caller that supplies its own normalisation is
+    # silently encoding different images than the published grid did.
+    return _Virchow2(m, create_transform(**resolve_data_config(m.pretrained_cfg, model=m)))
 
 
 class _Virchow2:
@@ -107,14 +114,37 @@ class _Virchow2:
     recorded here rather than left to whoever reads the tensor next.
     """
 
-    def __init__(self, model: Any) -> None:
+    def __init__(self, model: Any, transform: Any = None) -> None:
         self.model = model
+        self.transform = transform
+
+    def to(self, device: Any) -> _Virchow2:
+        self.model = self.model.to(device)
+        self.device = device
+        return self
 
     def embed(self, batch: Any) -> Any:
         import torch
         with torch.inference_mode():
             out = self.model(batch)          # (n, 1 + 4 + patches, 1280)
         return out[:, 0].float().cpu().numpy()
+
+    def embed_images(self, images: list, batch_size: int = 32) -> Any:
+        """PIL images -> (n, 1280) float32, batched.
+
+        batch_size is the published grid's 32. it is not a free parameter for
+        reproduction: batching changes nothing mathematically, but it is recorded
+        so a run that differs has one fewer unexplained difference.
+        """
+        import numpy as np
+        import torch
+
+        dev = getattr(self, "device", None)
+        out = []
+        for j in range(0, len(images), batch_size):
+            b = torch.stack([self.transform(p) for p in images[j:j + batch_size]])
+            out.append(self.embed(b.to(dev) if dev is not None else b))
+        return np.vstack(out).astype(np.float32) if out else np.zeros((0, 1280), np.float32)
 
 
 register(

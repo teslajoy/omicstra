@@ -257,3 +257,48 @@ def test_a_value_gate_is_not_forced_onto_its_options():
     reqs = {r.id: r for r in preflight(cohort, "virchow2")}
     assert reqs["gated_weights"].answer == "env:HF_TOKEN"
     assert reqs["capacity"].answer == "data/embeddings"
+
+
+# --- the closed-set rule is declared, not hardcoded --------------------------
+def test_every_gate_declares_its_answer_kind():
+    """an undeclared value gate looks exactly like a closed one whose validation
+    is broken, so the field is required rather than defaulted."""
+    for g in contract()["gates"]:
+        assert g.get("answer_kind") in {"choice", "value"}, \
+            f"{g['id']} does not declare answer_kind"
+
+
+def test_the_exemption_comes_from_the_contract_not_from_the_resolver():
+    """the resolver must not grant itself an exemption when a match fails - that
+    is indistinguishable from broken validation.
+    """
+    from omicstra.protocols import encode
+
+    src = Path(encode.__file__).read_text()
+    assert "_FREE_TEXT" not in src, "the exemption list is hardcoded again"
+
+    opts = ("drop_below_floor", "run_and_mark", "halt")
+    assert encode._resolve_option("anything", opts, "g", "value") == "anything"
+    with pytest.raises(ValueError, match="option set is closed"):
+        encode._resolve_option("anything", opts, "g", "choice")
+
+
+def test_a_choice_gate_flipped_to_value_would_stop_being_validated():
+    """states the consequence of the declaration, so changing it is a visible act.
+
+    platform_floor is a choice gate; if someone marks it `value` this test says
+    what they have given up rather than letting the refusal quietly disappear.
+    """
+    pf = next(g for g in contract()["gates"] if g["id"] == "platform_floor")
+    assert pf["answer_kind"] == "choice", (
+        "platform_floor decides whether 19 subarrays enter the cohort. as a value "
+        "gate any string would be accepted and the funnel would record a policy "
+        "that was never one of the options.")
+
+
+def test_the_contract_states_the_rule_a_future_gate_author_needs():
+    """the rule lives in the contract's prose, not only in this module - a gate
+    author reads the contract, not the resolver."""
+    rule = contract()["gate_schema"]["options_are_closed_on_both_paths"]
+    assert {"rule", "why", "shorthand", "value_gates", "for_a_new_gate"} <= set(rule)
+    assert "_resolve_option" in rule["enforced_by"]
