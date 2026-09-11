@@ -320,13 +320,15 @@
         "tile_px_hd": 338,
         "resize_to": 224,
         "as_built": true,
-        "note": "tiles are 95.9 um at extraction level. the code constant read 128 um and assumed a 200 um pitch (patch_px = 128 * nn_hd / pitch, so the pitch is an INPUT to the crop size, not a label); at the measured 150 um pitch that crop covers 95.9 um. corrected 2026-09-11. the published grid is unaffected as a COMPARISON - every arm saw the same tiles - but a 95.9 um square has half-width 48.0 um against a 50 um spot radius, so each spot was clipped by 2 um per axis and the H&E arm under-sampled every spot.",
+        "note": "tiles are 95.9 um at extraction level. the code constant read 128 um and assumed a 200 um pitch (patch_px = 128 * nn_hd / pitch, so the pitch is an INPUT to the crop size, not a label); at the measured 150 um pitch that crop covers 95.9 um. corrected 2026-09-11. the published grid is unaffected as a COMPARISON - every arm saw the same tiles - but a 95.9 um square has half-width 48.0 um against a 50 um spot radius, so each spot was clipped by ~2 um PER SIDE (half-width 47.95 um against a 50 um radius) and the H&E arm under-sampled every spot.",
         "declared_alternative": {
           "tile_um": 128.0,
           "tile_px_hd": 451,
           "why": "the first crop that fully contains a 100 um spot, with margin. run as its own arm and evaluated - it changes every H&E embedding and therefore H1, H2 and H3, so it is never a silent fix.",
           "question": "does covering the whole spot change H1?"
-        }
+        },
+        "identity_field": "tile_px_hd",
+        "identity_note": "the run identity hashes tile_px_hd, the integer that sized the crop - never tile_um, which is derived from a measured nearest-neighbour distance and would move the identity if anyone re-measures it."
       },
       "pitch_correction_consequences": {
         "corrected_on": "2026-09-11",
