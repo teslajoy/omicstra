@@ -308,6 +308,31 @@
         "method": "delaunay",
         "radius_cap_px": null,
         "note": "bare Delaunay, as the published grid was built. Delaunay creates long boundary edges on this lattice - max 4550px against a 215px mean - so a radius cap is a reasonable alternative, but it changes H1/H2 numbers. it therefore becomes a DECLARED alternative run as its own arm and evaluated, never a silent switch."
+      },
+      "image_pyramid": {
+        "he_small_px": 9523,
+        "hd_px": 31744,
+        "scale_to_hd": 3.333403339283839,
+        "note": "spot coordinates are recorded in HE-small space and scaled to the HD level before cropping. measured, not assumed: nearest-neighbour spacing is 158.6 px small / 528.7 px HD on CN1/C1."
+      },
+      "he_tile": {
+        "tile_um": 95.9,
+        "tile_px_hd": 338,
+        "resize_to": 224,
+        "as_built": true,
+        "note": "tiles are 95.9 um at extraction level. the code constant read 128 um and assumed a 200 um pitch (patch_px = 128 * nn_hd / pitch, so the pitch is an INPUT to the crop size, not a label); at the measured 150 um pitch that crop covers 95.9 um. corrected 2026-09-11. the published grid is unaffected as a COMPARISON - every arm saw the same tiles - but a 95.9 um square has half-width 48.0 um against a 50 um spot radius, so each spot was clipped by 2 um per axis and the H&E arm under-sampled every spot.",
+        "declared_alternative": {
+          "tile_um": 128.0,
+          "tile_px_hd": 451,
+          "why": "the first crop that fully contains a 100 um spot, with margin. run as its own arm and evaluated - it changes every H&E embedding and therefore H1, H2 and H3, so it is never a silent fix.",
+          "question": "does covering the whole spot change H1?"
+        }
+      },
+      "pitch_correction_consequences": {
+        "corrected_on": "2026-09-11",
+        "novae": "ANNOTATION ONLY. um_per_pixel_spot 1.2195 was recorded in the run manifest but never passed to Novae - the graph was built from pixel coordinates by Delaunay triangulation, which is scale-invariant. cached embeddings unaffected.",
+        "virchow2": "REAL. the 200 um pitch sized the crop, so tiles are 95.9 um rather than the 128 um the constant named. cached embeddings are internally consistent and the ten-arm comparison stands; the tile is smaller than the spot it represents.",
+        "why_here": "the pitch correction has two consequences, one cosmetic and one real. a reader should find both in one place rather than discovering the second from the code."
       }
     }
   }
