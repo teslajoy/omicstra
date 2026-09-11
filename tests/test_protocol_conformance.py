@@ -700,3 +700,42 @@ def test_tensor_libraries_stay_out_of_core():
     assert any("torch" in d for d in extras["encode"])
     # and the split stays meaningful: measure is numerics, encode is tensors
     assert not any("torch" in d for d in extras["measure"])
+
+
+# --- encoders: declared, not imported ---------------------------------------
+def test_encoder_registry_is_readable_without_a_tensor_library():
+    """`pip install omicstra` must reason about encoders it cannot run.
+
+    the preflight gates decide platform_floor and encoder_compatibility from
+    metadata alone, so spec() has to work on a machine with no torch. only
+    load() may require it, and it must say so rather than raising ImportError.
+    """
+    from omicstra.models import available, spec
+    assert {"virchow2", "novae"} <= set(available())
+    v, n = spec("virchow2"), spec("novae")
+    assert (v.dim, v.unit, v.gated) == (1280, "tile", True)
+    assert (n.dim, n.unit, n.min_units) == (64, "spot", 512)
+    assert "MERSCOPE" in n.trained_on, "the non-overlap is what the compatibility gate reads"
+
+
+def test_an_undeclared_encoder_names_what_exists():
+    from omicstra.models import EncoderUnavailable, spec
+    import pytest as _pytest
+    with _pytest.raises(EncoderUnavailable) as e:
+        spec("no_such_encoder")
+    assert "novae" in str(e.value) and "virchow2" in str(e.value)
+
+
+def test_encoders_are_not_imported_at_package_scope():
+    """timm/torch/novae must not be imported when the registry is imported.
+
+    the same lint as the pyproject extras, one layer down: a module-level import
+    here would drag a tensor library into `pip install omicstra`.
+    """
+    import inspect
+
+    from omicstra.models import encoders
+    src = inspect.getsource(encoders)
+    head = src.split("# --- Virchow2")[0]
+    for heavy in ("import timm", "import torch", "import novae"):
+        assert heavy not in head, f"{heavy} at module scope"

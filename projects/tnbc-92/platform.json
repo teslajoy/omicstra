@@ -301,7 +301,14 @@
       ],
       "note": "pitch corrected 2026-08-12 from 200um against the lattice. NOT Visium.",
       "position_object": "spots",
-      "position_note": "spots carries 6 columns: x,y (integer array grid), new_x,new_y (adjusted array), pixel_x,pixel_y (image pixels). every script reads the pixel pair - 34 occurrences, no other pair used. microns come from spot_pitch_um, never from these."
+      "position_note": "spots carries 6 columns: x,y (integer array grid), new_x,new_y (adjusted array), pixel_x,pixel_y (image pixels). every script reads the pixel pair - 34 occurrences, no other pair used. microns come from spot_pitch_um, never from these.",
+      "um_per_pixel": 0.9282,
+      "um_per_pixel_note": "150um pitch / 161.6px nearest-neighbour. supersedes 1.2195, which was recorded in data/embeddings/novae_niche_full/run_manifest.json (2026-04-22) under the falsified 200um figure. that value was ANNOTATION ONLY: the Novae graph was built from pixel coordinates via Delaunay triangulation, which is scale-invariant, so the cached embeddings are unaffected and need no regeneration.",
+      "st_graph": {
+        "method": "delaunay",
+        "radius_cap_px": null,
+        "note": "bare Delaunay, as the published grid was built. Delaunay creates long boundary edges on this lattice - max 4550px against a 215px mean - so a radius cap is a reasonable alternative, but it changes H1/H2 numbers. it therefore becomes a DECLARED alternative run as its own arm and evaluated, never a silent switch."
+      }
     }
   }
 }
