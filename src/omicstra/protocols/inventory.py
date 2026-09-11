@@ -56,11 +56,22 @@ def _sid(p: Path) -> str:
 
 
 def _read(p: Path):
+    """.h5ad only. a cohort's native format is converted once, outside the package.
+
+    this used to fall back to pyreadr for anything else, which quietly made the
+    package responsible for one cohort's file format - and a cohort that did not
+    arrive from R would have found R-shaped assumptions waiting for it. the
+    fallback is gone and the refusal names the fix, because an inventory that
+    silently reads a native file is an inventory nobody can port.
+    """
     import anndata as ad
+
     if p.suffix == ".h5ad":
         return ad.read_h5ad(p)
-    import pyreadr
-    return pyreadr.read_r(str(p))
+    raise ValueError(
+        f"{p.name}: the inventory reads .h5ad only. convert this cohort once with "
+        "scripts/ingest_<cohort>.py, which writes .h5ad plus a coordinates table "
+        "and records the source shas.")
 
 
 def _rec(step_id, status, result, decision, observed=None):
