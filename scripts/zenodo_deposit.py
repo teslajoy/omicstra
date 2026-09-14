@@ -34,10 +34,19 @@ def _token() -> str:
     if not t:
         env = Path(__file__).resolve().parents[1] / ".env"
         if env.is_file():
-            for line in env.read_text().splitlines():
-                if line.startswith("ZENODO_TOKEN="):
-                    t = line.split("=", 1)[1].strip().strip("'\"")
-                    break
+            hits = [ln.split("=", 1)[1].strip().strip("'\"")
+                    for ln in env.read_text().splitlines()
+                    if ln.startswith("ZENODO_TOKEN=")]
+            # `>> .env` appends, so running the setup line twice leaves two.
+            # taking the first silently prefers the STALE one and the failure
+            # arrives later as a 401 that looks like a bad token rather than a
+            # duplicated line. refuse instead, and say which line to delete.
+            if len(hits) > 1:
+                raise SystemExit(
+                    f"{env} has {len(hits)} ZENODO_TOKEN lines. one of them is stale "
+                    "and there is no way to tell which from here - delete all but the "
+                    "current one:\n  grep -n '^ZENODO_TOKEN=' .env")
+            t = hits[0] if hits else ""
     if not t:
         raise SystemExit(
             "no ZENODO_TOKEN. create one at\n"
