@@ -1,4 +1,13 @@
-"""adapter: Wang et al. original-ST cohort -> AnnData.
+"""reader: Wang et al. original-ST counts -> AnnData. INGEST-SIDE, not the package.
+
+this lived in src/omicstra/adapters/ and moved out because it shells to Rscript,
+and the package's input contract is .h5ad plus a coordinates table. a cohort that
+did not arrive from R should never meet R code, so the dependency lives here with
+the other one-time conversion tooling and ingest_wang.py calls it.
+
+nothing in src/omicstra imported this - measures takes `load_sample_fn` as an
+injected callable - so the move cost no wiring. a test now asserts the package
+stays free of format readers.
 
 an adapter's only job is to produce AnnData in the shape the EDA steps expect.
 it is the one place that knows a cohort's file layout, so no step ever learns

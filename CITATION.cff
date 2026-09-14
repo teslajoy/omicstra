@@ -11,12 +11,15 @@ abstract: >-
   components with persistent context; the server ships no model.
 type: software
 license: MIT
-version: 1.0.0
+version: 1.1.0a1
 repository-code: "https://github.com/teslajoy/omicstra"
 url: "https://teslajoy.github.io/omicstra/"
-doi: "10.5281/zenodo.22666752"
-# the reservation date. becomes the tag date when v1.0.0 is tagged.
-date-released: "2026-09-08"
+# no `doi:` until one exists. 10.5281/zenodo.22666752 was RESERVED and never
+# published - it returns 404 - so citing it sent readers to nothing. the DOI is
+# minted by the GitHub-Zenodo integration when a release is archived, and the
+# CONCEPT doi (all versions) goes here, never a version doi, so this line does
+# not go stale at the next release.
+date-released: "2026-09-14"
 keywords:
   - model context protocol
   - spatial transcriptomics

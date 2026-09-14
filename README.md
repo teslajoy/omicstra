@@ -6,9 +6,9 @@ the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https
 
 [![release](https://github.com/teslajoy/omicstra/actions/workflows/release.yml/badge.svg)](https://github.com/teslajoy/omicstra/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22666752.svg)](https://doi.org/10.5281/zenodo.22666752)
+[![DOI](https://img.shields.io/badge/DOI-pending%20first%20archived%20release-lightgrey)](https://github.com/teslajoy/omicstra/releases)
 
-`v1.0.0` `ResearchHub Foundation grant` `Brenden-Colson Center / Sears Lab, OHSU`
+`v1.0.0` · `v1.1.0a1` pre-release  `ResearchHub Foundation grant`  `Brenden-Colson Center / Sears Lab, OHSU`
 
 **v1.0** ships the read path (inventory, EDA, admissibility gate, routing) over
 stdio and HTTP, the alignment and evaluation stages verified bit-identical
@@ -136,7 +136,7 @@ alignment strategies (experimental variable):
 
 ## repo structure
 
-audited against the filesystem 2026-09-09. `·` is built, `○` is named in the design and **not yet built** - kept here because the name is referenced elsewhere, not because it exists.
+audited against the filesystem 2026-09-11. `·` is built, `○` is named in the design and **not yet built** - kept here because the name is referenced elsewhere, not because it exists.
 
 ```
 omicstra/
@@ -166,8 +166,9 @@ omicstra/
 │   │   · eda.py                     #   10 checks registered - "is it usable"
 │   │   · align.py                   #   4 stages. resolve-only; compute is v1.1
 │   │   · evaluate.py                #   6 guards - becomes a chain in v1.1
-│   · measures/__init__.py           # the MATHS. pure functions, no ctx, no order,
-│   │                                #   no authority. callable from a notebook
+│   · measures/                      # the MATHS. pure functions, no ctx, no order,
+│   │   · __init__.py                #   no authority. callable from a notebook
+│   │   · tiling.py                  #   niche + tile geometry, diffed against the cache
 │   · contracts/                     # READS a declaration, decides nothing
 │   │   · project.py                 #   a cohort's project.json
 │   │   · routing.py  eda.py         #   contract + evidence · contract + calibration
@@ -176,9 +177,12 @@ omicstra/
 │   │   · eda_contract.json          #   roles · which checks, which criteria
 │   │   · routing_contract.json      #   task taxonomy, outcome vocabulary, rules
 │   │   · compute_contract.json      #   6 gates: 5 preflight, 1 mid-run
-│   · adapters/wang_st.py            # a cohort's files -> AnnData conforming to raw_counts
+│   · adapters/canonical.py          # the input contract: .h5ad + a coordinates table.
+│   │                                #   scripts/ingest_<cohort>.py converts, ONCE
+│   · models/encoders.py             # the encoder registry, resolved by declared name.
+│   │                                #   spec() is metadata; only load() needs torch
 │   · agents/modality.py             # he / st / pathway agents - read recorded evidence
-│   · mcp/server.py                  # 8 tools, 3 resources, stdio + http. zero model calls
+│   · mcp/server.py                  # 8 tools, 4 resources, stdio + http. zero model calls
 │   · records.py  artifacts.py       # the record contract - inventory/eda_summary io
 │   · settings.py  cli.py            # 8 commands. settings imports nothing from omicstra
 │   · routing.py  eda.py  figures.py # resolve + ledger · gate · plots
@@ -200,9 +204,11 @@ omicstra/
 │
 · site/{institution}/  [ignored]     # compute.md governance.md - served as MCP resources
 · scripts/                           # the chain behind the published results
-· tests/                             # 114 - conformance, routing, eda authority
+· tests/                             # 148 - conformance, routing, eda authority,
+│                                    #   tiling oracle, ingest paths
 │   · fixtures/                      #   the pinned H1 summary, sha-guarded
-· knowledge/reactome/                # shared domain assets - committed
+○ knowledge/reactome/                # shared domain assets - git-IGNORED, not in a clone.
+│                                    #   only scripts/build_pathway_class.py reads it
 · docs/                              # -> teslajoy.github.io/omicstra
 · notebooks/                         # exploration - embeddings - experiments - final
 · runs/  data/  demo/  [ignored]     # traces - inputs + embeddings - talk assets
@@ -377,11 +383,16 @@ Brenden-Colson Center for Pancreatic Care / Sears Lab, OHSU
   title   = {omicstra: a multi-agent MCP server for cross-modal embedding alignment
              and evidence-based routing in spatial biology},
   year    = {2026},
-  doi     = {10.5281/zenodo.22666752},
   url     = {https://github.com/teslajoy/omicstra},
   license = {MIT}
 }
 ```
+
+no `doi` field yet. `10.5281/zenodo.22666752` appeared here and in
+`CITATION.cff` until 2026-09-14 and **returns 404** - it was reserved on Zenodo
+and never published, so anyone who followed it got nothing. the DOI is minted
+when the GitHub-Zenodo integration archives a release; the **concept** DOI, which
+covers every version, goes here once it exists.
 
 *funded by ResearchHub Foundation ([doi:10.55277/researchhub.6ou1w3h3](https://doi.org/10.55277/researchhub.6ou1w3h3))*  
 *nonprofit recipient: OHSU Foundation - EIN 23-7083114*  

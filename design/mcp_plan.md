@@ -1,5 +1,20 @@
 # omicstra MCP - engineering plan
 
+> **this document predates the levels reorg (`dd9027e`, 2026-09-04) and v1.0.0.**
+> it is kept as written because it is the reasoning that produced the design, not
+> a description of the build. read `design/v1_1_scope.md` for the current
+> boundary and `design/progress.md` for what exists.
+>
+> what has changed under it, so nothing here misleads:
+> - §3's architecture is superseded by LEVEL 0 / 1 / 2 (`graph.py`, `graphs/`,
+>   `protocols/`). `FastMCP` is `MCPServer` since mcp 2.0
+> - §7's three named prerequisites are all closed: `scripts/` is tracked since
+>   `ce23dcb`, `configs/v3/R1_v3.json` and the `demo_2026_06.md:168` value were
+>   fixed in `76a03ea`
+> - §14's routing-table decision resolved to versioned JSON:
+>   `projects/{id}/routing_evidence.json`, with the contract in the wheel
+> - ASK is built and selftested. EXPLAIN, RERUN and EXTEND are not
+
 ## 1. objective
 
 Build the MCP server and orchestration layer specified in the ResearchHub proposal. The scientific
