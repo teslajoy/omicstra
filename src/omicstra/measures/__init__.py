@@ -400,3 +400,86 @@ def spatial_autocorrelation_streamed(load_sample_fn, sample_ids: list,
         caveats=([f"{len(failed)} sample(s) not measured"] if failed else []),
         duration_s=round(time.time() - t0, 1),
     )
+
+
+# --- the niche join's maths -------------------------------------------------
+#
+# lifted from scripts/build_niche_join.py, which stays the ORACLE. what moved
+# here is the part that is the same for any cohort with spots, neighbours and
+# per-spot vectors; what stayed there is Wang's file layout and their key format.
+#
+# faithful rather than improved, for the reason every port in this project is:
+# all ten arms of the published grid read the rows these functions produce, and
+# the comparison is fair only while that stays true.
+
+def niche_members(centre, neighbours, k: int, present) -> list:
+    """centre + k neighbours, with absent neighbours replaced by the centre.
+
+    two behaviours that look like bugs and are not:
+
+    - a neighbour missing from `present` is DROPPED, not carried as a gap. the
+      niche is built from spots that actually have vectors on both sides.
+    - the list is then padded back to k by repeating the CENTRE, so the token
+      stack stays fixed-size at k+1. padding with the centre rather than a zero
+      vector matters: a zero row is a statement about morphology that no tissue
+      made, while a repeated centre says "this niche is smaller than k+1", which
+      is true.
+
+    the alternative - dropping the incomplete niche - is declared in
+    protocols/join.SEMANTICS and not run. it removes boundary tissue, which is
+    real tissue.
+    """
+    kept = [n for n in neighbours if n in present]
+    if len(kept) < k:
+        kept = list(kept) + [centre] * (k - len(kept))
+    return [centre, *kept[:k]]
+
+
+def pool_rows(frame, keys: list, columns: list[str]):
+    """nan-safe mean over the named rows. returns (len(columns),) float32.
+
+    `skipna` is the whole point: a spot missing one label should contribute its
+    other values rather than poisoning the niche, and a niche where every member
+    is missing returns nan so the funnel can drop it explicitly instead of
+    silently averaging nothing into a zero.
+    """
+    import numpy as np
+
+    sub = frame.reindex(keys)[columns]
+    return sub.mean(axis=0, skipna=True).to_numpy().astype(np.float32)
+
+
+def zscore_per_group(matrix, eps: float = 1e-8):
+    """z-score each column over the rows given. the per-subarray normalisation.
+
+    a zero-variance column is left alone rather than divided by ~0 - dividing
+    would turn a constant into whatever numerical noise it carried, which is the
+    kind of value that looks like signal downstream.
+
+    applied AFTER the coverage filter on purpose: the standard deviation should
+    reflect the rows that actually feed alignment, not rows that were dropped.
+    """
+    import numpy as np
+
+    # accumulate in FLOAT64 and cast once at the end. this is not tidiness - the
+    # oracle stores each pooled vector through `.tolist()`, which turns float32
+    # into python floats, so its np.stack is float64 and mu/sd are computed in
+    # double. accumulating in float32 instead gives the same formula a different
+    # answer: 3.8e-06 on z-scores whose sd is 1, over 846 rows. found by the
+    # slice-diff, which is the only thing that would have found it.
+    m = np.asarray(matrix, dtype=np.float64)
+    mu = m.mean(axis=0, keepdims=True)
+    sd = m.std(axis=0, keepdims=True)
+    sd = np.where(sd < eps, 1.0, sd)
+    return ((m - mu) / sd).astype(np.float32)
+
+
+def stack_tokens(vectors, row_of: dict, members: list):
+    """(k+1, dim) token stack for one niche, in member order.
+
+    order is load-bearing and is centre-first. a model that attends over these
+    positions sees a different input if the order changes, so this is not a set.
+    """
+    import numpy as np
+
+    return np.asarray(vectors, dtype=np.float32)[[row_of[m] for m in members]]

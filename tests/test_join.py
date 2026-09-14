@@ -226,3 +226,85 @@ def test_the_flag_claims_detection_not_uniformity():
     d = drop_distribution({f"p{i}": (25, 100) for i in range(4)})
     assert "uniform" not in d, "the field must not claim uniformity"
     assert d["concentration_detected"] is False
+
+
+# --- the maths, against the 259-parquet oracle ------------------------------
+JOIN_PICKS = ["TNBC10_CN5_D2", "TNBC1_CN1_C1", "TNBC10_CN5_E2", "TNBC22_CN11_E2"]
+
+
+def test_niche_membership_pads_with_the_centre_not_a_gap():
+    """a repeated centre says 'this niche is smaller than k+1', which is true.
+    a zero row would be a statement about morphology no tissue made."""
+    from omicstra.measures import niche_members
+
+    assert niche_members("a", ["b", "c"], 6, {"a", "b", "c"}) == \
+        ["a", "b", "c", "a", "a", "a", "a"]
+    full = niche_members("a", list("bcdefg"), 6, set("abcdefg"))
+    assert full == ["a", *"bcdefg"] and len(full) == 7
+
+
+def test_the_zscore_accumulates_in_float64():
+    """THE port bug the slice-diff caught, and the only thing that would have.
+
+    the oracle stores each pooled vector through `.tolist()`, so its np.stack is
+    float64 and mu/sd are computed in double. accumulating in float32 gives the
+    same formula a different answer - 3.8e-06 on z-scores whose sd is 1.
+    """
+    import numpy as np
+
+    from omicstra.measures import zscore_per_group
+
+    rng = np.random.default_rng(0)
+    m = rng.normal(size=(900, 64)).astype(np.float32)
+    z = zscore_per_group(m)
+    exact = (m.astype(np.float64) - m.astype(np.float64).mean(0)) / m.astype(np.float64).std(0)
+    assert np.abs(z - exact.astype(np.float32)).max() == 0.0
+    assert z.dtype == np.float32, "float64 is for the accumulation, not the output"
+
+
+def test_a_constant_column_is_left_alone():
+    """dividing by ~0 turns a constant into whatever numerical noise it carried,
+    which is the kind of value that looks like signal downstream."""
+    import numpy as np
+
+    from omicstra.measures import zscore_per_group
+
+    assert np.abs(zscore_per_group([[5.0]] * 4)).max() == 0.0
+
+
+@pytest.mark.parametrize("sid", JOIN_PICKS)
+def test_the_join_maths_reproduces_the_built_parquets_exactly(sid):
+    """bit-identity, not a tolerance. this is indexing, stacking and a mean -
+    unlike the encoder port, there is no backend-dependent kernel to excuse a
+    difference, so anything but 0.00e+00 is a defect rather than float32.
+    """
+    pytest.importorskip("pyarrow")
+    import numpy as np
+    import pandas as pd
+
+    from omicstra.measures import niche_members, stack_tokens, zscore_per_group
+
+    V, C = ROOT / "data/embeddings/virchow2_niche", ROOT / "data/embeddings/virchow2_cell"
+    N = ROOT / "data/embeddings/novae_niche_full"
+    need = [V / f"{sid}_meta.tsv", C / f"{sid}.npy",
+            N / f"{sid}_novae_embeddings.parquet", JOIN / f"{sid}.parquet"]
+    if not all(p.is_file() for p in need):
+        pytest.skip("the upstream caches are not on this machine")
+
+    meta = pd.read_csv(need[0], sep="\t", index_col=0)
+    vc, nv, join = np.load(need[1]), pd.read_parquet(need[2]), pd.read_parquet(need[3])
+    row_of = {s: i for i, s in enumerate(meta.index)}
+    cols = [c for c in nv.columns if c.startswith("novae_")]
+    kept = list(join.index)
+    mem = {s: niche_members(s, list(nv.loc[s, "neighbor_spot_ids"]), 6, set(meta.index))
+           for s in kept}
+
+    tok = np.stack([stack_tokens(vc, row_of, mem[s]).ravel() for s in kept])
+    want = np.stack([np.asarray(v, np.float32) for v in join.loc[kept, "virchow2_cell_tokens"]])
+    assert np.abs(tok - want).max() == 0.0, f"{sid}: token stack differs from the oracle"
+
+    pooled = np.stack([nv[cols].reindex(mem[s]).mean(axis=0).values.astype(np.float32)
+                       for s in kept])
+    z = zscore_per_group(pooled)
+    wz = np.stack([np.asarray(v, np.float32) for v in join.loc[kept, "novae_niche"]])
+    assert np.abs(z - wz).max() == 0.0, f"{sid}: novae z-score differs from the oracle"
