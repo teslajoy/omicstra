@@ -192,7 +192,14 @@ def eda(project_dir, project_id, adata_path, steps):
     if adata_path:
         payload["adata_path"] = str(adata_path.expanduser())
 
-    out = app.invoke(payload, cfg)
+    from omicstra.graphs.eda import NoCohortData
+
+    try:
+        out = app.invoke(payload, cfg)
+    except NoCohortData as e:
+        # an ordinary state for a freshly scaffolded cohort, so it reads as a
+        # message rather than a stack trace. `gate` already refuses this way.
+        raise click.ClickException(str(e)) from None
     click.echo(f"cohort:  {settings.project_root(project_id).name}")
     click.echo(f"arm:     {out.get('arm')}   (evidence present: {out.get('has_evidence')})")
 
@@ -387,9 +394,16 @@ def decisions(project_dir: Path | None, project_id: str | None) -> None:
 
 @main.command()
 @click.option("--project-id", default="tnbc-92")
-def selftest(project_id: str) -> None:
+@click.option("--project-dir", default=None, type=click.Path(path_type=Path),
+              help="cohort root. defaults to OMICSTRA_PROJECT_DIR.")
+def selftest(project_id: str, project_dir: Path | None = None) -> None:
     """assert the routing rules hold on this cohort. one line per check."""
     from omicstra.routing import list_task_families, load_routing_evidence, resolve
+
+    # every other command takes --project-dir; selftest did not, and it is the
+    # one the readme tells a new cohort owner to run FIRST.
+    if project_dir is not None:
+        settings.project_dir = project_dir.expanduser()
 
     ev = load_routing_evidence(project_id)
     fails = 0

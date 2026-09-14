@@ -21,6 +21,15 @@ from typing import Any, Callable, TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
+
+class NoCohortData(RuntimeError):
+    """the cohort has no bound object to profile.
+
+    a distinct type rather than a KeyError because it is an ordinary state - a
+    freshly scaffolded cohort is always in it - and the caller should be able to
+    tell "not ingested yet" from "the graph is broken".
+    """
+
 from omicstra.eda import cohort_escalations, load_calibration, load_contract
 from omicstra.protocols import build_protocol
 from omicstra.protocols.eda import EDA_STEPS
@@ -81,6 +90,17 @@ def profile(state: EDAState) -> dict:
     must be serialisable, so state carries references and nodes load. that is
     also why the protocol takes a path, not an AnnData.
     """
+    # a scaffolded cohort has no data yet, and that is the NORMAL first state
+    # after `omicstra init` - not an error to crash on. a KeyError traceback here
+    # was the first thing a new cohort owner saw, which is a poor way to learn
+    # that the inventory has to bind an object first.
+    if not state.get("adata_path"):
+        raise NoCohortData(
+            "no object to profile. the inventory binds one from the cohort's "
+            "declared inputs, so either the cohort has no data under data/inputs/ "
+            "yet, or it has not been converted: run scripts/ingest_<cohort>.py to "
+            "write .h5ad plus a coordinates table, then re-run. `omicstra describe` "
+            "shows what this cohort currently declares.")
     ctx = {"adata_path": state["adata_path"],
            "project_id": state.get("project_id"),
            "params": state.get("params", {})}
