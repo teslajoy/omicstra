@@ -117,5 +117,42 @@ definition above requires resumability until a full run proves it does.
 
 ## out until later still
 
-slurm / arc dispatcher, temporal, hest-breast compute, oauth, the harness,
-a second institution. none of these is in the line at the top of this file.
+hest-breast compute, oauth, the harness, a second institution. none of these is
+in the line at the top of this file.
+
+**temporal came in early**, at 3.6, rather than waiting for step 8 to prove it
+was needed. the evidence that justified it: a full H&E extraction is 280
+subarrays at ~0.073 s/spot, so **~5.8 hours** on this mac - a laptop run that
+will be interrupted, which is step 3's problem rather than step 8's. Recorded
+here because the boundary file is what ends a scope argument, and it should say
+what is true rather than what was planned.
+
+## the next goal, and why it is a new branch
+
+**Extraction at scale is not built, and it is the thing a second cohort needs
+most.** What exists is the extraction PATH, verified against a cache that
+already existed - `virchow2_niche/` is 280 subarrays dated 9 April, produced by
+the original script. This session's port produced 13 subarrays, all for
+verification. On tnbc-92 there is no reason to run more; on a cohort with no
+cache, those 5.8 hours are real and unavoidable work.
+
+So the next version's goal is the **SLURM / ARC dispatch backend**: a third
+executor beside `local` and `temporal`, submitting one job per shard against the
+same `Shard` contract and the same output-file idempotency. The pieces are
+already shaped for it -
+
+- `dispatch/` takes a backend by configuration, and `run_shards` already
+  chooses one. a third is an addition, not a redesign
+- `scripts/slurm/` holds working sbatch files from the gpath2vec cohort runs
+- `settings.compute_backend` already declares `local | cloud | slurm`
+- the compute contract's `capacity` gate exists precisely for a scheduler
+
+and two things are known to be missing:
+
+- **`cohort.json` declares `compute_backend: "mac"`, which is not one of the
+  declared options** (`local | cloud | slurm`). a value outside its own set is
+  the same defect the gate option work fixed, one layer over
+- a scheduler pause is not a laptop pause. the compute contract already says
+  this: a scheduled job paused for a person is burning walltime, and if it hits
+  its limit while waiting the answer is lost with it. that is what the mid-run
+  gate and the durable workflow are for, and it is untested against a real queue
