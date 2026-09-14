@@ -802,10 +802,14 @@ def test_no_file_cites_a_doi_that_was_only_reserved():
         pytest.skip("not running from the source tree")
 
     dead = "22666752"
-    offenders = [f.name for f in (root / "README.md", root / "CITATION.cff",
-                                  root / ".zenodo.json")
-                 if f.is_file() and dead in f.read_text()
-                 and "404" not in f.read_text()]
+    # pyproject is in this list because it was MISSED the first time: the url
+    # block carried it into the PyPI metadata, where a version is immutable and
+    # a wrong url cannot be corrected after upload. the widest net is the point.
+    checked = ("README.md", "CITATION.cff", ".zenodo.json", "pyproject.toml",
+               "server.json")
+    offenders = [n for n in checked
+                 if (root / n).is_file() and dead in (root / n).read_text()
+                 and "404" not in (root / n).read_text()]
     assert not offenders, (
         f"{offenders} cite zenodo.{dead}, which does not resolve. cite the CONCEPT "
         "DOI minted by the GitHub-Zenodo integration once a release is archived.")

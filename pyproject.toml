@@ -47,7 +47,11 @@ dependencies = [
 [project.urls]
 Repository = "https://github.com/teslajoy/omicstra"
 Documentation = "https://teslajoy.github.io/omicstra/"
-DOI = "https://doi.org/10.5281/zenodo.22666752"
+# DOI is deliberately absent until a record exists. it pointed at a reserved,
+# unpublished zenodo deposit that returns 404, and a project URL on PyPI
+# cannot be corrected later - a version is immutable once uploaded. the DOI
+# lands in the repo and the zenodo record; the next release carries it here.
+Releases = "https://github.com/teslajoy/omicstra/releases"
 Funding = "https://doi.org/10.55277/researchhub.6ou1w3h3"
 
 [project.scripts]
