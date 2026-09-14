@@ -20,12 +20,15 @@ import hashlib
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 import click
 import requests
 
 API = "https://zenodo.org/api"
+ATTEMPTS = 4
+BACKOFF = 15      # seconds, doubling
 
 
 def _token() -> str:
@@ -115,15 +118,40 @@ def main(stage: Path, metadata: Path | None, deposition: int | None, dry_run: bo
             continue
         size = p.stat().st_size
         click.echo(f"  {p.name}: uploading {size / 1e6:.1f} MB ...", nl=False)
-        with p.open("rb") as fh:
-            # streamed, so a 13 GB file never sits in memory
-            r = s.put(f"{bucket}/{p.name}", data=fh, timeout=None)
-        if not r.ok:
+
+        # 502/504 from Zenodo's gateway is COMMON on a large PUT and is usually
+        # transient - their edge times the connection out before the upload
+        # finishes, not because the file is refused. retrying the whole file is
+        # correct: the bucket API is PUT-to-a-name, so a repeat overwrites rather
+        # than appending, and a half-written object never becomes a real one.
+        last = None
+        for attempt in range(1, ATTEMPTS + 1):
+            try:
+                with p.open("rb") as fh:
+                    # streamed, so a 13 GB file never sits in memory
+                    r = s.put(f"{bucket}/{p.name}", data=fh, timeout=None)
+                if r.ok:
+                    click.echo(f" ok{'' if attempt == 1 else f' (attempt {attempt})'}")
+                    break
+                last = f"HTTP {r.status_code} {r.text[:200]}"
+                if r.status_code not in (500, 502, 503, 504):
+                    break                      # a real refusal - do not hammer it
+            except requests.exceptions.RequestException as e:
+                last = f"{type(e).__name__}: {e}"
+            if attempt < ATTEMPTS:
+                wait = BACKOFF * (2 ** (attempt - 1))
+                click.echo(f"\n    attempt {attempt} failed ({last}); retrying in {wait}s",
+                           nl=False)
+                time.sleep(wait)
+        else:
             click.echo(" FAILED")
-            raise SystemExit(f"{p.name}: {r.status_code} {r.text[:400]}\n"
-                             f"re-run with --deposition {dep['id']} to resume; "
-                             "files already uploaded are skipped.")
-        click.echo(" ok")
+            raise SystemExit(
+                f"{p.name}: {last}\nafter {ATTEMPTS} attempts. re-run with "
+                f"--deposition {dep['id']} to resume - files already uploaded are "
+                "skipped. if a large file keeps failing at the gateway, split it: "
+                "`split -b 1g file file.part.` and upload the parts.")
+        if not r.ok:
+            raise SystemExit(f"{p.name}: {last}")
 
     click.echo(f"\ndraft ready, NOT published:\n  https://zenodo.org/uploads/{dep['id']}")
     click.echo("\nreview it, then publish from that page. publishing is irreversible - "
