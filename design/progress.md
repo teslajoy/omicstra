@@ -158,7 +158,7 @@ Then point `OMICSTRA_PROJECT_DIR` at it.
 
 ### 3. from an MCP client
 
-`.mcp.json` is already wired. Claude Code picks it up from the repo root; verified
+`.mcp.json` is already wired. An MCP client picks it up from the repo root; verified
 over real stdio - `omicstra up · proto 2025-11-25`. Questions it can answer today:
 
 - *"Does this cohort pass the EDA gate?"*
@@ -550,8 +550,8 @@ a declared alternative arm, never a silent fix.
 
 ## 2026-09-11 · repo audit, and the eight findings
 
-A full read of the repo after a session was lost. Recorded here so it is not
-done a third time.
+A full read of the repo against the filesystem. Recorded here so it is not done
+a third time.
 
 **State:** 148 tests pass in 1.6s. `selftest` passes 23/23. The gate returns
 `proceed_with_caution` against a declared `proceed`. The read-path claim holds.
@@ -1037,15 +1037,12 @@ is unanswerable.
 
 ---
 
-## handoff · end of 2026-09-14
-
-Written because a killed terminal cost an hour of rebuilding this morning.
-`claude --resume` is the cheaper fix; this is the backstop.
+## state · 2026-09-14
 
 **State:** 247 tests, CI green on 3.11/3.12/3.14, main and v1.1 both at the same
 commit, nothing unpushed.
 
-### shipped today
+### shipped
 
 | | |
 |---|---|
@@ -1056,8 +1053,8 @@ commit, nothing unpushed.
 
 ### in flight, needs no attention
 
-The **data deposit** is uploading detached to draft `22754479` and survives this
-session. It was at 25/41 files when the session ended. Resume if it stopped:
+The **data deposit** is uploading to draft `22754479`, 25 of 41 files at the time
+of writing. Resume if it stops:
 
 ```sh
 python scripts/zenodo_deposit.py \
@@ -1073,7 +1070,7 @@ draft and publishes, because publishing on Zenodo is irreversible.
   still labels it "Latest"; PyPI already gets this right from the version string
 - nothing else - PyPI trusted publishing is configured and working now
 
-### where to start tomorrow
+### where to start next
 
 **Step 5, the evaluation chain**, ahead of finishing the join compute path. The
 argument: `protocols/evaluate.py` is six `NotImplementedError` stubs, and they
@@ -1093,7 +1090,7 @@ Two smaller items, both recorded and neither urgent:
 
 **No cohort-scale extraction has been run.** `virchow2_niche/` is 280 subarrays
 dated **9 April**, produced by the original script - it is the oracle, not
-output. This session's port produced **13 subarrays**, all for verification. On
+output. The port has produced **13 subarrays**, all for verification. On
 tnbc-92 there is no reason to run more; on a cohort with no cache, ~5.8 hours is
 real work. That is why the next version's goal is the SLURM/ARC dispatch backend,
 recorded in `v1_1_scope.md`.
