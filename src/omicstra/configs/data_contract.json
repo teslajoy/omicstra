@@ -51,6 +51,16 @@
     },
     "guard": "classification is declared by a person at init and never inferred. no heuristic over file paths, filenames or content may set it - a wrong guess in the permissive direction is the one error this whole field exists to prevent."
   },
+  "compute_backend": {
+    "note": "REQUIRED per cohort. where ENCODERS run. it is not the same question as client_model_backend, which names the endpoint the connecting client calls - this server ships no model and holds no key. neither implies the other.",
+    "values": {
+      "local": "this machine. a laptop or a workstation, whatever it is. the dispatcher runs shards in-process and resume comes from the output file",
+      "cloud": "a rented accelerator reached over the network",
+      "slurm": "a scheduler. shards become jobs, and a pause must not hold an allocation - see compute_contract.json#gate_schema.hosting"
+    },
+    "closed": true,
+    "why_closed": "the set was a comment in settings.py rather than a declaration, and a cohort drifted outside it - declaring the name of a MACHINE where a backend kind belongs, which matches nothing that reads the field. same defect as an answer outside a gate's options, one layer over: a declared value has to land on its declared set or the declaration is decoration."
+  },
   "roles": {
     "note": "the conformance target. a cohort BINDS its concrete artifacts to these abstract roles, and downstream steps read the ROLE, never a column name. this is what lets one protocol run on original ST, Visium and Xenium without branching on file layout - the same way a profile binds elements rather than hardcoding a schema.",
     "binding_rule": "a role is bound when inventory has produced evidence for it. a required role left unbound is a HALT, not a caution - a protocol that reads an unbound role would be inventing data.",

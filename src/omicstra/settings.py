@@ -72,7 +72,9 @@ class Settings(BaseSettings):
     # project_dir is unset, which is the fixture path, not the shipped path.
     projects_dir: Path = Path("projects")
 
-    compute_backend: str = "local"  # local | cloud | slurm
+    # the closed set lives in configs/data_contract.json#compute_backend, not
+    # here. it was a comment on this line and a cohort drifted outside it.
+    compute_backend: str = "local"
 
     # durable execution, opt-in by presence. unset means the dispatcher runs
     # shards in-process - not a degraded mode, the normal one for a laptop. a

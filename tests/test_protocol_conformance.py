@@ -813,3 +813,37 @@ def test_no_file_cites_a_doi_that_was_only_reserved():
     assert not offenders, (
         f"{offenders} cite zenodo.{dead}, which does not resolve. cite the CONCEPT "
         "DOI minted by the GitHub-Zenodo integration once a release is archived.")
+
+
+def test_compute_backend_is_a_closed_set_declared_in_the_contract():
+    """the option set was a COMMENT in settings.py, and a cohort drifted outside
+    it - declaring the name of a machine where a backend kind belongs, which
+    matches nothing that reads the field.
+
+    same defect as an answer outside a gate's options, one layer over: a declared
+    value has to land on its declared set or the declaration is decoration.
+    """
+    contract = json.loads(
+        (Path(omicstra.__file__).parent / "configs" / "data_contract.json").read_text())
+    spec = contract["compute_backend"]
+    assert spec["closed"] is True
+    values = set(spec["values"])
+    assert values == {"local", "cloud", "slurm"}
+
+    # settings' default must itself be a member
+    from omicstra.settings import Settings
+
+    assert Settings.model_fields["compute_backend"].default in values
+
+
+@pytest.mark.parametrize("cohort", sorted(
+    (Path(omicstra.__file__).parents[2] / "projects").glob("*/cohort.json")),
+    ids=lambda p: p.parent.name)
+def test_every_cohort_declares_a_backend_the_contract_offers(cohort):
+    contract = json.loads(
+        (Path(omicstra.__file__).parent / "configs" / "data_contract.json").read_text())
+    values = set(contract["compute_backend"]["values"])
+    declared = json.loads(cohort.read_text()).get("compute_backend")
+    assert declared in values, (
+        f"{cohort.parent.name} declares compute_backend={declared!r}, which is not one of "
+        f"{sorted(values)}. the contract's set is closed.")
