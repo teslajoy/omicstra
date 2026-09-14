@@ -25,6 +25,17 @@ from typing import Any
 from omicstra.records import DiagnosticRecord
 
 
+class ConfounderBiasedFunnel(RuntimeError):
+    """a funnel stage eliminated a whole group of the confounder axis.
+
+    a drop that removes a patient entirely does not thin the cohort, it changes
+    which cohort was studied - and every downstream number is then computed on a
+    different population than the one described. that is an error; a merely
+    UNEVEN drop is a caution, because it is common, often unavoidable, and
+    reportable rather than fatal.
+    """
+
+
 class CircularSupervision(RuntimeError):
     """a signal is about to be both an input feature and the target it is scored
     against.
@@ -133,6 +144,75 @@ class Funnel:
             result=f"{first.n_in:,} -> {last.n_out:,} ({kept:.1f}% retained)",
             decision="; ".join(f"{s.name}: -{s.dropped:,} ({s.reason})"
                                for s in self.stages if s.dropped))
+
+
+def drop_distribution(groups: dict[str, tuple[int, int]], axis: str = "patient_id") -> dict:
+    """is a stage's drop even across the confounder axis, or concentrated?
+
+    `groups` is {group: (n_dropped, n_before)}.
+
+    a 24% drop is harmless only if it falls evenly. if it concentrates in a few
+    patients, the surviving table is a biased sample and every metric computed on
+    it carries that bias silently - the same reasoning as NMI(label, subject),
+    applied to the funnel instead of to a label.
+
+    the test is against what UNIFORM dropping would actually predict rather than
+    an eyeballed threshold: under a single pooled rate each group is
+    Binomial(n_g, p), so the ratio of observed chi-square to its degrees of
+    freedom is 1 when the drop is even and grows with concentration. reporting
+    the ratio rather than only a p-value matters because at this many units a
+    p-value is significant for a spread far too small to care about.
+    """
+    import numpy as np
+
+    d = np.array([v[0] for v in groups.values()], float)
+    n = np.array([v[1] for v in groups.values()], float)
+    if n.sum() == 0 or len(d) < 2:
+        return {"axis": axis, "n_groups": len(d), "testable": False,
+                "note": "too few groups to say anything about evenness"}
+
+    p_pooled = float(d.sum() / n.sum())
+    rates = np.divide(d, n, out=np.zeros_like(d), where=n > 0)
+    eliminated = sorted(g for g, r in zip(groups, rates) if r >= 1.0)
+
+    denom = n * p_pooled * (1 - p_pooled)
+    chi2 = float((((d - n * p_pooled) ** 2) / np.where(denom > 0, denom, np.inf)).sum())
+    dof = len(d) - 1
+    phi = chi2 / dof if dof else 0.0
+
+    return {"axis": axis, "n_groups": len(d), "testable": True,
+            "pooled_rate": round(p_pooled, 4),
+            "min_rate": round(float(rates.min()), 4),
+            "max_rate": round(float(rates.max()), 4),
+            "sd_rate": round(float(rates.std()), 4),
+            "overdispersion": round(phi, 1),
+            "uniform": bool(phi <= OVERDISPERSION_CAUTION),
+            "eliminated_groups": eliminated,
+            "min_retained_units": int((n - d).min()),
+            "note": ("overdispersion is observed spread / spread expected if the drop "
+                     "were uniform. 1 is even; larger is concentrated.")}
+
+
+# a drop twice as variable as chance is worth reporting. it is a CAUTION bar and
+# not a failure bar: an uneven drop is common and often unavoidable, and the
+# thing that must never pass silently is an eliminated group, which is separate.
+OVERDISPERSION_CAUTION = 2.0
+
+
+def assert_funnel_not_confounded(dist: dict) -> list[str]:
+    """raise on an eliminated group, return cautions for an uneven one."""
+    if dist.get("eliminated_groups"):
+        raise ConfounderBiasedFunnel(
+            f"{len(dist['eliminated_groups'])} group(s) on {dist['axis']} lost every "
+            f"unit: {dist['eliminated_groups'][:5]}. the surviving table describes a "
+            "different cohort than the one enumerated.")
+    if not dist.get("testable") or dist.get("uniform"):
+        return []
+    return [(f"the drop is uneven across {dist['axis']}: overdispersion "
+             f"{dist['overdispersion']}x against a uniform drop, rates "
+             f"{dist['min_rate']:.3f}-{dist['max_rate']:.3f}. every downstream metric is "
+             f"computed on a sample whose density varies with {dist['axis']}, which "
+             "belongs in the writeup rather than in a footnote.")]
 
 
 def assert_no_circular_supervision(feature_columns, supervision: str) -> None:

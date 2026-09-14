@@ -959,6 +959,69 @@ before CI did: it patches inside `dispatch.temporal`, which imports the extra
 even though it never connects to anything. **One commit old and it had already
 paid for itself.**
 
+---
+
+## 2026-09-14 · step 4 · the join drops a quarter of the cohort, and not evenly
+
+**67,131 of 275,917 niches - 24.3% - leave at the join**, dropped because they
+carry no gpath2vec vector: a niche with no significantly enriched pathway has
+none to carry. That number appeared in no document a reader would find, and it
+is not an edge case.
+
+### the drop is patient-structured
+
+A 24% drop is harmless only if it falls evenly. Tested against what uniform
+dropping would actually predict - under one pooled rate each group is
+Binomial(n_g, p), so chi-square over its degrees of freedom is 1 when even:
+
+| axis | groups | pooled | range | overdispersion | eliminated |
+|---|---:|---:|---|---:|---:|
+| `patient_id` | 92 | 0.243 | 0.125 - 0.752 | **158.8x** | 0 |
+| `subarray` | 259 | 0.243 | 0.095 - 0.891 | 63.2x | 0 |
+
+**Patient-level overdispersion exceeds subarray-level**, which says the drop is a
+property of the patient rather than of the section - and patient is the axis
+every honest split is held out on. Two patients lose more than half their
+niches; the worst loses 75%.
+
+**No patient or subarray is eliminated.** Minimum retention is 24.8% and every
+patient keeps at least 383 niches, so this thins the cohort rather than changing
+which cohort was studied. That distinction is the guard's two levels: an
+eliminated group raises, an uneven drop cautions.
+
+**For the writeup:** every H1-H3 number is computed on a sample whose density
+varies systematically with patient. It does not invalidate the comparison - all
+ten arms saw the same rows - but it is a property of the cohort that a reader
+should not have to derive from a manifest. Reporting the ratio matters more than
+the p-value: at 275,917 units a p-value is significant for a spread far too small
+to care about, and this one is 159x.
+
+### the guard is the label check, pointed at the funnel
+
+Same reasoning as NMI(label, subject) applied to a drop instead of a label. It is
+one function and one manifest column, and it belongs before the compute half
+rather than after: a port that reproduces a biased sample faithfully is still
+reproducing a biased sample.
+
+### what the join actually decides - a correction
+
+It operates on **embeddings and never sees a gene**, so `gene_handling` names the
+wrong thing and belongs to the pathway build's manifest. The join's decisions are
+about which **units** survive, and there are four. All ported as built, three
+with an alternative declared and not run - `union_with_zero_fill` being the one
+that matters, since zero-filling an absent pathway vector and measuring one are
+different statements.
+
+### also
+
+The funnel refuses a stage that drops units without a reason, which is what
+`itemised_funnel` has been an absent advisory about since April. G6 is a static
+assertion on column names and a hard error rather than a caution, because
+`mc_weights` is supervision for two arms *and* a 14-d vector in the same table as
+the inputs - one careless column list turns a retrieval score into a measurement
+of whether a vector can find itself, and by the time it is a tensor the question
+is unanswerable.
+
 ## next
 
 1. **3.4 `protocols/encode.py`** - the gate half landed 2026-09-11: the five

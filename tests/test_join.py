@@ -144,3 +144,73 @@ def test_the_join_carries_supervision_and_features_in_one_table():
     assert cols & SUPERVISION_ONLY, "supervision travels in the same table - the guard's premise"
     assert "patient_id" in cols, "the split axis must travel with every row"
     assert m["columns"]["novae_niche_normalization"] == "z-score per subarray"
+
+
+# --- is the drop even across the confounder axis? ---------------------------
+def test_an_even_drop_is_not_flagged():
+    """a uniform drop has overdispersion ~1 by construction; flagging it would
+    make the check noise."""
+    from omicstra.protocols.join import assert_funnel_not_confounded, drop_distribution
+
+    groups = {f"p{i}": (100, 400) for i in range(20)}       # exactly 25% each
+    d = drop_distribution(groups)
+    assert d["uniform"] is True and d["overdispersion"] < 2
+    assert assert_funnel_not_confounded(d) == []
+
+
+def test_a_concentrated_drop_is_flagged_with_its_magnitude():
+    from omicstra.protocols.join import assert_funnel_not_confounded, drop_distribution
+
+    groups = {f"p{i}": ((380 if i < 3 else 20), 400) for i in range(20)}
+    d = drop_distribution(groups)
+    assert d["uniform"] is False
+    (caution,) = assert_funnel_not_confounded(d)
+    assert "overdispersion" in caution and str(d["overdispersion"]) in caution
+
+
+def test_eliminating_a_group_is_an_error_not_a_caution():
+    """a drop that removes a patient entirely does not thin the cohort, it
+    changes which cohort was studied."""
+    from omicstra.protocols.join import (
+        ConfounderBiasedFunnel,
+        assert_funnel_not_confounded,
+        drop_distribution,
+    )
+
+    groups = {"p1": (400, 400), "p2": (100, 400), "p3": (100, 400)}
+    with pytest.raises(ConfounderBiasedFunnel, match="lost every"):
+        assert_funnel_not_confounded(drop_distribution(groups))
+
+
+def test_too_few_groups_says_so_rather_than_inventing_a_verdict():
+    from omicstra.protocols.join import assert_funnel_not_confounded, drop_distribution
+
+    d = drop_distribution({"only": (10, 100)})
+    assert d["testable"] is False
+    assert assert_funnel_not_confounded(d) == []
+
+
+def test_the_real_join_drop_is_uneven_across_patients_and_says_so():
+    """THE measured finding, pinned. 24.3% of niches leave the cohort at this
+    stage and they do not leave evenly - the drop tracks patient_id, which is the
+    axis every honest split is held out on. no patient is eliminated, so this is
+    a caution that belongs in the writeup, not an error.
+    """
+    from collections import defaultdict
+
+    from omicstra.protocols.join import assert_funnel_not_confounded, drop_distribution
+
+    m = _manifest()
+    by = defaultdict(lambda: [0, 0])
+    for s in m["per_subarray"]:
+        by[str(s["patient_id"])][0] += s["n_intersection_dropped_no_gpath2vec"]
+        by[str(s["patient_id"])][1] += s["n_niches_pre_intersection"]
+
+    d = drop_distribution({k: tuple(v) for k, v in by.items()})
+    assert d["n_groups"] == 92
+    assert not d["eliminated_groups"], "no patient may be removed entirely"
+    assert d["min_retained_units"] > 0
+    assert d["uniform"] is False, (
+        "this drop is known to be uneven (overdispersion ~159x). if it has become "
+        "uniform the join changed, and the writeup's caveat is now wrong")
+    assert len(assert_funnel_not_confounded(d)) == 1
