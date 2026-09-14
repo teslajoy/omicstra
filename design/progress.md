@@ -996,6 +996,19 @@ should not have to derive from a manifest. Reporting the ratio matters more than
 the p-value: at 275,917 units a p-value is significant for a spread far too small
 to care about, and this one is 159x.
 
+### what "even" means here, since the first field name got it wrong
+
+Even does **not** mean every patient loses the same fraction - chance alone
+spreads those. It means whether a niche is dropped does not depend on which
+patient it came from. For a typical patient (3,046 niches) at a 24.3% pooled
+rate, chance alone would put them between 0.228 and 0.259; **17 of 92 land inside
+that band** and the observed spread is 12x wider than chance allows.
+
+The flag was first called `uniform`, which claimed the stronger thing - absence
+of evidence dressed as evidence of absence, since a small cohort can easily fail
+to show concentration that is really there. It is `concentration_detected` now,
+which is what the test actually establishes.
+
 ### the guard is the label check, pointed at the funnel
 
 Same reasoning as NMI(label, subject) applied to a drop instead of a label. It is

@@ -151,6 +151,11 @@ def drop_distribution(groups: dict[str, tuple[int, int]], axis: str = "patient_i
 
     `groups` is {group: (n_dropped, n_before)}.
 
+    "even" here means: whether a unit is dropped does not depend on which group
+    it came from. it does NOT mean every group loses the same fraction - chance
+    alone spreads those - so the test is whether the observed spread exceeds what
+    chance predicts, not whether it is zero.
+
     a 24% drop is harmless only if it falls evenly. if it concentrates in a few
     patients, the surviving table is a biased sample and every metric computed on
     it carries that bias silently - the same reasoning as NMI(label, subject),
@@ -186,7 +191,11 @@ def drop_distribution(groups: dict[str, tuple[int, int]], axis: str = "patient_i
             "max_rate": round(float(rates.max()), 4),
             "sd_rate": round(float(rates.std()), 4),
             "overdispersion": round(phi, 1),
-            "uniform": bool(phi <= OVERDISPERSION_CAUTION),
+            # NOT "uniform". this says the spread is not detectably wider than
+            # chance AT THIS BAR, which is absence of evidence - a small cohort
+            # can fail to show concentration that is really there. naming the
+            # field `uniform` claimed the stronger thing.
+            "concentration_detected": bool(phi > OVERDISPERSION_CAUTION),
             "eliminated_groups": eliminated,
             "min_retained_units": int((n - d).min()),
             "note": ("overdispersion is observed spread / spread expected if the drop "
@@ -206,7 +215,7 @@ def assert_funnel_not_confounded(dist: dict) -> list[str]:
             f"{len(dist['eliminated_groups'])} group(s) on {dist['axis']} lost every "
             f"unit: {dist['eliminated_groups'][:5]}. the surviving table describes a "
             "different cohort than the one enumerated.")
-    if not dist.get("testable") or dist.get("uniform"):
+    if not dist.get("testable") or not dist.get("concentration_detected"):
         return []
     return [(f"the drop is uneven across {dist['axis']}: overdispersion "
              f"{dist['overdispersion']}x against a uniform drop, rates "

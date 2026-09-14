@@ -154,7 +154,7 @@ def test_an_even_drop_is_not_flagged():
 
     groups = {f"p{i}": (100, 400) for i in range(20)}       # exactly 25% each
     d = drop_distribution(groups)
-    assert d["uniform"] is True and d["overdispersion"] < 2
+    assert d["concentration_detected"] is False and d["overdispersion"] < 2
     assert assert_funnel_not_confounded(d) == []
 
 
@@ -163,7 +163,7 @@ def test_a_concentrated_drop_is_flagged_with_its_magnitude():
 
     groups = {f"p{i}": ((380 if i < 3 else 20), 400) for i in range(20)}
     d = drop_distribution(groups)
-    assert d["uniform"] is False
+    assert d["concentration_detected"] is True
     (caution,) = assert_funnel_not_confounded(d)
     assert "overdispersion" in caution and str(d["overdispersion"]) in caution
 
@@ -210,7 +210,19 @@ def test_the_real_join_drop_is_uneven_across_patients_and_says_so():
     assert d["n_groups"] == 92
     assert not d["eliminated_groups"], "no patient may be removed entirely"
     assert d["min_retained_units"] > 0
-    assert d["uniform"] is False, (
-        "this drop is known to be uneven (overdispersion ~159x). if it has become "
-        "uniform the join changed, and the writeup's caveat is now wrong")
+    assert d["concentration_detected"] is True, (
+        "this drop is known to be concentrated (overdispersion ~159x). if it stops "
+        "being detectable the join changed, and the writeup's caveat is now wrong")
     assert len(assert_funnel_not_confounded(d)) == 1
+
+
+def test_the_flag_claims_detection_not_uniformity():
+    """`uniform: True` claimed the stronger thing - absence of evidence dressed
+    as evidence of absence. a small cohort can easily fail to show concentration
+    that is really there, and the field name has to admit that.
+    """
+    from omicstra.protocols.join import drop_distribution
+
+    d = drop_distribution({f"p{i}": (25, 100) for i in range(4)})
+    assert "uniform" not in d, "the field must not claim uniformity"
+    assert d["concentration_detected"] is False
