@@ -1035,6 +1035,69 @@ the inputs - one careless column list turns a retrieval score into a measurement
 of whether a vector can find itself, and by the time it is a tensor the question
 is unanswerable.
 
+---
+
+## handoff · end of 2026-09-14
+
+Written because a killed terminal cost an hour of rebuilding this morning.
+`claude --resume` is the cheaper fix; this is the backstop.
+
+**State:** 247 tests, CI green on 3.11/3.12/3.14, main and v1.1 both at the same
+commit, nothing unpushed.
+
+### shipped today
+
+| | |
+|---|---|
+| `v1.1.0a1` | tagged at `8c24a30`, **on PyPI**, archived on Zenodo |
+| software DOI | `10.5281/zenodo.22754114` (concept - resolves to newest) |
+| 3.5, 3.6, 3.7 | encoder port, dispatcher, encode gate - step 3 complete |
+| step 4 part 1 | join semantics declared, funnel itemised, G6 armed, maths ported bit-identical |
+
+### in flight, needs no attention
+
+The **data deposit** is uploading detached to draft `22754479` and survives this
+session. It was at 25/41 files when the session ended. Resume if it stopped:
+
+```sh
+python scripts/zenodo_deposit.py \
+  --stage <scratchpad>/zenodo/parts --deposition 22754479
+```
+
+Files already up are skipped. It does **not** publish - a person reviews the
+draft and publishes, because publishing on Zenodo is irreversible.
+
+### two things only a person can do
+
+- **mark the GitHub release `v1.1.0a1` as a pre-release** - one checkbox. GitHub
+  still labels it "Latest"; PyPI already gets this right from the version string
+- nothing else - PyPI trusted publishing is configured and working now
+
+### where to start tomorrow
+
+**Step 5, the evaluation chain**, ahead of finishing the join compute path. The
+argument: `protocols/evaluate.py` is six `NotImplementedError` stubs, and they
+are what stands between "vectors exist" and "a user gets an answer". A second
+cohort would spend the GPU hours and then find nothing can score the result.
+
+Two smaller items, both recorded and neither urgent:
+
+- the routing arm is chosen **per cohort, not per question** - `discover` does
+  `bool(ev.get("tasks"))`, so a cohort with evidence for 1 of 7 tasks sends all
+  seven to the ask arm, and six get a refusal where a routing decision belongs.
+  "that needs compute, here are the gates" is the right answer
+- `cohort.json` declares `compute_backend: "mac"`, which is not one of its own
+  declared options (`local | cloud | slurm`)
+
+### and the thing that is NOT done, despite appearances
+
+**No cohort-scale extraction has been run.** `virchow2_niche/` is 280 subarrays
+dated **9 April**, produced by the original script - it is the oracle, not
+output. This session's port produced **13 subarrays**, all for verification. On
+tnbc-92 there is no reason to run more; on a cohort with no cache, ~5.8 hours is
+real work. That is why the next version's goal is the SLURM/ARC dispatch backend,
+recorded in `v1_1_scope.md`.
+
 ## next
 
 1. **3.4 `protocols/encode.py`** - the gate half landed 2026-09-11: the five
