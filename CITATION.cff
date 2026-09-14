@@ -14,11 +14,11 @@ license: MIT
 version: 1.1.0a1
 repository-code: "https://github.com/teslajoy/omicstra"
 url: "https://teslajoy.github.io/omicstra/"
-# no `doi:` until one exists. 10.5281/zenodo.22666752 was RESERVED and never
-# published - it returns 404 - so citing it sent readers to nothing. the DOI is
-# minted by the GitHub-Zenodo integration when a release is archived, and the
-# CONCEPT doi (all versions) goes here, never a version doi, so this line does
-# not go stale at the next release.
+# the CONCEPT doi - all versions - so this line does not go stale at the next
+# release. the version doi for 1.1.0a1 is 10.5281/zenodo.22754115.
+# it replaces 10.5281/zenodo.22666752, which was reserved and never published
+# and returned 404 from here until 2026-09-14.
+doi: "10.5281/zenodo.22754114"
 date-released: "2026-09-14"
 keywords:
   - model context protocol

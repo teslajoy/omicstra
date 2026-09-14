@@ -6,7 +6,7 @@ the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https
 
 [![release](https://github.com/teslajoy/omicstra/actions/workflows/release.yml/badge.svg)](https://github.com/teslajoy/omicstra/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![DOI](https://img.shields.io/badge/DOI-pending%20first%20archived%20release-lightgrey)](https://github.com/teslajoy/omicstra/releases)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.22754114-1682D4)](https://doi.org/10.5281/zenodo.22754114)
 
 `v1.0.0` · `v1.1.0a1` pre-release  `ResearchHub Foundation grant`  `Brenden-Colson Center / Sears Lab, OHSU`
 
@@ -383,16 +383,15 @@ Brenden-Colson Center for Pancreatic Care / Sears Lab, OHSU
   title   = {omicstra: a multi-agent MCP server for cross-modal embedding alignment
              and evidence-based routing in spatial biology},
   year    = {2026},
+  doi     = {10.5281/zenodo.22754114},
   url     = {https://github.com/teslajoy/omicstra},
   license = {MIT}
 }
 ```
 
-no `doi` field yet. `10.5281/zenodo.22666752` appeared here and in
-`CITATION.cff` until 2026-09-14 and **returns 404** - it was reserved on Zenodo
-and never published, so anyone who followed it got nothing. the DOI is minted
-when the GitHub-Zenodo integration archives a release; the **concept** DOI, which
-covers every version, goes here once it exists.
+that is the **concept** DOI - it resolves to the newest archived version and
+never goes stale. cite it unless you need to pin one release, in which case use
+that release's own version DOI from the Zenodo record.
 
 *funded by ResearchHub Foundation ([doi:10.55277/researchhub.6ou1w3h3](https://doi.org/10.55277/researchhub.6ou1w3h3))*  
 *nonprofit recipient: OHSU Foundation - EIN 23-7083114*  
