@@ -757,3 +757,55 @@ def test_version_comes_from_the_distribution_not_a_literal():
     assert omicstra.__version__ == declared, (
         f"installed metadata {omicstra.__version__} != pyproject {declared} - "
         "the editable install is stale; `pip install -e .` refreshes it")
+
+
+def test_every_file_that_states_a_version_states_the_same_one():
+    """four files carry the version and a release is where they diverge.
+
+    CI already compares server.json to pyproject; .zenodo.json and CITATION.cff
+    are newer and were not covered. a mismatch there is not cosmetic - the DOI
+    record and the citation would claim a version that was never released, and
+    nothing else in the suite would notice.
+    """
+    import tomllib
+
+    import yaml
+
+    root = Path(omicstra.__file__).parents[2]
+    if not (root / "pyproject.toml").is_file():
+        pytest.skip("not running from the source tree")
+
+    declared = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
+    sj = json.loads((root / "server.json").read_text())
+    found = {
+        "pyproject.toml": declared,
+        "server.json": sj["version"],
+        "server.json#packages[0]": sj["packages"][0]["version"],
+        "CITATION.cff": str(yaml.safe_load((root / "CITATION.cff").read_text())["version"]),
+    }
+    zj = root / ".zenodo.json"
+    if zj.is_file():
+        found[".zenodo.json"] = json.loads(zj.read_text())["version"]
+
+    assert len(set(found.values())) == 1, f"version drift: {found}"
+
+
+def test_no_file_cites_a_doi_that_was_only_reserved():
+    """10.5281/zenodo.22666752 was reserved and never published - it returns 404.
+
+    it sat in the README badge, the bibtex and CITATION.cff, so a reader who
+    followed any of the three got nothing. this fails if it comes back before a
+    record actually exists behind it.
+    """
+    root = Path(omicstra.__file__).parents[2]
+    if not (root / "pyproject.toml").is_file():
+        pytest.skip("not running from the source tree")
+
+    dead = "22666752"
+    offenders = [f.name for f in (root / "README.md", root / "CITATION.cff",
+                                  root / ".zenodo.json")
+                 if f.is_file() and dead in f.read_text()
+                 and "404" not in f.read_text()]
+    assert not offenders, (
+        f"{offenders} cite zenodo.{dead}, which does not resolve. cite the CONCEPT "
+        "DOI minted by the GitHub-Zenodo integration once a release is archived.")
