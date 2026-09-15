@@ -111,3 +111,119 @@ def test_the_plan_tool_does_not_name_an_oracle_as_output():
     assert oracle not in out.parents
     for ro in read_only_inputs("tnbc-92"):
         assert ro != out and ro not in out.parents
+
+
+# --- a finished run grid is an oracle, and a rerun goes somewhere new --------
+def test_every_path_the_evidence_pack_cites_is_declared_read_only():
+    """"done" is declared, not inferred - and this is what stops a finished project
+    forgetting to declare. any runs/ or data/ path the pack reads a routed number
+    from must sit inside a read-only input."""
+    import re
+
+    pack = ROOT / "projects" / "tnbc-92" / "routing_evidence.json"
+    if not pack.is_file():
+        pytest.skip("evidence pack absent")
+    from omicstra.dispatch import protected_by
+
+    ro = read_only_inputs("tnbc-92")
+    cited = set()
+    for task in json.loads(pack.read_text())["tasks"].values():
+        for m in re.finditer(r"\b(?:runs|data)/[\w\-./{}]+", str(task.get("source", ""))):
+            cited.add(m.group(0).rstrip(".;,").split("{")[0].rstrip("/"))
+    assert cited, "the pack cites no artifact paths - the pattern is stale"
+    uncovered = sorted(p for p in cited if protected_by(ROOT / p, ro) is None)
+    assert not uncovered, f"cited but not declared read-only: {uncovered}"
+
+
+def _grid(tmp_path):
+    from omicstra.contracts.project import ProjectConfig
+    from omicstra.protocols.align import AlignGrid
+
+    runs = tmp_path / "finished"
+    for rid in ("R1", "B1"):
+        (runs / rid / "eval").mkdir(parents=True)
+        (runs / rid / "embeddings_test.parquet").write_bytes(b"emb-" + rid.encode())
+        (runs / rid / "run_config.json").write_text("{}")
+        (runs / rid / "split.json").write_text("{}")
+        (runs / rid / "eval" / "biology.parquet").write_bytes(b"published")
+    (runs / "R1" / "checkpoint.pt").write_bytes(b"ckpt")
+    cfg = ProjectConfig(project_id="t", platform="p", project_dir=tmp_path,
+                        read_only_inputs={"policy": "refuse_writes", "paths": [str(runs)]})
+    grid = AlignGrid(runs_root=str(runs), run_refs={r: str(runs / r / "embeddings_test.parquet")
+                                                     for r in ("R1", "B1")})
+    pack = tmp_path / "routing_evidence.json"
+    pack.write_text('{"tasks": {}}')
+    return cfg, grid, pack
+
+
+def test_scoring_into_a_finished_grid_is_refused_before_any_script_runs(tmp_path, monkeypatch):
+    from omicstra.protocols import align
+
+    cfg, grid, pack = _grid(tmp_path)
+    calls = []
+    monkeypatch.setattr(align, "_run_script", lambda s, a: calls.append((s, a)))
+    with pytest.raises(WouldOverwriteOracle, match="out_root"):
+        align.run_eval(cfg, grid, compute=True, evidence_out=pack)
+    assert calls == []
+
+
+def test_a_rerun_is_staged_into_out_root_and_scores_only_there(tmp_path, monkeypatch):
+    from omicstra.protocols import align
+
+    cfg, grid, pack = _grid(tmp_path)
+    out = tmp_path / "rerun"
+    calls = []
+    monkeypatch.setattr(align, "_run_script", lambda s, a: calls.append((s, a)))
+    res, rec = align.run_eval(cfg, grid, compute=True, evidence_out=pack, out_root=out)
+
+    (_script, args), = calls
+    assert args[args.index("--runs-dir") + 1] == str(out.resolve())
+    assert res.metrics_ref.startswith(str(out.resolve()))
+    assert rec.params["runs_root"] == str(out.resolve())
+    staged = out / "R1"
+    assert (staged / "embeddings_test.parquet").is_symlink()
+    assert (staged / "checkpoint.pt").is_symlink()
+    assert not (staged / "run_config.json").is_symlink()
+    assert not (staged / "eval").exists(), "a staged run must carry none of the outputs"
+    assert (Path(grid.runs_root) / "R1" / "eval" / "biology.parquet").read_bytes() == b"published"
+
+
+def test_out_root_inside_a_finished_grid_is_refused(tmp_path, monkeypatch):
+    from omicstra.protocols import align
+
+    cfg, grid, pack = _grid(tmp_path)
+    monkeypatch.setattr(align, "_run_script", lambda s, a: None)
+    with pytest.raises(WouldOverwriteOracle, match="stage a rerun in"):
+        align.run_eval(cfg, grid, compute=True, evidence_out=pack,
+                       out_root=Path(grid.runs_root) / "rerun")
+
+
+def test_a_stage_that_writes_through_a_staged_link_is_caught(tmp_path, monkeypatch):
+    """no mapped eval script writes its inputs - this holds that to the file."""
+    import os
+    import time
+
+    from omicstra.protocols import align
+
+    cfg, grid, pack = _grid(tmp_path)
+    out = tmp_path / "rerun"
+
+    def rogue(script, args):
+        target = out / "R1" / "embeddings_test.parquet"
+        time.sleep(0.01)
+        target.write_bytes(b"overwritten through the link")
+        os.utime(target.resolve())
+
+    monkeypatch.setattr(align, "_run_script", rogue)
+    with pytest.raises(WouldOverwriteOracle, match="wrote through a staged link"):
+        align.run_eval(cfg, grid, compute=True, evidence_out=pack, out_root=out)
+
+
+def test_training_into_a_finished_grid_is_refused(tmp_path, monkeypatch):
+    from omicstra.protocols import align
+
+    cfg, grid, _ = _grid(tmp_path)
+    nj = align.NicheJoin(manifest_ref="m", niches_dir=str(tmp_path))
+    monkeypatch.setattr(align, "_run_script", lambda s, a: pytest.fail("a script ran"))
+    with pytest.raises(WouldOverwriteOracle, match="train into"):
+        align.run_align(cfg, nj, run_ids=["R2_v3"], compute=True, runs_root=Path(grid.runs_root))

@@ -61,8 +61,10 @@
       "../../data/embeddings/virchow2_cell",
       "../../data/embeddings/novae_niche_full",
       "../../data/embeddings/niches_v3",
-      "../../data/embeddings/gpath2vec"
+      "../../data/embeddings/gpath2vec",
+      "../../runs/tnbc-92_v3"
     ],
-    "regenerable": "virchow2_* and novae_* could be recomputed at cost - about 5.8 hours for the H&E arm. the gpath2vec v1 build could NOT: its inputs were superseded and renamed _v1_legacy."
+    "regenerable": "virchow2_* and novae_* could be recomputed at cost - about 5.8 hours for the H&E arm. the gpath2vec v1 build could NOT: its inputs were superseded and renamed _v1_legacy.",
+    "runs_note": "the finished run grid is an oracle too: the evidence pack cites its eval/ artifacts and the acceptance pins are diffed against them. a rerun is staged into a fresh out_root (protocols/align.stage_grid) and scores there."
   }
 }

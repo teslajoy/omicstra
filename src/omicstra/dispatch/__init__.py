@@ -161,9 +161,19 @@ def read_only_inputs(project_id: str | None = None) -> list[Path]:
 
     try:
         cfg = ProjectConfig.load(project_id)
-        decl = cfg.read_only_inputs or {}
     except Exception:                       # noqa: BLE001 - undeclared is fine
         return []
+    return read_only_paths(cfg)
+
+
+def read_only_paths(cfg) -> list[Path]:
+    """the same resolution, from a config already in hand.
+
+    the align and eval stages hold a ProjectConfig rather than a project id, and
+    loading it a second time to ask one question is how two callers end up
+    reading two different declarations.
+    """
+    decl = cfg.read_only_inputs or {}
     if decl.get("policy") != "refuse_writes":
         return []
     out = []
@@ -177,21 +187,26 @@ def read_only_inputs(project_id: str | None = None) -> list[Path]:
     return out
 
 
+def protected_by(target: Path, protected: Iterable[Path]) -> Path | None:
+    """the declared read-only path `target` sits in, or None."""
+    t = Path(target).resolve()
+    return next((ro for ro in protected if t == ro or ro in t.parents), None)
+
+
 def assert_writable(shards: Iterable[Shard], project_id: str | None = None) -> None:
     """refuse before a single byte moves if any output lands in an oracle."""
     protected = read_only_inputs(project_id)
     if not protected:
         return
     for sh in shards:
-        target = Path(sh.output).resolve()
-        for ro in protected:
-            if target == ro or ro in target.parents:
-                raise WouldOverwriteOracle(
-                    f"shard {sh.id!r} would write {target} inside {ro}, which this "
-                    "cohort declares read-only. that directory is what the ports "
-                    "are diffed against - writing into it makes the next diff "
-                    "compare a port against its own output and pass. choose a "
-                    "run-scoped output directory instead.")
+        ro = protected_by(sh.output, protected)
+        if ro is not None:
+            raise WouldOverwriteOracle(
+                f"shard {sh.id!r} would write {Path(sh.output).resolve()} inside {ro}, "
+                "which this cohort declares read-only. that directory is what the ports "
+                "are diffed against - writing into it makes the next diff "
+                "compare a port against its own output and pass. choose a "
+                "run-scoped output directory instead.")
 
 
 def run_shards(shards: Iterable[Shard], fn: ShardFn, *, address: str | None = None,

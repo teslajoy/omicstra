@@ -212,6 +212,8 @@ def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = Non
             f"{len(missing)} run(s) not trained under {root}: {missing[:4]}. "
             "pass compute=True to train them, or point at a runs root that has "
             "them. this stage resolves by default.")
+    if missing:
+        _refuse_protected(cfg, root, "train into")
 
     computed: list[str] = []
     for rid in missing:
@@ -356,9 +358,69 @@ def _pathway_node_embeddings(cfg: ProjectConfig, project_id: str | None) -> Path
     return p
 
 
+def _refuse_protected(cfg: ProjectConfig, target: Path, verb: str) -> None:
+    from omicstra.dispatch import WouldOverwriteOracle, protected_by, read_only_paths
+
+    ro = protected_by(target, read_only_paths(cfg))
+    if ro is not None:
+        raise WouldOverwriteOracle(
+            f"would {verb} {Path(target).resolve()}, inside {ro}, which this cohort "
+            "declares read-only. a finished grid is what reruns are diffed against; "
+            "writing into it makes the diff compare a rerun against itself and pass. "
+            "pass an out_root outside every declared read-only path.")
+
+
+# what a rerun reads from each run directory. linked, not copied: they are large,
+# and no eval stage writes them - every write lands under an eval/ directory,
+# which staging creates fresh. `_verify_links_untouched` holds that to the file.
+_STAGE_LINK = ("embeddings_test.parquet", "checkpoint.pt")
+_STAGE_COPY = ("run_config.json", "split.json", "metrics_h1_raw.json")
+
+
+def stage_grid(cfg: ProjectConfig, grid: AlignGrid, out_root: Path) -> AlignGrid:
+    """a fresh runs root holding a finished grid's inputs and none of its outputs.
+
+    the rerun scores into `out_root`, so every file it writes is new, and the
+    finished grid it reads from stays exactly as the evidence pack cites it.
+    """
+    out = Path(out_root).resolve()
+    _refuse_protected(cfg, out, "stage a rerun in")
+    src = Path(grid.runs_root)
+    refs = {}
+    for rid in grid.run_refs:
+        s, d = src / rid, out / rid
+        d.mkdir(parents=True, exist_ok=True)
+        for name in _STAGE_LINK:
+            if (s / name).is_file() and not (d / name).exists():
+                (d / name).symlink_to((s / name).resolve())
+        for name in _STAGE_COPY:
+            if (s / name).is_file() and not (d / name).exists():
+                (d / name).write_bytes((s / name).read_bytes())
+        refs[rid] = str(d / "embeddings_test.parquet")
+    return AlignGrid(runs_root=str(out), run_refs=refs, computed=[])
+
+
+def _link_state(grid: AlignGrid) -> dict[str, tuple[int, int]]:
+    root = Path(grid.runs_root)
+    return {str(p): (p.resolve().stat().st_mtime_ns, p.resolve().stat().st_size)
+            for rid in grid.run_refs for name in _STAGE_LINK
+            if (p := root / rid / name).is_symlink()}
+
+
+def _verify_links_untouched(before: dict[str, tuple[int, int]], grid: AlignGrid) -> None:
+    from omicstra.dispatch import WouldOverwriteOracle
+
+    changed = [p for p, st in _link_state(grid).items() if before.get(p) != st]
+    if changed:
+        raise WouldOverwriteOracle(
+            f"a stage wrote through a staged link into the finished grid: {changed[:3]}. "
+            "the rerun's results are not trustworthy and the grid needs checking "
+            "against its pins.")
+
+
 def run_eval(cfg: ProjectConfig, grid: AlignGrid, project_id: str | None = None,
              *, compute: bool = False, hypotheses: tuple[str, ...] = ("H1",),
-             evidence_out: Path | None = None
+             evidence_out: Path | None = None, out_root: Path | None = None
              ) -> tuple[EvalResult, TransformRecord]:
     """score the grid, and resolve the cohort's evidence pack.
 
@@ -386,6 +448,12 @@ def run_eval(cfg: ProjectConfig, grid: AlignGrid, project_id: str | None = None,
     computed = False
 
     if compute:
+        # scoring writes into the runs root. a finished grid is declared
+        # read-only, so a rerun is staged into out_root and scores there.
+        if out_root is not None:
+            grid = stage_grid(cfg, grid, out_root)
+        _refuse_protected(cfg, Path(grid.runs_root), "score into")
+        before = _link_state(grid)
         for h in hypotheses:
             stages = _EVAL_STAGES.get(h)
             if stages is None:
@@ -396,6 +464,7 @@ def run_eval(cfg: ProjectConfig, grid: AlignGrid, project_id: str | None = None,
                     for args in _stage_args(script, scope, h, cfg, grid, project_id)]
             for script, args in plan:
                 _run_script(script, args)
+        _verify_links_untouched(before, grid)
         computed = True
 
     summaries = [str(p) for p in
@@ -423,7 +492,7 @@ def run_eval(cfg: ProjectConfig, grid: AlignGrid, project_id: str | None = None,
                        computed=computed),
             _rec("eval", "pass", resolves_only=not computed,
                  n_tasks=len(d.get("tasks", {})), n_summaries=len(summaries),
-                 evidence_is_curated=True))
+                 runs_root=grid.runs_root, evidence_is_curated=True))
 
 
 def run_qc(cfg: ProjectConfig, project_id: str | None = None):
