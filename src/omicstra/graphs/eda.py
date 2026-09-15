@@ -16,14 +16,26 @@ next, which is why the rest can be a straight line.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, TypedDict
+from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
+_NO_DATA = (
+    "no object to profile. the inventory binds one from the cohort's declared "
+    "inputs, so either the cohort has no data under data/inputs/ yet, or it has "
+    "not been converted: run scripts/ingest_<cohort>.py to write .h5ad plus a "
+    "coordinates table, then re-run. `omicstra describe` shows what this cohort "
+    "currently declares.")
+
 
 class NoCohortData(RuntimeError):
     """the cohort has no bound object to profile.
+
+    kept for callers that invoke a protocol directly rather than through the
+    graph. INSIDE the graph the same condition halts with a record instead: the
+    parent asked a routing question and is owed an answer, and an exception
+    crossing the subgraph boundary loses the arm decision already made.
 
     a distinct type rather than a KeyError because it is an ordinary state - a
     freshly scaffolded cohort is always in it - and the caller should be able to
@@ -34,7 +46,7 @@ from omicstra.eda import cohort_escalations, load_calibration, load_contract
 from omicstra.protocols import build_protocol
 from omicstra.protocols.eda import EDA_STEPS
 from omicstra.protocols.inventory import INVENTORY_STEPS
-from omicstra.records import DiagnosticRecord, GateRecord
+from omicstra.records import GateRecord
 from omicstra.settings import settings
 
 
@@ -95,12 +107,13 @@ def profile(state: EDAState) -> dict:
     # was the first thing a new cohort owner saw, which is a poor way to learn
     # that the inventory has to bind an object first.
     if not state.get("adata_path"):
-        raise NoCohortData(
-            "no object to profile. the inventory binds one from the cohort's "
-            "declared inputs, so either the cohort has no data under data/inputs/ "
-            "yet, or it has not been converted: run scripts/ingest_<cohort>.py to "
-            "write .h5ad plus a coordinates table, then re-run. `omicstra describe` "
-            "shows what this cohort currently declares.")
+        # inside the GRAPH this is a halt, not a raise. the parent asked a
+        # routing question and is owed an answer; an exception crossing the
+        # boundary turns "this cohort has no data yet" into a stack trace and
+        # loses the arm decision that was already correctly made.
+        return {"halted": True, "records": [*state.get("records", []), {
+            "step_id": "profile", "kind": "gate", "status": "not_run",
+            "verdict": "halt", "reason": _NO_DATA}]}
     ctx = {"adata_path": state["adata_path"],
            "project_id": state.get("project_id"),
            "params": state.get("params", {})}

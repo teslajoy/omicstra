@@ -43,7 +43,10 @@ from omicstra.settings import settings
 
 _log = logging.getLogger(__name__)
 
-Arm = Literal["ask", "compute"]
+# "refuse" is a third arm and not an error state. a question the contract does
+# not declare has no method behind it, so neither resolving nor computing is
+# available - and saying so is the answer rather than a failure to answer.
+Arm = Literal["ask", "compute", "refuse"]
 
 
 # MUST be module level. under `from __future__ import annotations` a
@@ -57,8 +60,10 @@ class OmicstraState(TypedDict, total=False):
     project_id: str | None
     project_dir: str | None
     # discovery
-    has_evidence: bool
+    has_evidence: bool            # does the cohort hold ANY evidence
+    has_evidence_for_task: bool   # does it hold evidence for the task asked
     arm: Arm
+    arm_reason: str
     # --- shared with subgraphs BY NAME ------------------------------------
     # a key the parent does not declare is DROPPED at the boundary, in both
     # directions. so every key a subgraph reads from or writes to the parent
@@ -102,24 +107,75 @@ class OmicstraState(TypedDict, total=False):
 
 
 def discover(state: OmicstraState) -> dict:
-    """does this cohort have an evidence pack? the one branch at level 0.
+    """which arm answers THIS question - resolved per task, not per cohort.
 
-    absent evidence is not an error and not a fallback - it decides which arm
-    runs. a cohort that has never been evaluated cannot be routed from another
-    cohort's table, so it goes to COMPUTE rather than borrowing an answer.
+    absent evidence is not an error and not a fallback: a cohort that has never
+    been evaluated cannot be routed from another cohort's table, so it goes to
+    COMPUTE rather than borrowing an answer.
+
+    the arm is a property of the QUESTION crossed with the cohort, not of the
+    cohort alone. this read `bool(ev.get("tasks"))`, so a cohort holding evidence
+    for one task of seven sent all seven to ask - and the six without evidence
+    came back "this cohort records no evidence for X", which is a refusal
+    standing where a routing decision belongs. "that needs compute, and here are
+    the gates" is the true answer, and the compute arm exists to give it.
+
+    three outcomes, and the third is the only real refusal:
+
+        ask       this task has recorded evidence -> resolve from it
+        compute   the task is in the contract, this cohort has not run it
+        refuse    the task is not in the contract at all - nothing to compute
     """
     ev = load_routing_evidence(state.get("project_id"))
-    has = bool(ev.get("tasks"))
+    tasks = ev.get("tasks") or {}
+    task_id = state.get("task_id")
+    has = bool(tasks)
 
     # the cohort declaration is read HERE, once, and travels. the encode gate
     # resolves five of its questions from it, and a subgraph that loaded the
     # file itself would read it again per invocation and could disagree with
     # what the parent recorded.
     cohort = _load_cohort(state.get("project_id"))
-    out = {"has_evidence": has, "arm": "ask" if has else "compute", "cohort": cohort}
+
+    arm, why = _arm_for(task_id, tasks, state.get("project_id"))
+    out = {"has_evidence": has, "has_evidence_for_task": bool(task_id and task_id in tasks),
+           "arm": arm, "arm_reason": why, "cohort": cohort}
     if not state.get("encoder"):
         out["encoder"] = _primary_encoder(state.get("project_id"))
     return out
+
+
+def _known_task(task_id: str, project_id: str | None) -> bool:
+    """is this a task the CONTRACT declares, whatever this cohort has run?
+
+    the distinction carries the refusal. a declared task with no evidence here is
+    work not yet done; an undeclared one is a question the system has no method
+    for, and no amount of compute produces one.
+    """
+    from omicstra.routing import list_task_families
+
+    try:
+        fams = list_task_families(project_id=project_id)
+    except Exception:                       # noqa: BLE001 - unreadable contract refuses
+        return False
+    return any(f.get("task_id") == task_id for f in fams.get("families", []))
+
+
+def _arm_for(task_id: str | None, tasks: dict,
+             project_id: str | None) -> tuple[Arm, str]:
+    """the arm for one task, and the reason, which travels into the record."""
+    if not task_id:
+        # no task named: the caller is asking about the cohort rather than a
+        # question. evidence decides, as it did before.
+        return ("ask" if tasks else "compute",
+                "no task named - the arm follows whether the cohort has any evidence")
+    if task_id in tasks:
+        return "ask", f"{task_id} has recorded evidence on this cohort"
+    if _known_task(task_id, project_id):
+        return "compute", (f"{task_id} is a declared task family and this cohort has "
+                           "not run it - that is work outstanding, not a refusal")
+    return "refuse", (f"{task_id} is not a task family the contract declares, so there "
+                      "is no method to run and nothing to compute")
 
 
 def _load_cohort(project_id: str | None) -> dict:
@@ -286,6 +342,9 @@ def build_omicstra_graph(checkpointer: Any = None,
         targets["ask"] = "route"
         g.add_edge("route", END)
 
+    # refuse terminates at the router when there is one - it can report the
+    # reason as a decision - and at END otherwise.
+    targets.setdefault("refuse", "route" if route is not None else END)
     targets.setdefault("ask", END)
     targets.setdefault("compute", END)
     g.add_conditional_edges("discover", _arm, targets)

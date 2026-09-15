@@ -7,6 +7,7 @@ cohort lives in its own directory, never inside the omicstra package.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import click
@@ -260,14 +261,7 @@ def eda(project_dir, project_id, adata_path, steps):
     if adata_path:
         payload["adata_path"] = str(adata_path.expanduser())
 
-    from omicstra.graphs.eda import NoCohortData
-
-    try:
-        out = app.invoke(payload, cfg)
-    except NoCohortData as e:
-        # an ordinary state for a freshly scaffolded cohort, so it reads as a
-        # message rather than a stack trace. `gate` already refuses this way.
-        raise click.ClickException(str(e)) from None
+    out = app.invoke(payload, cfg)
     click.echo(f"cohort:  {settings.project_root(project_id).name}")
     click.echo(f"arm:     {out.get('arm')}   (evidence present: {out.get('has_evidence')})")
 
@@ -281,9 +275,48 @@ def eda(project_dir, project_id, adata_path, steps):
             click.echo(f"  escalated: {e.get('check')} - {e.get('why_not_inherited','')}")
         if v.get("consequence"):
             click.echo(f"  if you accept: {v['consequence']}")
+        # the encode gate asks for a MAPPING of gate id -> option, not yes/no.
+        # sending a bool here halts the run for "unanswered", which looks like a
+        # refusal the person did not make.
+        gates = [g for g in v.get("gates", []) if g.get("open")]
+        for g in gates:
+            click.echo(f"  gate {g['id']}: {g['question']}")
+            click.echo(f"       options: {', '.join(g['options'])}")
+            if g.get("pre_answerable_by"):
+                click.echo(f"       declare {g['pre_answerable_by']} to answer it in advance")
+            click.echo(click.style(f"       forecloses: {g['forecloses']}", dim=True))
         click.echo(f"  {v.get('no_default', 'the system does not pick')}")
         click.echo("-" * 62)
-        out = app.invoke(Command(resume=click.confirm("accept and proceed?", default=False)), cfg)
+
+        # a graph that pauses needs somebody to answer. with no terminal there is
+        # nobody, and blocking on stdin turns a correct interrupt into a hang -
+        # which is what happened. report what is being asked and stop.
+        if not sys.stdin.isatty():
+            click.echo("\nnot a terminal, so nothing can answer this.")
+            if gates:
+                click.echo("declare the fields above in cohort.json, or run this "
+                           "interactively.")
+            raise SystemExit(2)
+
+        if gates:
+            answers = {}
+            for g in gates:
+                answers[g["id"]] = click.prompt(f"  {g['id']}",
+                                                type=click.Choice(g["options"]))
+            out = app.invoke(Command(resume=answers), cfg)
+        else:
+            out = app.invoke(Command(resume=click.confirm("accept and proceed?",
+                                                          default=False)), cfg)
+
+    # a halt carries its reason in the last record. the subgraph no longer raises
+    # - it returns a halt so the parent keeps the arm decision - so the reason
+    # has to be read out rather than caught.
+    if out.get("halted"):
+        reason = next((r.get("reason") for r in reversed(out.get("records", []))
+                       if r.get("reason")), "")
+        click.echo(f"arm:     {out.get('arm')}   (evidence present: "
+                   f"{out.get('has_evidence')})")
+        raise click.ClickException(reason or "the run halted without a recorded reason")
 
     if out.get("verdict") is None:
         # the arm decided correctly and the command said nothing about it, so it
@@ -455,6 +488,15 @@ def decisions(project_dir: Path | None, project_id: str | None) -> None:
     click.echo(f"{d['total']} decision(s)   {d['ledger']}")
     click.echo(f"  by outcome  {d['by_outcome']}")
     click.echo(f"  by actor    {d['by_actor']}")
+    # the arm per TASK. a cohort-level "has evidence" hides which questions it
+    # can actually answer and which are outstanding work.
+    arms = d.get("arms") or {}
+    click.echo(f"\n  arms        {arms.get('ask', 0)} answerable now, "
+               f"{arms.get('compute', 0)} need compute")
+    for t in d.get("answerable_now", []):
+        click.echo(click.style(f"    ask      {t}", dim=True))
+    for t in d.get("needs_compute", []):
+        click.echo(f"    compute  {t}")
     for r in d["decisions"]:
         click.echo(f"    {r['record_id']}  {r['outcome']:<13} {r['chosen'] or '-'}")
     click.echo(click.style(f"\n  {d['interpretation_boundary']}", dim=True))

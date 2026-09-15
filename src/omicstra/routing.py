@@ -262,12 +262,26 @@ def decision_record(project_id: str | None = None) -> dict:
             return "escalate"
         return "tie" if getattr(r, "tie", False) else "recommend"
 
+    # arms PER TASK, not per cohort. a cohort holding evidence for one task of
+    # seven answers one question from its table and owes compute on six, and a
+    # single cohort-level count cannot say that - it reports "has evidence" and
+    # hides which questions it can actually answer.
+    fams = list_task_families(project_id=project_id).get("families", [])
+    ev_tasks = set((load_routing_evidence(project_id).get("tasks") or {}))
+    by_task_arm = {f["task_id"]: ("ask" if f["task_id"] in ev_tasks else "compute")
+                   for f in fams}
+
     return {
         "project_id": project_id or "",
         "total": len(sel),
         "by_outcome": {o: sum(1 for r in sel if outcome(r) == o)
                        for o in ("recommend", "tie", "escalate", "refuse",
                                  "override_ack")},
+        "by_task_arm": by_task_arm,
+        "arms": {"ask": sum(1 for a in by_task_arm.values() if a == "ask"),
+                 "compute": sum(1 for a in by_task_arm.values() if a == "compute")},
+        "answerable_now": sorted(t for t, a in by_task_arm.items() if a == "ask"),
+        "needs_compute": sorted(t for t, a in by_task_arm.items() if a == "compute"),
         "by_actor": {a: sum(1 for r in sel if r.actor == a)
                      for a in ("deterministic", "model", "human")},
         "interpretation_boundary": (
