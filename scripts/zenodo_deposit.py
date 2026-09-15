@@ -128,8 +128,21 @@ def main(stage: Path, metadata: Path | None, deposition: int | None, dry_run: bo
         for attempt in range(1, ATTEMPTS + 1):
             try:
                 with p.open("rb") as fh:
-                    # streamed, so a 13 GB file never sits in memory
-                    r = s.put(f"{bucket}/{p.name}", data=fh, timeout=None)
+                    # streamed, so a 13 GB file never sits in memory.
+                    #
+                    # a (connect, read) PAIR rather than a total: a total would
+                    # have to be generous enough for the largest file on the
+                    # slowest link, which makes it useless.
+                    #
+                    # it does NOT catch a stalled SEND. for a streaming upload the
+                    # read timeout applies to reading the response, so a server
+                    # accepting bytes at 0 KB/s holds the request open regardless -
+                    # observed for eight minutes against a throttling gateway, and
+                    # only visible by watching the interface. detecting that needs
+                    # a watchdog on bytes written, which this does not have. what
+                    # the pair does buy is a bounded connect and a bounded wait for
+                    # the response once the body is sent.
+                    r = s.put(f"{bucket}/{p.name}", data=fh, timeout=(30, 120))
                 if r.ok:
                     click.echo(f" ok{'' if attempt == 1 else f' (attempt {attempt})'}")
                     break
