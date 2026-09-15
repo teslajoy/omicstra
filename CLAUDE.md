@@ -150,7 +150,7 @@ to do:
   `eda.py`, `route.py` built; `encode.py` and `promote.py` are v1.1
 - `src/omicstra/protocols/` — LEVEL 2. order, applicability, authority, no maths.
   `inventory.py` (8 steps), `eda.py` (10 checks), `align.py` (4 stages,
-  resolve-only until v1.1), `evaluate.py` (6 guards, **stubs**)
+  resolve-only until v1.1), `evaluate.py` (6 guards, and the H1-H3 gates over the pinned artifacts the evidence pack cites)
 - `src/omicstra/measures/` — the maths. pure functions, no ctx, no order, no
   authority. callable from a notebook
 - `src/omicstra/contracts/` — reads a declaration, decides nothing

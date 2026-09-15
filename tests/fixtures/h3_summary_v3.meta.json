@@ -24,5 +24,6 @@
     "test_niches": 35594,
     "held_out_axis": "patient_id"
   },
-  "not_the_headline": "the published H3 result - 15/15 cells BH-FDR < 0.05 cross-patient, and the DAG extension - comes from scripts/eval_h3_pathway_cca*.py, not this rollup. this fixture pins what eval.py --hypothesis H3 produces."
+  "not_the_headline": "the published H3 result - 15/15 cells BH-FDR < 0.05 cross-patient, and the DAG extension - comes from scripts/eval_h3_pathway_cca*.py, not this rollup. this fixture pins what eval.py --hypothesis H3 produces.",
+  "role": "diagnostic rollup. the acceptance pin for this hypothesis is h3_per_pathway_cca_v3.json, the artifact the evidence pack cites; this file stays pinned because its G1 finding (archetype encodes patient) and its coverage gaps are real."
 }

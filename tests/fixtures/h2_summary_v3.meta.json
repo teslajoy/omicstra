@@ -32,5 +32,6 @@
   },
   "not_in_fixture": {
     "compartment_cosine": "a pointer string to runs/tnbc-92_v3/eval/H2/compartment_cosine.parquet, which is not pinned"
-  }
+  },
+  "role": "diagnostic rollup. the acceptance pin for this hypothesis is h2c_metrics_ci_v3.json, the artifact the evidence pack cites; this file stays pinned because its G1 finding (archetype encodes patient) and its coverage gaps are real."
 }

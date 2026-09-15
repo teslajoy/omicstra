@@ -1,0 +1,47 @@
+{
+  "note": "the artifact the evidence pack cites for subject_identity_suppression (h2c) and for tissue_state_grouping's intervals (h2a), pinned byte for byte so the acceptance test does not depend on a gitignored runs/ tree.",
+  "source": "runs/tnbc-92_v3/eval/H2/metrics_h2_ci.json",
+  "written_by": "scripts/eval_h2_bootstrap_ci.py --runs-dir runs/tnbc-92_v3 --niches-dir data/embeddings/niches_v3 --n-bootstrap 200 --seed 42",
+  "upstream": "each run's eval/biology.parquet, written by scripts/eval_alignment_biology.py --n-permutations 10000 --n-rho-null 1000 --seed 42 (p_floor 1e-4 on every row; biology_rho n_permutations 1000)",
+  "upstream_sha256": {
+    "B1_v3": "1f9b7dc1d0ce21b6404f6dae973e05c052f688900d13a378a0da9ce5570c0777",
+    "R1_v3": "1219b7b7446c05367cae3d59cf0567b9e783be96ee509116055d5b846736824d",
+    "R2_v3": "864680d3f1cd5d595dfb04851ce589698a96c33a3ff52118fa9379e4faa387c9",
+    "R3_v3": "ff0bea96cef59045e27a4249cf1c3321dfb3c51d4e93b96ded5bbeb87204ace3",
+    "R4_v3": "df550443639c3287607c89238fe9ae10fabfebf4e964604d9d8a51220c242518",
+    "R5_v3": "1a722ed49ecc3a08c7ced2507809c8f8855a226cd7024a2470c23470eb6e73f5",
+    "R6_v3": "2be5286fa08d4db3c5566ba009382d0d93992c17dbc2e1a2c7f4a75c7adb6758"
+  },
+  "cited_by": {
+    "subject_identity_suppression": "h2c",
+    "tissue_state_grouping": "h2a intervals only - its point estimates are mc_coherence.parquet, not pinned here"
+  },
+  "pinned": "2026-09-15",
+  "h2c_runs": [
+    "B1_v3",
+    "R1_v3",
+    "R2_v3",
+    "R3_v3",
+    "R4_v3",
+    "R5_v3",
+    "R6_v3"
+  ],
+  "h2c_missing_from_grid": [
+    "B2_v3",
+    "B3_v3",
+    "B4_v3"
+  ],
+  "h2a_runs": [
+    "B1_v3",
+    "B2_v3",
+    "B3_v3",
+    "B4_v3",
+    "R1_v3",
+    "R2_v3",
+    "R3_v3",
+    "R4_v3",
+    "R5_v3",
+    "R6_v3"
+  ],
+  "sha256": "ef0dc7184044ba6837aa4a9b752a3b6f4408f226a54fddbceab5ad6b27c873c1"
+}

@@ -106,7 +106,7 @@ definition above requires resumability until a full run proves it does.
 4   run_niche_join as compute. funnel + no-circular-supervision guard
 5   protocols/evaluate as a chain: H1, H2 with the confounder gate on
     any derived reference, H3 cross-patient. H2/H3 get H1's
-    fixture-pinned treatment
+    fixture-pinned treatment                                          done
 6   graphs/promote.py: deterministic proposal, human gate,
     per-section provenance
 7   report renderer: cohort-free, from pack + ledger

@@ -4,6 +4,10 @@ H1 was pinned with a sha256 so its acceptance did not depend on a gitignored
 runs/ tree. H2 and H3 are pinned the same way, and each carries the gate its
 hypothesis needs: H2 scores clustering against a label, so the LABEL is gated
 (G1); H3 claims cross-patient transfer, so the SPLIT is checked (G2).
+
+for H2 and H3 the eval.py rollups are DIAGNOSTIC: no routed number is read from
+them. acceptance is held to the artifacts the evidence pack cites -
+metrics_h2_ci.json (H2-C) and per_pathway_cca.parquet (H3) - pinned below.
 """
 from __future__ import annotations
 
@@ -13,7 +17,13 @@ from pathlib import Path
 
 import pytest
 
-from omicstra.protocols.evaluate import coverage, gate_h2, gate_h3
+from omicstra.protocols.evaluate import (
+    coverage,
+    gate_h2,
+    gate_h2c,
+    gate_h3,
+    gate_h3_pathway,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 F = ROOT / "tests" / "fixtures"
@@ -143,3 +153,125 @@ def test_guards_without_inputs_are_not_run_and_say_what_is_missing(gate, args):
     assert skipped, "every rollup lacks inputs for at least one guard"
     for g in skipped:
         assert "needs " in g["note"]
+
+
+# --- the acceptance pins: the artifacts the evidence pack cites -------------
+# the rollups above stay pinned as diagnostics. these are what a routed number
+# is read from, so these are what acceptance holds to.
+PACK = ROOT / "projects" / "tnbc-92" / "routing_evidence.json"
+RUNS = ROOT / "runs" / "tnbc-92_v3"
+
+
+def _cited(name):
+    return (json.loads((F / f"{name}.json").read_text()),
+            json.loads((F / f"{name}.meta.json").read_text()))
+
+
+def _st_features():
+    return {rid: json.loads((ROOT / "configs" / "v3" / f"{rid}.json").read_text())["st_features"]
+            if (ROOT / "configs" / "v3" / f"{rid}.json").is_file()
+            else ["novae_niche", "gpath2vec_niche"]          # B1-B4: align_classical.ST_FEATURES
+            for rid in GRID}
+
+
+@pytest.mark.parametrize("name", ["h2c_metrics_ci_v3", "h3_per_pathway_cca_v3"])
+def test_each_cited_pin_is_intact(name):
+    meta = json.loads((F / f"{name}.meta.json").read_text())
+    assert hashlib.sha256((F / f"{name}.json").read_bytes()).hexdigest() == meta["sha256"]
+
+
+def test_the_h2c_pin_is_the_artifact_byte_for_byte():
+    src = RUNS / "eval" / "H2" / "metrics_h2_ci.json"
+    if not src.is_file():
+        pytest.skip("run grid not present on this machine")
+    assert src.read_bytes() == (F / "h2c_metrics_ci_v3.json").read_bytes()
+    _, meta = _cited("h2c_metrics_ci_v3")
+    for rid, sha in meta["upstream_sha256"].items():
+        got = hashlib.sha256((RUNS / rid / "eval" / "biology.parquet").read_bytes()).hexdigest()
+        assert got == sha, f"{rid}'s biology.parquet moved under the pinned ratio"
+
+
+def test_the_h3_pin_matches_the_parquet_and_its_null():
+    src = RUNS / "eval" / "H3" / "pathway_cca_gpath2vec_v3"
+    if not src.is_dir():
+        pytest.skip("run grid not present on this machine")
+    _, meta = _cited("h3_per_pathway_cca_v3")
+    def sha(p):
+        return hashlib.sha256(p.read_bytes()).hexdigest()
+
+    assert sha(src / "per_pathway_cca.parquet") == meta["source_sha256"]
+    assert sha(src / "perm_nulls.parquet") == meta["perm_nulls_sha256"]
+    assert json.loads((src / "provenance.json").read_text()) == meta["provenance"]
+
+
+def test_every_h2c_number_the_pack_routes_is_in_the_pin():
+    if not PACK.is_file():
+        pytest.skip("evidence pack absent")
+    ci, _ = _cited("h2c_metrics_ci_v3")
+    task = json.loads(PACK.read_text())["tasks"]["subject_identity_suppression"]
+    assert "metrics_h2_ci.json" in task["source"]
+    for cand in task["candidates"]:
+        r = ci["h2c"][cand["id"]]
+        assert r["ratio"] == pytest.approx(cand["value"], abs=5e-4)
+        assert [r["ratio_ci_low"], r["ratio_ci_high"]] == pytest.approx(cand["ci"], abs=5e-4)
+
+
+def test_every_h3_number_the_pack_routes_is_in_the_pin():
+    if not PACK.is_file():
+        pytest.skip("evidence pack absent")
+    rows, _ = _cited("h3_per_pathway_cca_v3")
+    task = json.loads(PACK.read_text())["tasks"]["pathway_transfer"]
+    assert "per_pathway_cca.parquet" in task["source"]
+    g = gate_h3_pathway(rows, _st_features())
+    for cand in task["candidates"]:
+        assert g["runs"][cand["id"]]["n_significant"] == cand["value"], cand["id"]
+    z = g["runs"]["R4_v3"]["z"]
+    assert (round(z["Immune_System"], 1), round(z["ECM_Organization"], 1),
+            round(z["Cell_Cycle"], 1), round(z["Programmed_Cell_Death"], 1)) == (25.4, 16.0, 16.5, 11.2)
+
+
+def test_the_pins_declare_what_they_do_not_cover():
+    ci, m2 = _cited("h2c_metrics_ci_v3")
+    assert m2["h2c_missing_from_grid"] == sorted(set(GRID) - set(ci["h2c"])) == ["B2_v3", "B3_v3", "B4_v3"]
+    rows, m3 = _cited("h3_per_pathway_cca_v3")
+    assert m3["missing_from_grid"] == ["B4_v3"]
+    g = gate_h3_pathway(rows, _st_features())
+    assert g["runs"]["B3_v3"]["n_significant"] == 4 and "B3_v3" in m3["pack_does_not_list"]
+
+
+# --- the gates on the cited artifacts ---------------------------------------
+def test_h2c_gate_ranks_as_the_pack_does_and_records_g1_by_design():
+    ci, _ = _cited("h2c_metrics_ci_v3")
+    g = gate_h2c(ci, floor=0.137, floor_source="docs/v2/tnbc92_results_summary.md H2 Part C")
+    assert g["ranking"][:3] == ["R6_v3", "R5_v3", "R1_v3"] and g["ranking"][-1] == "B1_v3"
+    g1 = next(x for x in g["guards"] if x["guard"] == "G1_label_granularity")
+    assert g1["status"] == "satisfied_by_design" and "cross-patient" in g1["note"]
+
+
+def test_h2c_g3_reports_that_no_run_suppresses_patient_below_biology():
+    """every ratio is under 1: in every run the patient z exceeds the biology z.
+    the ranking is still meaningful; the guard says what the ranking is not."""
+    ci, _ = _cited("h2c_metrics_ci_v3")
+    g = gate_h2c(ci)
+    assert not any(r["G3"]["passed"] for r in g["runs"].values())
+    assert g["runs"]["B1_v3"]["ratio"] < 0.1
+
+
+def test_h3_gate_is_cross_patient_and_excludes_the_untestable_pathway():
+    rows, _ = _cited("h3_per_pathway_cca_v3")
+    g = gate_h3_pathway(rows, _st_features())
+    g2 = next(x for x in g["guards"] if x["guard"] == "G2_held_out_honesty")
+    assert g2["status"] == "pass"
+    assert all(r["excluded_untestable"] == ["TGF-beta_Signaling"] for r in g["runs"].values())
+
+
+def test_h3_g6_derives_circularity_from_st_features_not_the_artifact_flag():
+    """the script hardcodes R1-R4. B1-B3 and R5 also carry gpath2vec, so their
+    z_st and z_mean rows are marked clean and are circular. the headline view is not."""
+    rows, _ = _cited("h3_per_pathway_cca_v3")
+    g6 = next(x for x in gate_h3_pathway(rows, _st_features())["guards"]
+              if x["guard"] == "G6_circular_supervision")
+    assert g6["status"] == "flag_disagreement"
+    flagged = {(d["run"], d["view"]) for d in g6["disagreements"]}
+    assert flagged == {(r, v) for r in ("B1_v3", "B2_v3", "B3_v3", "R5_v3") for v in ("z_st", "z_mean")}
+    assert "not affected" in g6["note"]

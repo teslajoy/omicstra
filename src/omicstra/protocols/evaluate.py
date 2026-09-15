@@ -304,6 +304,126 @@ def gate_h3(summary: dict, test_patients: int, min_patients: int = 5) -> dict:
     }
 
 
+def gate_h2c(ci: dict, floor: float | None = None, floor_source: str | None = None) -> dict:
+    """H2-C on the artifact the pack cites: the bio/patient ratio per run.
+
+    reads `metrics_h2_ci.json -> h2c` - per run, the TIME-signature z and the
+    patient-identity z from biology.parquet, their ratio and a delta-method
+    interval. G3 is applied to exactly those two z's.
+
+    G1 is not re-run and not skipped: TIME is assigned per sample, which is the
+    label-granularity hazard, and the biology test is built around it - only
+    cross-patient pairs are scored, and the null permutes the label across
+    patients rather than across niches. that is recorded as satisfied by design,
+    with the reason, so it reads differently from a guard that was never checked.
+
+    `floor` is the raw-modality ratio. on the seed cohort it is cited from the
+    results summary and exists in no machine-readable artifact, so the caller
+    passes it with its source or not at all.
+    """
+    per = ci.get("h2c", {})
+    runs = {}
+    for rid, r in per.items():
+        g3 = bio_vs_confounder_ratio(r["z_TIME"], r["z_patient"], floor)
+        runs[rid] = {"ratio": r["ratio"], "ci": [r["ratio_ci_low"], r["ratio_ci_high"]],
+                     "z_bio": r["z_TIME"], "z_confounder": r["z_patient"],
+                     "G3": g3.model_dump()}
+    ranking = sorted(runs, key=lambda k: runs[k]["ratio"], reverse=True)
+    return {
+        "hypothesis": "H2-C",
+        "scored_from": "metrics_h2_ci.json -> h2c",
+        "n_runs": len(runs),
+        "ranking": ranking,
+        "runs": runs,
+        "floor": {"value": floor, "source": floor_source} if floor is not None else None,
+        "guards": [
+            {"guard": "G1_label_granularity", "status": "satisfied_by_design",
+             "note": "TIME is per-sample; the test scores cross-patient pairs only and "
+                     "permutes the label at patient level"},
+            {"guard": "G3_bio_vs_confounder", "status": "per_run",
+             "note": f"{sum(v['G3']['passed'] for v in runs.values())} of {len(runs)} runs "
+                     "clear a ratio of 1"},
+            _not_run("G5_noise_floor", "the permutation nulls behind each z "
+                     "(biology_nulls.parquet, per run)"),
+        ],
+    }
+
+
+def gate_h3_pathway(rows: list[dict], st_features: dict[str, list[str]],
+                    view: str = "z_he", alpha: float = 0.05,
+                    pathway_feature: str = "gpath2vec_niche") -> dict:
+    """H3 on the artifact the pack cites: per-pathway CCA on held-out patients.
+
+    `rows` are per_pathway_cca.parquet records. per run, in the headline view:
+    how many TESTABLE pathways survive BH-FDR on the held-out-patient null
+    (option A), which pathways were excluded as untestable, and three guards.
+
+      G2  every run scored on the same held-out split - n_test identical
+      G5  significance is the script's empirical permutation p, BH-corrected;
+          read as recorded. the null samples are pinned by sha, not re-derived
+      G6  a view is circular when the run's ST input carries the pathway
+          embedding. derived here from each run's st_features, NOT from the
+          artifact's view_clean column, and any disagreement is reported: the
+          script hardcodes the circular runs, and a run added to the grid after
+          it was written is silently marked clean
+    """
+    import math
+
+    by_run: dict[str, list[dict]] = {}
+    for r in rows:
+        by_run.setdefault(r["run_id"], []).append(r)
+
+    n_test = {r["n_test"] for r in rows if r["view"] == view}
+    runs, disagreements = {}, []
+    for rid, rs in sorted(by_run.items()):
+        carries = pathway_feature in (st_features.get(rid) or [])
+        for r in rs:
+            circular = carries and r["view"] != "z_he"
+            if bool(r["view_clean"]) == circular:
+                disagreements.append({"run": rid, "view": r["view"],
+                                      "artifact_view_clean": bool(r["view_clean"]),
+                                      "derived_circular": circular})
+        head = [r for r in rs if r["view"] == view]
+        testable = [r for r in head if r["testable"]]
+        sig = [r["pathway_name"] for r in testable
+               if r["fdr_A"] is not None and not math.isnan(r["fdr_A"]) and r["fdr_A"] < alpha]
+        runs[rid] = {"n_significant": len(sig), "n_testable": len(testable),
+                     "significant": sig,
+                     "z": {r["pathway_name"]: r["z_A"] for r in testable},
+                     "excluded_untestable": [r["pathway_name"] for r in head if not r["testable"]],
+                     "view_circular": carries and view != "z_he"}
+    # dedupe: one disagreement per (run, view), not per pathway row
+    seen, uniq = set(), []
+    for d in disagreements:
+        if (d["run"], d["view"]) not in seen:
+            seen.add((d["run"], d["view"]))
+            uniq.append(d)
+    split_ok = len(n_test) == 1
+    return {
+        "hypothesis": "H3",
+        "scored_from": "per_pathway_cca.parquet (option A: held-out-patient null)",
+        "view": view, "alpha": alpha,
+        "n_runs": len(runs),
+        "runs": runs,
+        "guards": [
+            {"guard": "G2_held_out_honesty", "status": "pass" if split_ok else "fail",
+             "note": (f"every run's {view} view scored on the same {next(iter(n_test))} held-out niches"
+                      if split_ok else f"held-out sizes differ across runs: {sorted(n_test)}")},
+            {"guard": "G5_noise_floor", "status": "as_recorded",
+             "note": "empirical permutation p per pathway, BH-FDR across the testable family, "
+                     "read from the artifact"},
+            {"guard": "G6_circular_supervision",
+             "status": "pass" if not uniq else "flag_disagreement",
+             "note": ("the artifact's view_clean agrees with st_features on every run" if not uniq
+                      else f"{len(uniq)} run/view pair(s) where view_clean disagrees with the "
+                           f"run's st_features; the headline {view} view is "
+                           + ("affected" if any(d['view'] == view for d in uniq) else "not affected")),
+             "disagreements": uniq},
+            _not_run("G4_specificity", "per-pathway axis vectors (pathway_axes.parquet)"),
+        ],
+    }
+
+
 def coverage(summary: dict, declared_grid: list[str]) -> dict:
     """which runs of the declared grid a rollup actually scored.
 
