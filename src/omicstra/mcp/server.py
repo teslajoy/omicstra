@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 from mcp.server import MCPServer
 from mcp.types import LATEST_PROTOCOL_VERSION
@@ -424,3 +425,150 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+def _unit_counts(project_id: str | None) -> tuple[dict[str, int], dict]:
+    """per-sample unit counts, and an honest statement of what they cover.
+
+    the inventory is the declared source, and it records only the samples it was
+    run over - on a partial run that is a handful. the canonical ingest record
+    covers every converted sample, so it is preferred when it reaches further,
+    and the returned coverage says which was used and how many units it saw.
+
+    this matters because the platform_floor gate decides from these. reading two
+    samples where the cohort has 280 makes the gate silent rather than wrong,
+    and a silent gate is indistinguishable from a passing one.
+    """
+    from omicstra.graph import unit_counts_from_records
+
+    root = settings.project_root(project_id)
+    inv_counts: dict[str, int] = {}
+    inv = root / "inventory.json"
+    if inv.is_file():
+        rec = json.loads(inv.read_text())
+        inv_counts = unit_counts_from_records(
+            [rec[k] for k in rec if isinstance(rec[k], dict)])
+
+    ing_counts: dict[str, int] = {}
+    ing = root / "data" / "canonical" / "ingest.json"
+    if ing.is_file():
+        src = (json.loads(ing.read_text()) or {}).get("sources", {})
+        ing_counts = {k: int(v["n_spots"]) for k, v in src.items()
+                      if isinstance(v, dict) and "n_spots" in v}
+
+    if len(ing_counts) > len(inv_counts):
+        return ing_counts, {"source": "data/canonical/ingest.json",
+                            "n_samples": len(ing_counts),
+                            "note": ("preferred over inventory.json, which covers "
+                                     f"{len(inv_counts)} sample(s) - it was run over "
+                                     "fewer than the cohort holds")}
+    return inv_counts, {"source": "inventory.json", "n_samples": len(inv_counts),
+                        "note": "the declared source" if inv_counts else
+                                "no counts available - unit-floor gates cannot decide"}
+
+
+def _bound_id(project_id: str | None) -> str:
+    """the cohort's declared id. authoritative from project.json, never inferred
+    from the directory name - a scaffolded cohort may be anywhere."""
+    try:
+        return ProjectConfig.load(project_id).project_id
+    except (OSError, ValueError, KeyError):
+        # a scaffolded cohort may have no readable project.json yet; falling back
+        # to the caller's id is better than failing a read-only tool.
+        return project_id or ""
+
+
+# --- the compute path, made visible ----------------------------------------
+#
+# these two READ. there is deliberately no tool that runs an extraction, and the
+# reason is the protocol rather than caution: MCP is request/response, and a full
+# H&E extraction is ~5.8 hours on a laptop. a blocking tool for that would time
+# out on every real cohort, so submission belongs to the dispatcher and the
+# entry point belongs to the CLI. what a client needs from here is to SEE the
+# compute path - what it would ask, what it would do, and what already exists -
+# because until now a client could not tell that one existed at all.
+
+@srv.tool(description=(
+    "Report the preflight gates on the compute path for one encoder: which are "
+    "resolved from this cohort's declarations, which are still open, and what "
+    "accepting each one forecloses. A cohort that declares every answer runs "
+    "unattended; an open gate means a person has to decide before accelerated "
+    "compute starts, and the system does not pick a default. Reads declarations "
+    "and the inventory record only - it measures nothing and starts nothing."))
+def check_compute_gates(encoder: str | None = None,
+                        project_id: str | None = None) -> dict:
+    from omicstra.graph import _load_cohort, _primary_encoder
+    from omicstra.protocols.encode import gate_record, preflight
+
+    enc = encoder or _primary_encoder(project_id) or "virchow2"
+    cohort = _load_cohort(project_id)
+
+    counts, coverage = _unit_counts(project_id)
+    reqs = preflight(cohort, enc, unit_counts=counts or None)
+    rec = gate_record(reqs, enc)
+    return {
+        "project_id": _bound_id(project_id),
+        "encoder": enc,
+        "unattended": not any(r.open for r in reqs),
+        "n_gates": len(reqs),
+        "n_open": sum(r.open for r in reqs),
+        # a gate decides from these counts, so how many units they cover is part
+        # of the answer. a floor gate that stays silent because it only saw two
+        # samples is worse than one that fires wrongly - it looks like a pass.
+        "unit_counts_cover": coverage,
+        "gates": [{"id": r.id, "question": r.question, "options": list(r.options),
+                   "answer": r.answer, "answered_from": r.source,
+                   "pre_answerable_by": r.pre_answerable_by,
+                   "forecloses": r.forecloses, "open": r.open,
+                   "observed": r.observed} for r in reqs],
+        "verdict": rec.decision,
+        "note": ("an open gate is a decision, not an error. the declaration named in "
+                 "pre_answerable_by answers it in advance and is recorded with "
+                 "actor=human either way."),
+    }
+
+
+@srv.tool(description=(
+    "Describe what a compute run would do on this cohort without running it: "
+    "how many units are declared, how many shards the work splits into, which "
+    "outputs already exist and would therefore be skipped, and what is missing. "
+    "Resume is decided by the output file, so an interrupted run restarts from "
+    "what landed. Reads the filesystem only."))
+def describe_compute_plan(encoder: str | None = None,
+                          project_id: str | None = None) -> dict:
+    from omicstra.adapters.canonical import CanonicalMissing, list_samples
+    from omicstra.graph import _primary_encoder
+
+    enc = encoder or _primary_encoder(project_id) or "virchow2"
+    root = settings.project_root(project_id)
+    try:
+        samples = list_samples(root)
+    except (CanonicalMissing, FileNotFoundError) as e:
+        return {"project_id": _bound_id(project_id), "encoder": enc, "runnable": False,
+                "why_not": str(e),
+                "note": ("the cohort has not been converted to the package's input "
+                         "contract - .h5ad plus a coordinates table - so there is "
+                         "nothing to plan over yet.")}
+
+    with_image = [s for s in samples if s.image]
+    out_dir = settings.resolve(Path("data/embeddings")) / f"{enc}_niche"
+    done = {p.stem for p in out_dir.glob("*.npy")} if out_dir.is_dir() else set()
+    todo = [s.sample_id for s in with_image if s.sample_id not in done]
+
+    return {
+        "project_id": _bound_id(project_id),
+        "encoder": enc,
+        "runnable": bool(with_image),
+        "n_samples": len(samples),
+        "n_with_image": len(with_image),
+        "n_shards": len(with_image),
+        "already_done": len(done & {s.sample_id for s in with_image}),
+        "remaining": len(todo),
+        "remaining_examples": sorted(todo)[:5],
+        "output_dir": str(out_dir),
+        "unit_of_retry": "one shard per sample; three attempts, then recorded failed "
+                         "and the run continues",
+        "resume": "decided by the output file, not a ledger - the file is what the next "
+                  "stage reads, so its existence is the only honest evidence",
+        "note": ("samples without an image cannot enter the morphology arm and are "
+                 "excluded from the shard list rather than failing inside it."),
+    }
