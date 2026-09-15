@@ -1,0 +1,28 @@
+{
+  "note": "the H3 rollup as eval.py wrote it: CCA and geometric rho of the shared space against gpath2vec, and a patient-identity probe, on the patient-held-out test set.",
+  "source": "runs/tnbc-92_v3/eval/H3/summary.json",
+  "written_by": "scripts/eval.py --hypothesis H3",
+  "pinned": "2026-09-15",
+  "n_runs": 9,
+  "runs": [
+    "B1_v3",
+    "B2_v3",
+    "B3_v3",
+    "B4_v3",
+    "R1_v3",
+    "R2_v3",
+    "R3_v3",
+    "R4_v3",
+    "R6_v3"
+  ],
+  "missing_from_grid": [
+    "R5_v3"
+  ],
+  "sha256": "b4d19d0a53f06047dcf57c6a648f11b272a910e3c43769eebe00fb8490fc4be7",
+  "split": {
+    "test_patients": 14,
+    "test_niches": 35594,
+    "held_out_axis": "patient_id"
+  },
+  "not_the_headline": "the published H3 result - 15/15 cells BH-FDR < 0.05 cross-patient, and the DAG extension - comes from scripts/eval_h3_pathway_cca*.py, not this rollup. this fixture pins what eval.py --hypothesis H3 produces."
+}

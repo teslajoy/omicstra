@@ -36,8 +36,8 @@ def test_all_six_are_implemented():
 
 # --- G1 label granularity ---------------------------------------------------
 def test_g1_a_label_that_is_the_subject_fails():
-    """the archetype label scored 0.89 against patient_id: a clustering score
-    against it measured which patient a niche came from."""
+    """archetype scores 0.645 against patient_id on the niche join: a clustering
+    score against it measures which patient a niche came from."""
     pat = np.repeat(np.arange(20), 10)
     r = nmi_label_confounder(pat, pat)
     assert not r.passed and r.value == pytest.approx(1.0)

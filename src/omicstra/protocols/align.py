@@ -251,9 +251,19 @@ def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = Non
 _BASELINE_OF = {"B1": "cca", "B2": "procrustes", "B3": "unaligned"}
 
 # H1 scores the whole grid in one call; H2/H3 take ONE run at a time.
-_EVAL_SCRIPT = {"H1": "eval.py",
-                "H2": "eval_alignment_biology.py",
-                "H3": "eval_alignment_biology.py"}
+# the stages that SCORE each hypothesis, in order. eval.py writes the rollup
+# `eval/{H}/summary.json` for all three hypotheses from one entry point
+# (--hypothesis H1|H2|H3). eval_alignment_biology.py writes per-run
+# biology*.parquet under each run's own eval/ directory and never a summary, so
+# it is an ADDITIONAL H3 stage, not the one that produces H3's rollup.
+#
+# this map used to send H2 and H3 to eval_alignment_biology.py alone. a compute
+# run for H2 would then have run the per-run biology script, left the existing
+# eval/H2/summary.json untouched, and resolved it with computed=True - a record
+# claiming a recomputation that did not happen.
+_EVAL_SCRIPT = {"H1": ("eval.py",),
+                "H2": ("eval.py",),
+                "H3": ("eval.py", "eval_alignment_biology.py")}
 
 
 def run_eval(cfg: ProjectConfig, grid: AlignGrid, project_id: str | None = None,
@@ -287,15 +297,17 @@ def run_eval(cfg: ProjectConfig, grid: AlignGrid, project_id: str | None = None,
 
     if compute:
         for h in hypotheses:
-            script = _EVAL_SCRIPT.get(h)
-            if script is None:
+            stages = _EVAL_SCRIPT.get(h)
+            if stages is None:
                 raise ValueError(f"no eval script for hypothesis {h!r}")
-            if script == "eval.py":                      # scores the whole grid
-                _run_script(script, ["--hypothesis", h, "--runs", *grid.run_refs,
-                                     "--runs-dir", grid.runs_root])
-            else:                                        # one run at a time
-                for rid in grid.run_refs:
-                    _run_script(script, ["--run-id", rid, "--runs-dir", grid.runs_root])
+            for script in stages:
+                if script == "eval.py":                  # the rollup, whole grid
+                    _run_script(script, ["--hypothesis", h, "--runs", *grid.run_refs,
+                                         "--runs-dir", grid.runs_root])
+                else:                                    # per-run biology, one at a time
+                    for rid in grid.run_refs:
+                        _run_script(script, ["--run-id", rid,
+                                             "--runs-dir", grid.runs_root])
         computed = True
 
     summaries = [str(p) for p in

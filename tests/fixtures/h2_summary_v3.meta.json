@@ -1,0 +1,36 @@
+{
+  "note": "the H2 rollup as eval.py wrote it, pinned so the acceptance test does not depend on a gitignored runs/ tree.",
+  "source": "runs/tnbc-92_v3/eval/H2/summary.json",
+  "written_by": "scripts/eval.py --hypothesis H2",
+  "pinned": "2026-09-15",
+  "n_runs": 9,
+  "runs": [
+    "B1_v3",
+    "B2_v3",
+    "B3_v3",
+    "R1_v3",
+    "R2_v3",
+    "R3_v3",
+    "R4_v3",
+    "R5_v3",
+    "R6_v3"
+  ],
+  "missing_from_grid": [
+    "B4_v3"
+  ],
+  "sha256": "a75da36fa258778b67cb37e10096b5d6089b3f659d81ee82cf730c1a615f50d0",
+  "clusters_against": "archetype",
+  "label_gate": {
+    "guard": "G1_label_granularity",
+    "label": "archetype",
+    "confounder": "patient_id",
+    "nmi": 0.645,
+    "tau": 0.5,
+    "passed": false,
+    "n_niches": 208786,
+    "consequence": "every ARI and silhouette in this rollup - including raw_reference - is scored against a label that encodes patient identity, so they are DIAGNOSTIC and cannot carry a biological claim alone. the routing pack scores H2 against mc_megacluster (NMI 0.437, passes) and its raw_he reference is 0.164; this rollup's is 0.295. the two are not the same quantity and must not be compared."
+  },
+  "not_in_fixture": {
+    "compartment_cosine": "a pointer string to runs/tnbc-92_v3/eval/H2/compartment_cosine.parquet, which is not pinned"
+  }
+}

@@ -46,9 +46,11 @@ def nmi_label_confounder(label, confounder, tau: float = 0.5) -> GuardResult:
     """NMI(candidate_label, subject) > tau -> the label carries the confounder.
 
     a clustering score against a label that encodes patient identity measures
-    patient identity. on the seed cohort the archetype label scored 0.89 against
-    patient_id, so "the aligned space recovers archetypes" was largely "the
-    aligned space recovers which patient a niche came from".
+    patient identity. on the seed cohort's niche join, archetype scores 0.645
+    against patient_id - an archetype is assigned per patient, so every niche of
+    a patient shares one - and "the aligned space recovers archetypes" is then
+    largely "the aligned space recovers which patient a niche came from".
+    mc_megacluster, a per-spot label, scores 0.437 and compartment 0.195.
 
     demote rather than discard: the label is still diagnostic, it just cannot
     carry a biological claim on its own.
@@ -228,3 +230,88 @@ GUARDS = {
     "G5": noise_floor,
     "G6": circular_supervision,
 }
+
+
+# --- the chain: guards attached to each hypothesis --------------------------
+#
+# a guard runs only on inputs that exist. the H1/H2/H3 rollups carry some of the
+# inputs the six guards need and not others, and a guard "applied" to a number
+# it was never given is a fabricated verdict. so each hypothesis reports three
+# kinds of result: guards that RAN, and guards that are not_run with the input
+# that is missing named - the same not_run / not_applicable discipline the EDA
+# gate uses.
+
+def _not_run(name: str, missing: str) -> dict:
+    return {"guard": name, "status": "not_run",
+            "note": f"needs {missing}, which this rollup does not carry"}
+
+
+def gate_h2(summary: dict, label_nmi: float, label: str,
+            confounder: str = "patient_id", tau: float = 0.5) -> dict:
+    """H2 scores clustering against a label, so the label is gated before the score.
+
+    the rollup's ARI and silhouette - its raw_reference included - are only a
+    biological claim if the label they are scored against does not encode the
+    confounder. `label_nmi` is measured on the cohort's units, not taken from the
+    summary, because the summary does not record it.
+    """
+    g1 = GuardResult(
+        name="G1_label_granularity", passed=label_nmi <= tau, value=label_nmi,
+        observed={"label": label, "confounder": confounder, "tau": tau},
+        note=(f"{label} NMI vs {confounder} = {label_nmi:.3f}"
+              + ("" if label_nmi <= tau else
+                 " - the label encodes the confounder, so every clustering score in "
+                 "this rollup is diagnostic and cannot carry a biological claim alone")))
+    return {
+        "hypothesis": "H2",
+        "scored_against": label,
+        "claims_biology": g1.passed,
+        "n_runs": len(summary.get("per_run", {})),
+        "guards": [g1.model_dump(),
+                   _not_run("G2_held_out_honesty", "a within-subject score to compare"),
+                   _not_run("G5_noise_floor", "a permutation null over ARI")],
+        "reference": summary.get("raw_reference"),
+        "reference_status": "biological" if g1.passed else "diagnostic - same label as the scores",
+    }
+
+
+def gate_h3(summary: dict, test_patients: int, min_patients: int = 5) -> dict:
+    """H3 is cross-patient by construction, and that is checked rather than assumed.
+
+    the patient probe in the rollup is reported as a CONFOUNDER STRENGTH, not a
+    pass/fail: it says how much of the aligned space is patient identity, which is
+    the denominator a biology claim has to beat (G3). it is not itself a verdict
+    on the pathway signal.
+    """
+    per = summary.get("per_run", {})
+    n_pat = {r.get("n_patients") for r in per.values()}
+    split_ok = n_pat == {test_patients} and test_patients >= min_patients
+    probe = {rid: (r.get("patient_probe_z_mean") or {}).get("accuracy")
+             for rid, r in per.items()}
+    return {
+        "hypothesis": "H3",
+        "cross_patient": split_ok,
+        "test_patients": sorted(p for p in n_pat if p is not None),
+        "n_runs": len(per),
+        "patient_identity_in_aligned_space": probe,
+        "guards": [
+            {"guard": "G2_held_out_honesty", "status": "pass" if split_ok else "fail",
+             "note": (f"every run evaluated on the same {test_patients} held-out patients"
+                      if split_ok else f"patient counts across runs: {sorted(n_pat, key=str)}")},
+            _not_run("G4_specificity", "per-pathway axis vectors"),
+            _not_run("G5_noise_floor", "the permutation null over CCA"),
+        ],
+    }
+
+
+def coverage(summary: dict, declared_grid: list[str]) -> dict:
+    """which runs of the declared grid a rollup actually scored.
+
+    the three rollups each drop a different run, and nothing downstream noticed
+    until they were pinned side by side. a missing run is a gap in a comparison,
+    so it is reported with the rollup rather than discovered from it.
+    """
+    have = set(summary.get("per_run", {}))
+    return {"n_declared": len(declared_grid), "n_scored": len(have & set(declared_grid)),
+            "missing": sorted(set(declared_grid) - have),
+            "unexpected": sorted(have - set(declared_grid))}

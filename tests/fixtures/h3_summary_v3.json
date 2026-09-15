@@ -1,0 +1,406 @@
+{
+  "per_run": {
+    "R1_v3": {
+      "run_id": "R1_v3",
+      "n_test_niches": 35594,
+      "n_patients": 14,
+      "cca_shared_vs_gpath2vec": {
+        "top_k_canonical_correlations": [
+          0.9479241550074684,
+          0.8772341481051478,
+          0.8242354791350756,
+          0.7827301595239752,
+          0.7364322569059277,
+          0.7120219212690522,
+          0.6760006423009834,
+          0.6682514660812848,
+          0.6454511000558028,
+          0.6418469895047826
+        ],
+        "top_k_sum": 7.5121283178895,
+        "k": 10
+      },
+      "geom_rho_shared_vs_gpath2vec": 0.2422182602736162,
+      "patient_probe_z_he": {
+        "accuracy": 0.9945217024863042,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9230931310577328,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_st": {
+        "accuracy": 0.6321112515802781,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.5606826801517067,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_mean": {
+        "accuracy": 0.9860935524652339,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9146649810366625,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_raw_he": {
+        "accuracy": 0.9990167158308751,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9275881444023037,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_raw_st": {
+        "accuracy": 0.24525916561314792,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.1738305941845765,
+        "n_classes": 14,
+        "n_test": 7119
+      }
+    },
+    "R2_v3": {
+      "run_id": "R2_v3",
+      "n_test_niches": 35594,
+      "n_patients": 14,
+      "cca_shared_vs_gpath2vec": {
+        "top_k_canonical_correlations": [
+          0.9611326714833218,
+          0.9541642154594493,
+          0.9172721403490182,
+          0.9122146860251025,
+          0.8823091319302728,
+          0.8655543214937992,
+          0.8597217106950681,
+          0.7867380593286272,
+          0.7797111021346625,
+          0.7664738796009899
+        ],
+        "top_k_sum": 8.685291918500312,
+        "k": 10
+      },
+      "geom_rho_shared_vs_gpath2vec": 0.22140012803243383,
+      "patient_probe_z_he": {
+        "accuracy": 0.9963478016575362,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9249192302289648,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_st": {
+        "accuracy": 0.500913049585616,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.4294844781570446,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_mean": {
+        "accuracy": 0.9707824132602894,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.899353841831718,
+        "n_classes": 14,
+        "n_test": 7119
+      }
+    },
+    "R3_v3": {
+      "run_id": "R3_v3",
+      "n_test_niches": 35594,
+      "n_patients": 14,
+      "cca_shared_vs_gpath2vec": {
+        "top_k_canonical_correlations": [
+          0.8157030853780977,
+          0.5465802948832258,
+          0.3162827545035649,
+          0.2937039561153478,
+          0.23975918168983557,
+          0.2301499120639786,
+          0.21634511309916704,
+          0.19313659465186558,
+          0.17914285692548887,
+          0.17468282376829605
+        ],
+        "top_k_sum": 3.205486573078868,
+        "k": 10
+      },
+      "geom_rho_shared_vs_gpath2vec": 0.10539665376198853,
+      "patient_probe_z_he": {
+        "accuracy": 0.8971765697429415,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.8257479983143701,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_st": {
+        "accuracy": 0.3395139766821183,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.26808540525354685,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_mean": {
+        "accuracy": 0.8412698412698413,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.7698412698412699,
+        "n_classes": 14,
+        "n_test": 7119
+      }
+    },
+    "R4_v3": {
+      "run_id": "R4_v3",
+      "n_test_niches": 35594,
+      "n_patients": 14,
+      "cca_shared_vs_gpath2vec": {
+        "top_k_canonical_correlations": [
+          0.9436287267145103,
+          0.8460568495830723,
+          0.8185717775714473,
+          0.7263116033804201,
+          0.7009928156152806,
+          0.6762203010775385,
+          0.6422639641974385,
+          0.62936327375955,
+          0.6107335313599916,
+          0.5950368181111831
+        ],
+        "top_k_sum": 7.189179661370432,
+        "k": 10
+      },
+      "geom_rho_shared_vs_gpath2vec": 0.21270086687866133,
+      "patient_probe_z_he": {
+        "accuracy": 0.9793510324483776,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9079224610198062,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_st": {
+        "accuracy": 0.28697850821744625,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.21554993678887482,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_mean": {
+        "accuracy": 0.9400196656833825,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.8685910942548111,
+        "n_classes": 14,
+        "n_test": 7119
+      }
+    },
+    "R6_v3": {
+      "run_id": "R6_v3",
+      "n_test_niches": 35594,
+      "n_patients": 14,
+      "cca_shared_vs_gpath2vec": {
+        "top_k_canonical_correlations": [
+          0.7844156165074904,
+          0.5175553548592531,
+          0.357551815192394,
+          0.2831864177577002,
+          0.24530682961175837,
+          0.21249884899308605,
+          0.20760362834268445,
+          0.2031087664072833,
+          0.19891007793486812,
+          0.18552268212357556
+        ],
+        "top_k_sum": 3.1956600377300934,
+        "k": 10
+      },
+      "geom_rho_shared_vs_gpath2vec": 0.1495678195335735,
+      "patient_probe_z_he": {
+        "accuracy": 0.9957859249894648,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9243573535608934,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_st": {
+        "accuracy": 0.9803343166175025,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9089057451889311,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_mean": {
+        "accuracy": 0.9984548391628038,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9270262677342324,
+        "n_classes": 14,
+        "n_test": 7119
+      }
+    },
+    "B1_v3": {
+      "run_id": "B1_v3",
+      "n_test_niches": 35594,
+      "n_patients": 14,
+      "cca_shared_vs_gpath2vec": {
+        "top_k_canonical_correlations": [
+          0.9042602287701406,
+          0.8696992429836098,
+          0.8292420643044227,
+          0.8268738415209865,
+          0.8156910157540957,
+          0.8097739960405125,
+          0.802083683886125,
+          0.7953382020191195,
+          0.792656273454887,
+          0.7896886294812531
+        ],
+        "top_k_sum": 8.235307178215152,
+        "k": 10
+      },
+      "geom_rho_shared_vs_gpath2vec": 0.12494190811038276,
+      "patient_probe_z_he": {
+        "accuracy": 0.9997190616659644,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.928290490237393,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_st": {
+        "accuracy": 0.27419581401882287,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.20276724259025145,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_mean": {
+        "accuracy": 0.967551622418879,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.8961230509903076,
+        "n_classes": 14,
+        "n_test": 7119
+      }
+    },
+    "B2_v3": {
+      "run_id": "B2_v3",
+      "n_test_niches": 35594,
+      "n_patients": 14,
+      "cca_shared_vs_gpath2vec": {
+        "top_k_canonical_correlations": [
+          0.9342785616947412,
+          0.9229703816316178,
+          0.9053652121412831,
+          0.900226973421035,
+          0.896582458146378,
+          0.8904817371389734,
+          0.8847366077392966,
+          0.8752977578922684,
+          0.872660022311305,
+          0.8673622543815681
+        ],
+        "top_k_sum": 8.949961966498467,
+        "k": 10
+      },
+      "geom_rho_shared_vs_gpath2vec": 0.1773665186169154,
+      "patient_probe_z_he": {
+        "accuracy": 0.9994381233319286,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9280095519033572,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_st": {
+        "accuracy": 0.3020087090883551,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.23058013765978366,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_mean": {
+        "accuracy": 0.9953645174884113,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9239359460598399,
+        "n_classes": 14,
+        "n_test": 7119
+      }
+    },
+    "B3_v3": {
+      "run_id": "B3_v3",
+      "n_test_niches": 35594,
+      "n_patients": 14,
+      "cca_shared_vs_gpath2vec": {
+        "top_k_canonical_correlations": [
+          0.8583796055229053,
+          0.8392220160911231,
+          0.8046166405358735,
+          0.7958111829452323,
+          0.7871405551851365,
+          0.7761546469301916,
+          0.7702888406524404,
+          0.7663080645504987,
+          0.7642594411928358,
+          0.7617596633798478
+        ],
+        "top_k_sum": 7.923940656986085,
+        "k": 10
+      },
+      "geom_rho_shared_vs_gpath2vec": 0.04712629549488793,
+      "patient_probe_z_he": {
+        "accuracy": 1.0,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9285714285714286,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_st": {
+        "accuracy": 0.3020087090883551,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.23058013765978366,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_mean": {
+        "accuracy": 0.9879196516364658,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9164910802078944,
+        "n_classes": 14,
+        "n_test": 7119
+      }
+    },
+    "B4_v3": {
+      "run_id": "B4_v3",
+      "n_test_niches": 35594,
+      "n_patients": 14,
+      "cca_shared_vs_gpath2vec": {
+        "top_k_canonical_correlations": [
+          0.9553387594014112,
+          0.9317130924053579,
+          0.9089177088078582,
+          0.8875353495757535,
+          0.8645579013047496,
+          0.8615649609557449,
+          0.8535987641832391,
+          0.8367125928318511,
+          0.8319480327977491,
+          0.8193427910617004
+        ],
+        "top_k_sum": 8.751229953325415,
+        "k": 10
+      },
+      "geom_rho_shared_vs_gpath2vec": 0.1937168239541863,
+      "patient_probe_z_he": {
+        "accuracy": 0.9976120241606967,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9261834527321253,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_st": {
+        "accuracy": 0.6160977665402444,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.544669195111673,
+        "n_classes": 14,
+        "n_test": 7119
+      },
+      "patient_probe_z_mean": {
+        "accuracy": 0.9889029358055906,
+        "chance": 0.07142857142857142,
+        "lift_over_chance": 0.9174743643770192,
+        "n_classes": 14,
+        "n_test": 7119
+      }
+    }
+  },
+  "attention_by_compartment": "written -> runs/tnbc-92_v3/eval/H3/attention_by_compartment.parquet"
+}

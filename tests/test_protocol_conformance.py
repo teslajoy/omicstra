@@ -466,10 +466,28 @@ def test_baseline_dispatch_does_not_guess():
 
 
 def test_eval_scripts_are_mapped_per_hypothesis():
-    """H1 scores the whole grid in one call; H2/H3 take one run at a time."""
+    """every rollup comes from eval.py; H3 adds the per-run biology stage.
+
+    this test used to assert H2 and H3 mapped to eval_alignment_biology.py alone,
+    which pinned a defect: that script writes per-run biology*.parquet and never
+    eval/{H}/summary.json, so a compute run for H2 left the rollup stale while
+    the record said computed.
+    """
     from omicstra.protocols import align
-    assert align._EVAL_SCRIPT["H1"] == "eval.py"
-    assert align._EVAL_SCRIPT["H2"] == align._EVAL_SCRIPT["H3"] == "eval_alignment_biology.py"
+    m = align._EVAL_SCRIPT
+    for h in ("H1", "H2", "H3"):
+        assert m[h][0] == "eval.py", f"{h}'s rollup must come from eval.py"
+    assert "eval_alignment_biology.py" in m["H3"]
+    assert "eval_alignment_biology.py" not in m["H2"]
+
+
+def test_the_rollup_script_really_writes_each_hypothesis_summary():
+    """the map is only right if eval.py actually accepts each hypothesis."""
+    src = (Path(__file__).resolve().parents[1] / "scripts" / "eval.py").read_text()
+    assert "choices=['H1', 'H2', 'H3']" in src
+    bio = (Path(__file__).resolve().parents[1] / "scripts"
+           / "eval_alignment_biology.py").read_text()
+    assert "summary.json" not in bio, "the biology script now writes a rollup - revisit the map"
 
 
 def test_run_eval_resolves_the_pack_and_never_generates_it():
