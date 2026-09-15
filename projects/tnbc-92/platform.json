@@ -309,7 +309,7 @@
         "scale_to_microns": 1.2195121951219512,
         "scale_as_built": true,
         "note": "bare Delaunay, as the published grid was built. Delaunay creates long boundary edges on this lattice - max 4550px against a 215px mean - so a radius cap is a reasonable alternative, but it changes H1/H2 numbers. it therefore becomes a DECLARED alternative run as its own arm and evaluated, never a silent switch.",
-        "scale_note": "the value the cached Novae embeddings were computed with: 200 / 164, set as novae.settings.scale_to_microns in notebooks/embeddings/novae_st_embeddings.ipynb before compute_representations, and recorded as um_per_pixel_spot in the run manifest. it is an input, not an annotation: Novae 1.0.3 passes each edge length to the GAT as distance x scale_to_microns / 20 (novae/data/dataset.py; edge_dim=1 in novae/module/encode.py). the Delaunay topology is scale-invariant; the edge features are not. the 164px in that ratio was itself an estimate, so against the measured lattice the edge features are 1.29x (vs 0.9458) to 1.31x (vs 0.9282) what the 150um pitch implies. how much that moves the embeddings is unmeasured.",
+        "scale_note": "the value the cached Novae embeddings were computed with: 200 / 164, set as novae.settings.scale_to_microns in notebooks/embeddings/novae_st_embeddings.ipynb before compute_representations, and recorded as um_per_pixel_spot in the run manifest. it is an input, not an annotation: Novae 1.0.3 passes each edge length to the GAT as distance x scale_to_microns / 20 (novae/data/dataset.py; edge_dim=1 in novae/module/encode.py). the Delaunay topology is scale-invariant; the edge features are not. the 164px in that ratio was itself an estimate, so against the measured lattice the edge features are 1.29x (vs 0.9458) to 1.31x (vs 0.9282) what the 150um pitch implies. measured on five subarrays - see scale_measurement.",
         "scale_declared_alternative": {
           "scale_to_microns": null,
           "rule": "spot_pitch_um / nearest-neighbour px, in the coordinate space passed to Novae",
@@ -317,7 +317,26 @@
           "run": false,
           "question": "does the lattice-true edge scale move the ST embeddings enough to change H1, H2 or H3?"
         },
-        "identity_field": "scale_to_microns"
+        "identity_field": "scale_to_microns",
+        "scale_measurement": {
+          "measured_on": "2026-09-15",
+          "scope": "5 of the 230 subarrays with status ok and not low_quality in novae_niche_full/quality_flags.tsv, taken at the 10/30/50/70/90th percentile of spot count: TNBC6_CN3_E1 (678), TNBC42_CN21_D2 (829), TNBC36_CN18_D2 (1016), TNBC82_CN41_E2 (1217), TNBC69_CN35_C1 (1506); 5,246 spots. novae 1.0.3, MICS-Lab/novae-human-0, zero-shot, the notebook's loader and gene mapping",
+          "method": "each subarray run three times, changing only scale_to_microns: 1.2195 (as built), 0.9282 (150/161.6) and 0.9458 (150/158.6). spot vectors compared directly; niche vectors compared after the join's pooling over self + the cached six neighbours and a per-subarray z-score (over all spots, not after the pathway-coverage drop - the same treatment on both sides)",
+          "artifacts": "scripts/_scratch/novae_scale/ - run.py and reference.py, report.json and reference.json, and per-subarray npz holding spot_ids, the cached vectors and the three reruns. local and git-ignored, like every scratch measurement",
+          "reproduction": "the 1.2195 rerun equals the cache exactly on all five: max abs difference 0, top-6 neighbour sets identical. the comparison below is therefore against the vectors every published run read",
+          "result_at_0.9458": {
+            "spot_mean_cosine": "0.9992-0.9996 per subarray",
+            "spot_min_cosine": "0.9832-0.9922",
+            "spot_median_relative_l2": "0.020-0.026",
+            "spot_linear_cka": "0.9987-0.9995",
+            "spot_top6_neighbour_set_agreement": "0.509-0.530",
+            "niche_top6_neighbour_set_agreement": "0.676-0.726",
+            "niche_linear_cka": "0.9994-0.9998"
+          },
+          "result_at_0.9282": "slightly larger on every measure: spot top-6 agreement 0.492-0.509, niche 0.653-0.712, spot min cosine 0.9805-0.9909",
+          "reference": "isotropic noise with each spot's own difference norm keeps 0.687-0.742 of top-6 sets; the scale change keeps 0.509-0.530, so it reorders neighbourhoods more than unstructured noise of the same size. 12-22% of the difference is a per-subarray shared offset, and centring does not recover the neighbourhoods (0.515-0.551). within a subarray the median cosine gap between the 6th and 7th neighbour is 0.0009-0.0018, which is why a 2% vector change reaches half the neighbour sets",
+          "reading": "global geometry is preserved (CKA >= 0.998, mean cosine >= 0.999); local neighbourhoods are not (about half of spot top-6 sets change, about 30% of niche sets). by the encoder port bar (min cosine >= 1-1e-6, top-6 agreement >= 0.999) the lattice-true scale is a different embedding, not a tolerance. no published number has been recomputed: whether H1, H2 or H3 move is the declared alternative, which needs all 262 subarrays re-embedded, the join rebuilt and the grid retrained"
+        }
       },
       "image_pyramid": {
         "he_small_px": 9523,
@@ -342,7 +361,7 @@
       },
       "pitch_correction_consequences": {
         "corrected_on": "2026-09-11",
-        "novae": "REAL, SIZE UNMEASURED. corrected 2026-09-15 from 'annotation only'. 1.2195 was set as novae.settings.scale_to_microns before the representations were computed, and Novae uses it to scale every edge feature the GAT reads. the neighbour graph is unaffected; the edge features are 1.29-1.31x too large against the 150um pitch. the cached embeddings are internally consistent and every arm read the same ones, so the ten-arm comparison stands as a comparison. whether a lattice-true scale changes any result is the declared alternative at st_graph.scale_declared_alternative.",
+        "novae": "REAL, MEASURED ON FIVE SUBARRAYS. corrected 2026-09-15 from 'annotation only'. 1.2195 was set as novae.settings.scale_to_microns before the representations were computed, and Novae uses it to scale every edge feature the GAT reads. the neighbour graph is unaffected; the edge features are 1.29-1.31x too large against the 150um pitch. the cached embeddings are internally consistent and every arm read the same ones, so the ten-arm comparison stands as a comparison. at the lattice-true scale global geometry holds (CKA >= 0.998) and about half of within-subarray top-6 neighbour sets change - st_graph.scale_measurement. whether any result changes is the declared alternative at st_graph.scale_declared_alternative.",
         "virchow2": "REAL. the 200 um pitch sized the crop, so tiles are 95.9 um rather than the 128 um the constant named. cached embeddings are internally consistent and the ten-arm comparison stands; the tile is smaller than the spot it represents.",
         "why_here": "the pitch correction reaches both encoders - the H&E crop size and the Novae edge features. a reader should find both in one place rather than discovering either from the code."
       },
