@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from collections import Counter
 from pathlib import Path
 
@@ -72,6 +73,57 @@ def _read(p: Path):
         f"{p.name}: the inventory reads .h5ad only. convert this cohort once with "
         "scripts/ingest_<cohort>.py, which writes .h5ad plus a coordinates table "
         "and records the source shas.")
+
+
+def _budget(sample_bytes: int | None = None) -> dict:
+    """how many samples this machine can hold open at once, measured not guessed.
+
+    two resources bind, and which one depends on how the objects are read:
+
+      memory       a FULL read of one sample here costs ~8x its file size once
+                   the sparse matrix is materialised. 280 of those is over 11 GB.
+      descriptors  a BACKED read costs one open file handle and almost no memory,
+                   so the limit becomes RLIMIT_NOFILE rather than RAM.
+
+    the inventory reads backed, which is why the fd term usually dominates and
+    the answer is usually "all of them". the memory term is kept because a host
+    that cannot read backed falls back to full reads, and there the cap matters.
+
+    no psutil: it is not a declared dependency. the memory figure comes from
+    os.sysconf where the platform offers it and is simply absent otherwise -
+    a missing figure drops that term rather than inventing one.
+    """
+    import resource
+
+    soft, _ = resource.getrlimit(resource.RLIMIT_NOFILE)
+    # leave headroom: the process already holds stdio, the checkpointer, and
+    # whatever the caller opened.
+    fd_cap = max(1, int(soft * 0.5)) if soft and soft > 0 else None
+
+    # SC_AVPHYS_PAGES returns 0 on macOS rather than failing, and 0 is not
+    # "unknown" - reading it as a figure would compute a cap of 1 sample on the
+    # machine this runs on. absent and zero both mean the same thing here: the
+    # platform does not offer the number, so the memory term drops out.
+    avail = None
+    try:
+        pages = os.sysconf("SC_AVPHYS_PAGES")
+        if pages and pages > 0:
+            avail = os.sysconf("SC_PAGE_SIZE") * pages
+    except (ValueError, OSError, AttributeError):
+        avail = None
+
+    mem_cap = None
+    if avail and sample_bytes:
+        mem_cap = max(1, int((avail * 0.25) // sample_bytes))
+
+    caps = [c for c in (fd_cap, mem_cap) if c]
+    return {"fd_cap": fd_cap, "mem_cap": mem_cap,
+            "available_bytes": avail, "per_sample_bytes": sample_bytes,
+            "cap": min(caps) if caps else None,
+            "bound_by": ("descriptors" if caps and min(caps) == fd_cap else
+                         "memory" if caps else "nothing measurable"),
+            "memory_term": ("dropped - this platform does not report available "
+                            "pages" if avail is None else "measured")}
 
 
 def _rec(step_id, status, result, decision, observed=None):
@@ -153,7 +205,20 @@ def platform(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
 # -------------------------------------------------------------- 3 · shape ---
 def shape(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     """reads each file ONCE and caches the object. `_objs` stays out of records."""
-    paths = [Path(p) for p in ctx["files"]][: ctx["params"].get("max_samples", 8)]
+    # the cap exists because opening every .h5ad in a large cohort is slow, and
+    # `shape` is often run to see the SHAPE of the data rather than to measure
+    # all of it. but the cap has to travel in the record: a reader cannot
+    # otherwise tell 2-of-280 from 280-of-280, and a downstream gate that decides
+    # from these counts goes silent rather than wrong when it sees a fraction.
+    all_paths = [Path(p) for p in ctx["files"]]
+    # the cap is DERIVED, not a constant. the old default of 8 bore no relation
+    # to the machine and silently made a 280-sample cohort look like an 8-sample
+    # one; a declared value still wins, and 0 means no cap.
+    budget = _budget(int(sum(q.stat().st_size for q in all_paths[:3]) / 3 * 8)
+                     if all_paths else None)
+    declared = ctx["params"].get("max_samples", "unset")
+    cap = budget["cap"] if declared == "unset" else declared
+    paths = all_paths[:cap] if cap else all_paths
     rows = []
     for p in paths:
         sid = _sid(p)
@@ -166,22 +231,73 @@ def shape(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
         except Exception as e:
             rows.append({"sample": sid, "error": f"{type(e).__name__}: {e}"})
     ok = [r for r in rows if "n_obs" in r]
-    return _rec("shape", "pass" if ok else "fail", f"{len(ok)}/{len(paths)} readable",
+    capped = len(paths) < len(all_paths)
+    return _rec("shape", "pass" if ok else "fail",
+                f"{len(ok)}/{len(paths)} readable"
+                + (f", capped at {cap} of {len(all_paths)} declared" if capped else ""),
                 "proceed" if ok else "no sample could be read",
-                {"per_sample": rows[:8],
+                # every row read, not a sample of them. `rows[:8]` used to truncate
+                # the RECORD as well as the read, so a complete run still looked
+                # partial - and a gate that decides from these counts then sees a
+                # fraction of the cohort and goes quiet instead of firing.
+                {"per_sample": rows,
+                 "coverage": {"n_read": len(paths), "n_declared": len(all_paths),
+                              "capped": capped, "cap": cap,
+                              "cap_source": "declared" if declared != "unset" else "derived",
+                              "budget": budget,
+                              "note": ("raise params.max_samples to cover the cohort; "
+                                       "0 means no cap" if capped else
+                                       "every declared sample was read")},
                  "n_obs": [min(r["n_obs"] for r in ok), max(r["n_obs"] for r in ok)] if ok else None,
                  "n_var": [min(r["n_var"] for r in ok), max(r["n_var"] for r in ok)] if ok else None}), \
            {"paths_by_sid": {_sid(p): str(p) for p in paths}}
 
 
 # ------------------------------------------------------------- 4 · coords ---
+def _sidecar_coords(h5ad: Path) -> dict | None:
+    """the coordinates table beside a canonical .h5ad, if there is one.
+
+    the package's input contract is ".h5ad PLUS a coordinates table", and the
+    split is deliberate: the morphology arm needs spot_id, x, y and nothing
+    else, so it must not load a 27,000-gene matrix to read two columns. the
+    inventory has to check both halves or it reports a conforming cohort as
+    having no positions at all.
+    """
+    sc = h5ad.with_name(f"{h5ad.stem}_spots.parquet")
+    if not sc.is_file():
+        return None
+    try:
+        import pandas as pd
+
+        df = pd.read_parquet(sc)
+    except Exception as e:                  # noqa: BLE001 - reported, not raised
+        return {"path": sc.name, "error": f"{type(e).__name__}: {e}"}
+    cols = list(df.columns)
+    ok = {"x", "y"} <= set(cols)
+    return {"path": sc.name, "columns": cols, "n": len(df), "ok": ok,
+            "extent": [float(df["x"].max() - df["x"].min()),
+                       float(df["y"].max() - df["y"].min())] if ok else None}
+
+
 def coords(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
-    """a DECLARED column that is absent is a fail - the declaration is wrong."""
+    """a DECLARED column that is absent is a fail - the declaration is wrong.
+
+    positions may arrive either inside the object (obsm/obs) or in the sidecar
+    coordinates table the canonical contract names. both satisfy the contract;
+    neither does not.
+    """
     rows = []
     for sid, _p in ctx["paths_by_sid"].items():
         o = _CACHE[_p]
         pk = ctx["platform_by_sample"].get(sid)
         declared = (ctx["platform_defs"].get(pk) or {}).get("position_columns") or []
+        side = _sidecar_coords(Path(_p))
+        if side and side.get("ok"):
+            rows.append({"sample": sid, "platform": pk, "source": "sidecar",
+                         "sidecar": side["path"], "n": side["n"],
+                         "declared": declared, "absent": [], "ok": True,
+                         "pixel_extent": side["extent"]})
+            continue
         if hasattr(o, "obsm"):
             has = "spatial" in o.obsm
             absent = [c for c in declared if c not in o.obs.columns]
@@ -203,8 +319,10 @@ def coords(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                          "declared": declared, "found_in": holder, "absent": absent,
                          "ok": bool(declared and holder)})
     bad = [r["sample"] for r in rows if not r["ok"]]
+    n_side = sum(1 for r in rows if r.get("source") == "sidecar")
     return _rec("coords", "fail" if bad else "pass",
-                f"{len(rows)-len(bad)}/{len(rows)} carry declared position",
+                f"{len(rows)-len(bad)}/{len(rows)} carry declared position"
+                + (f" ({n_side} via the sidecar coordinates table)" if n_side else ""),
                 "the declaration is wrong for these samples" if bad else
                 "a pixel extent is not a micron extent - scale comes from "
                 "platform.spot_pitch_um, never from these numbers",

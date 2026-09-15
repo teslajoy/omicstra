@@ -154,6 +154,67 @@ def _project_gitignore(classification: str) -> str:
 
 
 @main.command()
+@click.option("--project-dir", default=None, type=click.Path(path_type=Path),
+              help="cohort root. defaults to OMICSTRA_PROJECT_DIR.")
+@click.option("--project-id", default=None)
+@click.option("--inputs-dir", default="data/canonical",
+              help="where the per-sample files live, relative to the cohort root. "
+                   "the canonical directory by default - that is what the package reads.")
+@click.option("--max-samples", default=None, type=int,
+              help="cap the number of samples read. omit to derive it from this "
+                   "machine's open-file and memory limits; 0 means no cap.")
+@click.option("--write/--no-write", default=True,
+              help="write inventory.json into the cohort root.")
+def inventory(project_dir, project_id, inputs_dir, max_samples, write) -> None:
+    """describe a cohort's data - 8 steps - and write the record.
+
+    the record is a committable artifact and other steps read it: the encode
+    gate takes its per-sample unit counts from here rather than measuring them
+    again. a record covering a fraction of the cohort therefore makes a
+    unit-floor gate silent rather than wrong, so this exists to produce a
+    complete one.
+    """
+    import json
+
+    from omicstra.protocols import build_protocol
+    from omicstra.protocols.inventory import INVENTORY_STEPS
+
+    if project_dir is not None:
+        settings.project_dir = project_dir.expanduser()
+    root = settings.project_root(project_id)
+
+    params = {st.id: {} for st in INVENTORY_STEPS}
+    params["files"] = {"inputs_dir": inputs_dir}
+    if max_samples is not None:
+        params["shape"] = {"max_samples": max_samples}
+
+    recs = build_protocol(INVENTORY_STEPS, "inventory").invoke(
+        {"project_dir": str(root), "project_id": project_id, "params": params})
+
+    for k, v in recs.items():
+        click.echo(f"  [{v.get('status', '?'):<14}] {k:<12} {str(v.get('result', ''))[:62]}")
+
+    cov = (recs.get("shape", {}).get("observed") or {}).get("coverage")
+    if cov:
+        click.echo(f"\n  coverage: {cov['n_read']}/{cov['n_declared']} samples read, "
+                   f"cap {cov['cap']} ({cov['cap_source']}, bound by "
+                   f"{cov['budget']['bound_by']})")
+        if cov["capped"]:
+            click.echo("  CAPPED - downstream gates that read these counts see a "
+                       "fraction of the cohort. pass --max-samples 0 for all of it.")
+
+    failed = [k for k, v in recs.items() if v.get("status") == "fail"]
+    if write and not failed:
+        out = root / "inventory.json"
+        out.write_text(json.dumps(recs, indent=2, default=str) + "\n")
+        click.echo(f"\n  wrote {out.name} ({out.stat().st_size/1024:.0f} KB)")
+    elif failed:
+        click.echo(f"\n  not written - {failed} failed. a record of a failed "
+                   "inventory would be a record of nothing.")
+    raise SystemExit(1 if failed else 0)
+
+
+@main.command()
 @click.option("--project-dir", default=None, type=click.Path(path_type=Path))
 @click.option("--project-id", default=None)
 @click.option("--adata-path", default=None, type=click.Path(path_type=Path),

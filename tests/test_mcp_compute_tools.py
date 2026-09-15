@@ -104,3 +104,52 @@ def test_an_unconverted_cohort_is_not_runnable_and_says_why(tmp_path, monkeypatc
     p = describe_compute_plan("virchow2")
     assert p["runnable"] is False
     assert "ingest" in p["note"] or "ingest" in p.get("why_not", "")
+
+
+# --- the two count sources must agree, not merely both exist ----------------
+def test_the_inventory_covers_the_whole_cohort():
+    """a record covering a fraction makes a unit-floor gate silent rather than
+    wrong, and silent is indistinguishable from a pass. it was 2 of 280."""
+    inv = ROOT / "projects" / "tnbc-92" / "inventory.json"
+    ing = ROOT / "projects" / "tnbc-92" / "data" / "canonical" / "ingest.json"
+    if not (inv.is_file() and ing.is_file()):
+        pytest.skip("fixture artifacts absent")
+
+    shape = json.loads(inv.read_text())["shape"]["observed"]
+    cov = shape["coverage"]
+    assert cov["capped"] is False, (
+        "the inventory is capped, so downstream gates see a fraction of the cohort - "
+        "re-run `omicstra inventory --max-samples 0`")
+    assert cov["n_read"] == cov["n_declared"]
+    assert len(shape["per_sample"]) == cov["n_read"], "the record truncates its own rows"
+
+
+def test_the_inventory_and_the_ingest_agree_on_every_unit_count():
+    """two complete sources. `fuller source wins` is only a safe rule while they
+    do not disagree - if they do, one of them is measuring something else."""
+    inv = ROOT / "projects" / "tnbc-92" / "inventory.json"
+    ing = ROOT / "projects" / "tnbc-92" / "data" / "canonical" / "ingest.json"
+    if not (inv.is_file() and ing.is_file()):
+        pytest.skip("fixture artifacts absent")
+
+    a = {s["sample"]: s["n_obs"]
+         for s in json.loads(inv.read_text())["shape"]["observed"]["per_sample"]
+         if "n_obs" in s}
+    b = {k: v["n_spots"] for k, v in json.loads(ing.read_text())["sources"].items()}
+    common = set(a) & set(b)
+    assert len(common) == len(b), "the inventory does not cover every ingested sample"
+    disagree = {k: (a[k], b[k]) for k in common if a[k] != b[k]}
+    assert not disagree, f"unit counts disagree between the two sources: {disagree}"
+
+
+def test_the_cap_is_derived_from_measured_limits_not_a_constant():
+    """the old default was 8, which bore no relation to the machine and silently
+    made a 280-sample cohort look like an 8-sample one."""
+    from omicstra.protocols.inventory import _budget
+
+    b = _budget(42_000_000)
+    assert b["cap"] and b["cap"] > 0
+    assert b["bound_by"] in ("descriptors", "memory", "nothing measurable")
+    # zero is not unknown: reading SC_AVPHYS_PAGES as a figure on a platform that
+    # returns 0 would compute a cap of one sample
+    assert b["available_bytes"] is None or b["available_bytes"] > 0
