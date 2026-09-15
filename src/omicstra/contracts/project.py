@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from omicstra.settings import settings
 
@@ -45,11 +45,19 @@ class ProjectConfig(BaseModel):
     niches_dir: str = ""
     runs_dir: str = ""
 
+    # artifacts that PRODUCED the published results. every port in this repo is
+    # verified by diffing against them, so writing into one does not merely lose
+    # data - it makes the next diff compare a port against its own output, and
+    # pass. a declared field rather than a loose key because pydantic drops what
+    # it does not declare: this sat in project.json being silently ignored,
+    # which is the same failure as an undeclared key at a graph boundary.
+    read_only_inputs: dict = Field(default_factory=dict)
+
     # where this cohort was loaded from. not serialised back out.
     project_dir: Path | None = None
 
     @classmethod
-    def from_dir(cls, project_dir: str | Path) -> "ProjectConfig":
+    def from_dir(cls, project_dir: str | Path) -> ProjectConfig:
         """load a cohort from its own directory - the shipped path."""
         d = Path(project_dir)
         p = d / "project.json"
@@ -63,7 +71,7 @@ class ProjectConfig(BaseModel):
 
     @classmethod
     def load(cls, project_id: str | None = None,
-             projects_dir: str | Path | None = None) -> "ProjectConfig":
+             projects_dir: str | Path | None = None) -> ProjectConfig:
         """resolve a cohort through the settings boundary.
 
         `projects_dir` is the dev-registry path and needs a cohort name to index

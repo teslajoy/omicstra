@@ -24,6 +24,7 @@ unreadable image must not cost the other 279.
 """
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
@@ -31,10 +32,23 @@ from pathlib import Path
 
 from omicstra.settings import settings
 
+_log = logging.getLogger(__name__)
+
 # the activity signature. `heartbeat` is a callable the body invokes to say it is
 # still alive; locally it is a no-op, on temporal it reports progress so a long
 # shard is not mistaken for a hung worker.
 ShardFn = Callable[["Shard", Callable[[str], None]], None]
+
+
+class WouldOverwriteOracle(RuntimeError):
+    """a shard's output points inside a declared read-only input.
+
+    this is not a data-loss guard, or not only. the artifacts that produced the
+    published grid are what every port is diffed against, so writing into one
+    means the next diff compares a port against its own output - and PASSES.
+    the failure is silent and it invalidates the verification rather than the
+    data, which is why it refuses rather than warning.
+    """
 
 
 class AllShardsFailed(RuntimeError):
@@ -136,8 +150,52 @@ def atomic_write(path: Path, write: Callable[[Path], None]) -> None:
         tmp.unlink(missing_ok=True)
 
 
+def read_only_inputs(project_id: str | None = None) -> list[Path]:
+    """paths a cohort declares as oracle, resolved absolute.
+
+    absent is not an error - a cohort with no published results has no oracle to
+    protect - but a cohort that HAS one must say so, because nothing else can
+    tell a cache from an output directory by looking at it.
+    """
+    from omicstra.contracts.project import ProjectConfig
+
+    try:
+        cfg = ProjectConfig.load(project_id)
+        decl = cfg.read_only_inputs or {}
+    except Exception:                       # noqa: BLE001 - undeclared is fine
+        return []
+    if decl.get("policy") != "refuse_writes":
+        return []
+    out = []
+    for rel in decl.get("paths") or []:
+        try:
+            out.append(cfg.path(rel).resolve())
+        except (OSError, ValueError) as e:
+            # an unresolvable declared path protects nothing, and silently
+            # dropping it would leave a gap in the guard - say so.
+            _log.warning("read_only_inputs: cannot resolve %r (%s)", rel, e)
+    return out
+
+
+def assert_writable(shards: Iterable[Shard], project_id: str | None = None) -> None:
+    """refuse before a single byte moves if any output lands in an oracle."""
+    protected = read_only_inputs(project_id)
+    if not protected:
+        return
+    for sh in shards:
+        target = Path(sh.output).resolve()
+        for ro in protected:
+            if target == ro or ro in target.parents:
+                raise WouldOverwriteOracle(
+                    f"shard {sh.id!r} would write {target} inside {ro}, which this "
+                    "cohort declares read-only. that directory is what the ports "
+                    "are diffed against - writing into it makes the next diff "
+                    "compare a port against its own output and pass. choose a "
+                    "run-scoped output directory instead.")
+
+
 def run_shards(shards: Iterable[Shard], fn: ShardFn, *, address: str | None = None,
-               max_attempts: int = 3, heartbeat_s: int = 30,
+               max_attempts: int = 3, heartbeat_s: int = 30, project_id: str | None = None,
                on_event: Callable[[str, ShardResult], None] | None = None) -> ShardReport:
     """run every shard once, skipping those already finished.
 
@@ -145,6 +203,9 @@ def run_shards(shards: Iterable[Shard], fn: ShardFn, *, address: str | None = No
     and that is the normal path rather than a fallback - see the module docstring.
     """
     shards = list(shards)
+    # before anything runs, and before either backend is chosen: a refusal that
+    # arrives after the first shard has written is a refusal that came too late.
+    assert_writable(shards, project_id)
     addr = address if address is not None else settings.temporal_address
     if addr:
         from omicstra.dispatch.temporal import run_shards_durably

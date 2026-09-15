@@ -550,8 +550,14 @@ def describe_compute_plan(encoder: str | None = None,
                          "nothing to plan over yet.")}
 
     with_image = [s for s in samples if s.image]
-    out_dir = settings.resolve(Path("data/embeddings")) / f"{enc}_niche"
-    done = {p.stem for p in out_dir.glob("*.npy")} if out_dir.is_dir() else set()
+
+    # the ORACLE is read, never written. it is what the ports are diffed
+    # against, so a plan that named it as an output directory - which this did -
+    # invites a run that contaminates the thing the verification depends on.
+    oracle = settings.resolve(Path("data/embeddings")) / f"{enc}_niche"
+    out_dir = root / "runs" / "encode" / enc
+    in_oracle = {q.stem for q in oracle.glob("*.npy")} if oracle.is_dir() else set()
+    done = {q.stem for q in out_dir.glob("*.npy")} if out_dir.is_dir() else set()
     todo = [s.sample_id for s in with_image if s.sample_id not in done]
 
     return {
@@ -565,6 +571,15 @@ def describe_compute_plan(encoder: str | None = None,
         "remaining": len(todo),
         "remaining_examples": sorted(todo)[:5],
         "output_dir": str(out_dir),
+        "oracle": {
+            "path": str(oracle),
+            "n_present": len(in_oracle),
+            "role": "read-only. the artifacts the published grid was built from",
+            "note": ("a run writes to output_dir and diffs against this. the "
+                     "dispatcher refuses a shard whose output lands inside a path "
+                     "the cohort declares read-only, so a plan cannot become a "
+                     "contamination by accident."),
+        },
         "unit_of_retry": "one shard per sample; three attempts, then recorded failed "
                          "and the run continues",
         "resume": "decided by the output file, not a ledger - the file is what the next "

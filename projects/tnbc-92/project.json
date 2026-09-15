@@ -50,5 +50,17 @@
     "B4_v3"
   ],
   "niches_dir": "../../data/embeddings/niches_v3",
-  "runs_dir": "../../runs/tnbc-92_v3"
+  "runs_dir": "../../runs/tnbc-92_v3",
+  "read_only_inputs": {
+    "note": "artifacts that PRODUCED the published grid. every port in this repo is verified by diffing against them, so they are the oracle and not output. writing into one does not merely lose data - it destroys the ability to verify anything, because the diff then compares a port against its own output and passes.",
+    "policy": "refuse_writes",
+    "paths": [
+      "../../data/embeddings/virchow2_niche",
+      "../../data/embeddings/virchow2_cell",
+      "../../data/embeddings/novae_niche_full",
+      "../../data/embeddings/niches_v3",
+      "../../data/embeddings/gpath2vec"
+    ],
+    "regenerable": "virchow2_* and novae_* could be recomputed at cost - about 5.8 hours for the H&E arm. the gpath2vec v1 build could NOT: its inputs were superseded and renamed _v1_legacy."
+  }
 }
