@@ -178,14 +178,21 @@ def eda(project_dir, project_id, adata_path, steps):
     """
     from langgraph.checkpoint.memory import InMemorySaver
     from langgraph.types import Command
+
     from omicstra.graph import build_omicstra_graph
     from omicstra.graphs.eda import build_eda_graph
 
     if project_dir is not None:
         settings.project_dir = project_dir.expanduser()
 
+    from omicstra.graphs.encode import build_encode_graph
+
+    # the encode gate is passed, so the compute arm is inventory -> eda -> gate
+    # -> encode rather than stopping at the verdict. it decides from
+    # declarations and pauses only where a cohort has not made the call.
     app = build_omicstra_graph(checkpointer=InMemorySaver(),
-                               eda=build_eda_graph(checkpointer=None))
+                               eda=build_eda_graph(checkpointer=None),
+                               encode=build_encode_graph(checkpointer=None))
     cfg = {"configurable": {"thread_id": "cli"}}
     payload = {"question": "", "project_id": project_id,
                "params": {s: {} for s in steps} or {"count_statistics": {}}}

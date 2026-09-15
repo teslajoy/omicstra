@@ -29,6 +29,7 @@ because more than one node appends to it; scalars do not.
 """
 from __future__ import annotations
 
+import logging
 import operator
 import os
 from pathlib import Path
@@ -36,7 +37,11 @@ from typing import Annotated, Any, Literal, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from omicstra.contracts.project import ProjectConfig
 from omicstra.routing import load_routing_evidence
+from omicstra.settings import settings
+
+_log = logging.getLogger(__name__)
 
 Arm = Literal["ask", "compute"]
 
@@ -61,6 +66,17 @@ class OmicstraState(TypedDict, total=False):
     # KeyError that looks like a bug in the subgraph.
     adata_path: str          # produced by inventory A7, consumed by eda.profile
     params: dict             # per-step params, cohort-supplied
+    # --- the encode subgraph's half of the boundary ------------------------
+    # the gate decides from DECLARATIONS plus counts the inventory already
+    # measured. it re-measures nothing, which is why `unit_counts` crosses the
+    # boundary rather than being recomputed one level down.
+    cohort: dict             # the cohort declaration, read once by discover
+    encoder: str             # which encoder the gates are being asked about
+    unit_counts: dict        # sample -> n_obs, lifted from the inventory record
+    min_scope: int | None    # declared minimum for an authoritative run
+    gates: list[dict]
+    answers: dict
+    report: dict
     # the reducer is why more than one node may append. without it the second
     # writer OVERWRITES the first - invisible until two nodes both write.
     records: Annotated[list[dict], operator.add]
@@ -94,11 +110,93 @@ def discover(state: OmicstraState) -> dict:
     """
     ev = load_routing_evidence(state.get("project_id"))
     has = bool(ev.get("tasks"))
-    return {"has_evidence": has, "arm": "ask" if has else "compute"}
+
+    # the cohort declaration is read HERE, once, and travels. the encode gate
+    # resolves five of its questions from it, and a subgraph that loaded the
+    # file itself would read it again per invocation and could disagree with
+    # what the parent recorded.
+    cohort = _load_cohort(state.get("project_id"))
+    out = {"has_evidence": has, "arm": "ask" if has else "compute", "cohort": cohort}
+    if not state.get("encoder"):
+        out["encoder"] = _primary_encoder(state.get("project_id"))
+    return out
+
+
+def _load_cohort(project_id: str | None) -> dict:
+    """the cohort's declarations, or an empty dict.
+
+    absent is not an error: a scaffolded cohort has declared nothing yet, and
+    every gate then stays open, which is the correct fail-closed result rather
+    than a crash.
+    """
+    import json
+
+    p = settings.project_root(project_id) / "cohort.json"
+    try:
+        return json.loads(p.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def _primary_encoder(project_id: str | None) -> str:
+    """the encoder the cohort declares as primary, by name.
+
+    the gates are asked about ONE encoder at a time because their answers differ
+    per encoder - a gated model raises the terms question and an ungated one does
+    not, and only some declare a unit floor.
+    """
+    try:
+        cfg = ProjectConfig.load(project_id)
+    except Exception as e:     # noqa: BLE001 - absent or unreadable is not an error here
+        # a scaffolded cohort has no usable project.json yet, and the gates
+        # staying open on an unnamed encoder is the correct fail-closed answer.
+        _log.debug("no project config for %r: %s", project_id, e)
+        return ""
+    for enc in cfg.encoders:
+        if getattr(enc, "role", "") == "primary" and getattr(enc, "name", ""):
+            return enc.name
+    return ""
+
+
+def unit_counts_from_records(records: list[dict]) -> dict[str, int]:
+    """sample -> n_obs, taken from the inventory's shape record.
+
+    the compute contract says the platform_floor gate "re-asks nothing" and
+    reads counts already measured. this is that reading: the inventory recorded
+    n_obs per sample when it described the data, so the gate consumes it rather
+    than opening the objects again.
+    """
+    for r in records:
+        if r.get("step_id") == "shape":
+            per = (r.get("observed") or {}).get("per_sample") or []
+            return {s["sample"]: int(s["n_obs"]) for s in per
+                    if s.get("sample") and s.get("n_obs") is not None}
+    return {}
 
 
 def _arm(state: OmicstraState) -> str:
     return state.get("arm", "compute")
+
+
+def carry_counts(state: OmicstraState) -> dict:
+    """lift per-sample unit counts out of the inventory records, for the gate.
+
+    it exists because the encode gate must not re-measure what the inventory
+    described - the compute contract says the platform_floor gate "re-asks
+    nothing" - and a subgraph cannot reach the parent's records except through a
+    declared key.
+    """
+    return {"unit_counts": unit_counts_from_records(state.get("records", []))}
+
+
+def _halted(state: OmicstraState) -> str:
+    """a stopped gate stops the run. encode does not start after a halt.
+
+    without this the eda subgraph could refuse a cohort and the parent would
+    walk straight into spending accelerated compute on it, which is the one
+    thing the gate exists to prevent.
+    """
+    return "halt" if state.get("halted") else "encode"
 
 
 def make_checkpointer(spec: str | None = None):
@@ -120,6 +218,7 @@ def make_checkpointer(spec: str | None = None):
         return InMemorySaver(), "memory"
     if spec.startswith("sqlite:"):
         import sqlite3
+
         from langgraph.checkpoint.sqlite import SqliteSaver
         path = spec.split(":", 1)[1] or "omicstra_checkpoints.sqlite"
         Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -166,7 +265,14 @@ def build_omicstra_graph(checkpointer: Any = None,
     if eda is not None:
         targets["compute"] = "eda"
     if encode is not None and eda is not None:
-        g.add_edge("eda", "encode")
+        # a node between them, not a bare edge. the encode gate reads counts the
+        # inventory already measured, and something has to lift them out of the
+        # records the eda subgraph appended. putting that in the subgraph would
+        # make it re-read the inventory; putting it in the edge is not possible.
+        g.add_node("carry_counts", carry_counts)
+        g.add_edge("eda", "carry_counts")
+        g.add_conditional_edges("carry_counts", _halted,
+                                {"halt": END, "encode": "encode"})
         g.add_edge("encode", END)
     elif eda is not None:
         g.add_edge("eda", END)
