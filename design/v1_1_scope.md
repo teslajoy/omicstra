@@ -156,3 +156,17 @@ and two things are known to be missing:
   this: a scheduled job paused for a person is burning walltime, and if it hits
   its limit while waiting the answer is lost with it. that is what the mid-run
   gate and the durable workflow are for, and it is untested against a real queue
+### the first declared alternative worth running
+
+**the lattice-true Novae edge scale.** the cache was built at
+`scale_to_microns` 1.2195 (200/164). on five subarrays the lattice-true scale
+keeps global geometry (CKA >= 0.998) but changes about half of within-subarray
+top-6 neighbour sets - more than same-size isotropic noise
+(`projects/tnbc-92/platform.json#platforms.original_st.st_graph.scale_measurement`).
+of the declared alternatives it is the only one that reaches the neighbourhoods
+H1 is scored on, so it is the one that could move H1.
+
+it is a 1.2 experiment, not a 1.1 blocker: all 262 subarrays re-embedded
+through `StGraph` at the declared scale, the join rebuilt, the grid retrained,
+H1-H3 scored against the as-built pack. the niche alternatives (k=4, k=8,
+`platform.json#niche_geometry`) stay declared and unqueued.

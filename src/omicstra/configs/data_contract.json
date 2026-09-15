@@ -177,6 +177,18 @@
           "note": "first ring on this lattice"
         },
         {
+          "k": 4,
+          "note": "near ring only - symmetric on a square lattice, no diagonal choice",
+          "declared_alternative": true,
+          "run": false
+        },
+        {
+          "k": 8,
+          "note": "full first ring on a square lattice, all four diagonals - symmetric",
+          "declared_alternative": true,
+          "run": false
+        },
+        {
           "k": 15,
           "note": "the proposal's stated contingency if spot-level pathway embeddings prove too noisy"
         },
@@ -187,7 +199,8 @@
       ],
       "chosen_because": "niche outperformed cell scale at predicting molecular class from the image on this platform - a measurement, not a preference",
       "validated_on": "original_st, 100um spots. the cell-vs-niche ordering is NOT assumed to transfer to subcellular platforms and must be re-measured there",
-      "guard": "k is meaningless without a pitch. a k=6 niche spans ~0.5mm at 150um pitch and ~0.33mm at 100um - report the physical footprint alongside k"
+      "guard": "k is meaningless without a pitch. a k=6 niche spans ~0.5mm at 150um pitch and ~0.33mm at 100um - report the physical footprint alongside k",
+      "selection_property": "neighbours are taken by rank, not by a radius. on a square lattice the first ring is four near spots and four diagonals, so k=6 takes two of the four diagonals. on an anisotropic lattice the nearer diagonal pair wins by distance and the footprint is directional, in the same orientation in every sample; on an isotropic lattice the four diagonals tie and the sort order decides. either way the footprint is not symmetric - declare the measured geometry per platform"
     },
     "cell": {
       "definition": "one tile at a spot centre, pre-pooling",

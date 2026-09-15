@@ -369,6 +369,31 @@
         "claude_md_lattice": 161.6,
         "cn1_c1_median_first": 158.6,
         "note": "two measurements of the same spacing in HE-small coordinates, 1.9% apart. recorded side by side so a derived micron figure can say which it used."
+      },
+      "niche_geometry": {
+        "k": 6,
+        "as_built": true,
+        "measured_on": "2026-09-15",
+        "scope": "279 canonical samples with at least 9 spots; 221,807 interior spots, i.e. those whose 8th neighbour lies within 1.8x the sample's median nearest-neighbour distance. HE-small coordinates from the canonical _spots.parquet",
+        "neighbour_distance_over_nn": {
+          "1-4": "0.999, 1.014, 1.024, 1.040",
+          "5-6": "1.351, 1.373",
+          "7-8": "1.507, 1.524"
+        },
+        "property": "the lattice is square but anisotropic: of the four diagonals, one pair sits at ~1.36x the nearest spacing (~205 um at the 150 um pitch) and the other at ~1.52x (~227 um). k=6 therefore takes the four near spots plus the nearer diagonal pair, on 99.8% of interior spots. the choice is made by distance, not by sort order - the 7th neighbour is a median 9.5% farther than the 6th, and only 0.2% of interior spots have the two within 1%",
+        "consequence": "the niche footprint - H&E tiles, the ST pool and the 7-token stack alike - is directional, elongated along the nearer diagonal, in the same orientation in every subarray. it is consistent across all ten arms, so the comparison stands; it was not declared before. on an isotropic square lattice the four diagonals tie and argsort would decide which two enter, which is the case to check on any other cohort",
+        "declared_alternatives": [
+          {
+            "k": 4,
+            "run": false,
+            "question": "does a symmetric near-ring niche change H1?"
+          },
+          {
+            "k": 8,
+            "run": false,
+            "question": "does the full symmetric first ring change H1?"
+          }
+        ]
       }
     }
   },
