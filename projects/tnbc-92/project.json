@@ -31,6 +31,8 @@
     }
   ],
   "gpath2vec_sha256": "13985cbd18fb72f67d41193cc0b7f1b3186b720c1e83da9403963085c7583490",
+  "pathway_node_embeddings": "../../data/embeddings/gpath2vec/fisher_madmean_low_dim512_e5_s1234/fisher_madmean_low_embeddings.pkl",
+  "pathway_node_embeddings_sha256": "782fe64fa1b788a3ba1d3fecc8c29584d375bdd36197df9d77e259e5cd77b0f3",
   "h2_label": "mc_megacluster",
   "supervision": "mc_weights_niche",
   "headline_view": "z_he",

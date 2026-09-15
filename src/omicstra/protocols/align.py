@@ -250,20 +250,110 @@ def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = Non
 
 _BASELINE_OF = {"B1": "cca", "B2": "procrustes", "B3": "unaligned"}
 
-# H1 scores the whole grid in one call; H2/H3 take ONE run at a time.
-# the stages that SCORE each hypothesis, in order. eval.py writes the rollup
-# `eval/{H}/summary.json` for all three hypotheses from one entry point
-# (--hypothesis H1|H2|H3). eval_alignment_biology.py writes per-run
-# biology*.parquet under each run's own eval/ directory and never a summary, so
-# it is an ADDITIONAL H3 stage, not the one that produces H3's rollup.
+# the stages that SCORE each hypothesis, in order, as (script, scope).
 #
-# this map used to send H2 and H3 to eval_alignment_biology.py alone. a compute
-# run for H2 would then have run the per-run biology script, left the existing
-# eval/H2/summary.json untouched, and resolved it with computed=True - a record
-# claiming a recomputation that did not happen.
-_EVAL_SCRIPT = {"H1": ("eval.py",),
-                "H2": ("eval.py",),
-                "H3": ("eval.py", "eval_alignment_biology.py")}
+# the map follows the artifacts the evidence pack CITES, not the rollups. eval.py
+# writes `eval/{H}/summary.json` for every hypothesis and stays first, but for H2
+# and H3 that rollup is diagnostic: no routed number is read from it.
+#
+#   H2-C  subject_identity_suppression cites eval/H2/metrics_h2_ci.json -> h2c.
+#         eval_alignment_biology.py writes each run's eval/biology.parquet (the
+#         TIME and patient z), then eval_h2_bootstrap_ci.py derives the ratio and
+#         its interval from those.
+#   H3    pathway_transfer cites eval/H3/pathway_cca_gpath2vec_v3/
+#         per_pathway_cca.parquet + perm_nulls.parquet, written by
+#         eval_h3_pathway_cca_gpath2vec_v2.py.
+#
+# NOT mapped: H2-A's point estimates (mc_coherence.parquet) come from a script
+# that lives in scripts/_scratch/, and the H3 DAG decomposition is deferred. both
+# wait; a compute run for H2 refreshes h2a's intervals but not its point table.
+#
+# two earlier versions of this map were wrong. the first sent H2 and H3 to the
+# biology script alone, which never writes a rollup. the second put the biology
+# script under H3, where it scores nothing H3 cites - biology.parquet is H2-C.
+_EVAL_STAGES = {
+    "H1": (("eval.py", "rollup"),),
+    "H2": (("eval.py", "rollup"),
+           ("eval_alignment_biology.py", "per_run"),
+           ("eval_h2_bootstrap_ci.py", "grid_ci")),
+    "H3": (("eval.py", "rollup"),
+           ("eval_h3_pathway_cca_gpath2vec_v2.py", "pathway_cca")),
+}
+
+# the settings that produced the cited artifacts, with where each is evidenced.
+# a script default is not a declaration: eval_alignment_biology.py defaults to
+# 100,000 permutations, and the published biology.parquet was built with 10,000.
+_AS_BUILT = {
+    "eval_alignment_biology.py": {
+        "n_permutations": 10000,   # biology.parquet p_floor = 1e-4 on every row
+        "n_rho_null": 1000,        # biology_rho.parquet n_permutations
+    },
+    "eval_h2_bootstrap_ci.py": {
+        "n_bootstrap": 200,        # metrics_h2_ci.json n_bootstrap_h2a
+    },
+    "eval_h3_pathway_cca_gpath2vec_v2.py": {
+        "n_perms": 500,            # pathway_cca_gpath2vec_v3/provenance.json
+        "n_test_pats": 3,          # provenance.json
+        "allow_set_size_drift": True,   # provenance.json set_size_drift_allowed
+        "out_subdir": "eval/H3/pathway_cca_gpath2vec_v3",
+    },
+}
+
+
+def _stage_args(script: str, scope: str, h: str, cfg: ProjectConfig,
+                grid: AlignGrid, project_id: str | None) -> list[list[str]]:
+    """one argument list per invocation of a stage. per_run stages get one each."""
+    root, runs, seed = grid.runs_root, list(grid.run_refs), str(cfg.seed)
+    if scope == "rollup":
+        return [["--hypothesis", h, "--runs", *runs, "--runs-dir", root]]
+
+    niches = _project_rel(cfg.niches_dir, project_id) if cfg.niches_dir else None
+    if niches is None or not niches.is_dir():
+        raise ComputeUnavailable(f"{script} needs the niche join; none at {niches}")
+    ab = _AS_BUILT[script]
+
+    if scope == "per_run":
+        return [["--run-id", rid, "--runs-dir", root, "--niches-dir", str(niches),
+                 "--n-permutations", str(ab["n_permutations"]),
+                 "--n-rho-null", str(ab["n_rho_null"]), "--seed", seed]
+                for rid in runs]
+    if scope == "grid_ci":
+        return [["--runs-dir", root, "--niches-dir", str(niches), "--runs", ",".join(runs),
+                 "--n-bootstrap", str(ab["n_bootstrap"]), "--seed", seed]]
+    if scope == "pathway_cca":
+        pkl = _pathway_node_embeddings(cfg, project_id)
+        args = ["--embeddings-pkl", str(pkl), "--runs-dir", root, "--runs", ",".join(runs),
+                "--out-dir", str(Path(root) / ab["out_subdir"]),
+                "--n-perms", str(ab["n_perms"]), "--n-test-pats", str(ab["n_test_pats"])]
+        if ab["allow_set_size_drift"]:
+            args.append("--allow-set-size-drift")
+        return [args]
+    raise ValueError(f"unknown eval stage scope {scope!r} for {script}")
+
+
+def _pathway_node_embeddings(cfg: ProjectConfig, project_id: str | None) -> Path:
+    """the declared gpath2vec node-embedding pickle, sha-locked when a sha is declared.
+
+    the H3 script takes it as a required argument with no default, to prevent a
+    legacy build being scored by accident. the same reasoning applies one level
+    up: the path is read from the cohort's declaration, never guessed.
+    """
+    if not cfg.pathway_node_embeddings:
+        raise ComputeUnavailable(
+            "H3 pathway CCA needs `pathway_node_embeddings` declared in project.json - "
+            "the gpath2vec node-embedding pickle the pathway sets are embedded from.")
+    p = _project_rel(cfg.pathway_node_embeddings, project_id)
+    if not p.is_file():
+        raise ComputeUnavailable(f"declared pathway_node_embeddings not found: {p}")
+    if cfg.pathway_node_embeddings_sha256:
+        import hashlib
+        got = hashlib.sha256(p.read_bytes()).hexdigest()
+        if got != cfg.pathway_node_embeddings_sha256:
+            raise ComputeUnavailable(
+                f"{p.name} sha256 {got[:12]} != declared "
+                f"{cfg.pathway_node_embeddings_sha256[:12]} - a different build would be "
+                "scored under the published name")
+    return p
 
 
 def run_eval(cfg: ProjectConfig, grid: AlignGrid, project_id: str | None = None,
@@ -297,17 +387,15 @@ def run_eval(cfg: ProjectConfig, grid: AlignGrid, project_id: str | None = None,
 
     if compute:
         for h in hypotheses:
-            stages = _EVAL_SCRIPT.get(h)
+            stages = _EVAL_STAGES.get(h)
             if stages is None:
-                raise ValueError(f"no eval script for hypothesis {h!r}")
-            for script in stages:
-                if script == "eval.py":                  # the rollup, whole grid
-                    _run_script(script, ["--hypothesis", h, "--runs", *grid.run_refs,
-                                         "--runs-dir", grid.runs_root])
-                else:                                    # per-run biology, one at a time
-                    for rid in grid.run_refs:
-                        _run_script(script, ["--run-id", rid,
-                                             "--runs-dir", grid.runs_root])
+                raise ValueError(f"no eval stages for hypothesis {h!r}")
+            # every argument list is built before any script runs, so an
+            # undeclared input refuses the hypothesis rather than half-scoring it
+            plan = [(script, args) for script, scope in stages
+                    for args in _stage_args(script, scope, h, cfg, grid, project_id)]
+            for script, args in plan:
+                _run_script(script, args)
         computed = True
 
     summaries = [str(p) for p in

@@ -465,20 +465,76 @@ def test_baseline_dispatch_does_not_guess():
     assert set(align._BASELINE_OF) == {"B1", "B2", "B3"}
 
 
-def test_eval_scripts_are_mapped_per_hypothesis():
-    """every rollup comes from eval.py; H3 adds the per-run biology stage.
+def test_eval_stages_produce_the_artifacts_the_pack_cites():
+    """the map follows what the evidence pack cites, not the rollups.
 
-    this test used to assert H2 and H3 mapped to eval_alignment_biology.py alone,
-    which pinned a defect: that script writes per-run biology*.parquet and never
-    eval/{H}/summary.json, so a compute run for H2 left the rollup stale while
-    the record said computed.
+    H2-C cites metrics_h2_ci.json -> h2c, built from each run's biology.parquet;
+    H3 cites per_pathway_cca.parquet from the gpath2vec v2 CCA script. an earlier
+    version put the biology script under H3, where it scores nothing H3 cites.
     """
     from omicstra.protocols import align
-    m = align._EVAL_SCRIPT
+    m = {h: [s for s, _ in stages] for h, stages in align._EVAL_STAGES.items()}
     for h in ("H1", "H2", "H3"):
         assert m[h][0] == "eval.py", f"{h}'s rollup must come from eval.py"
-    assert "eval_alignment_biology.py" in m["H3"]
-    assert "eval_alignment_biology.py" not in m["H2"]
+    assert m["H2"][1:] == ["eval_alignment_biology.py", "eval_h2_bootstrap_ci.py"], \
+        "biology.parquet must exist before the CI script reads it"
+    assert m["H3"][1:] == ["eval_h3_pathway_cca_gpath2vec_v2.py"]
+    assert "eval_alignment_biology.py" not in m["H3"]
+
+
+def test_eval_stages_pass_the_as_built_settings_not_script_defaults():
+    """the biology script defaults to 100,000 permutations; the cited artifact used 10,000."""
+    from omicstra.protocols import align
+    assert align._AS_BUILT["eval_alignment_biology.py"]["n_permutations"] == 10000
+    ab = align._AS_BUILT["eval_h3_pathway_cca_gpath2vec_v2.py"]
+    assert (ab["n_perms"], ab["n_test_pats"], ab["allow_set_size_drift"]) == (500, 3, True)
+    root = Path(__file__).resolve().parents[1]
+    prov = root / "runs" / "tnbc-92_v3" / "eval" / "H3" / "pathway_cca_gpath2vec_v3" / "provenance.json"
+    if prov.is_file():
+        p = json.loads(prov.read_text())
+        assert (p["n_perms"], p["n_test_pats"], p["set_size_drift_allowed"]) == (500, 3, True)
+
+
+def test_eval_stage_args_are_built_from_declarations(tmp_path):
+    from omicstra.contracts.project import ProjectConfig
+    from omicstra.protocols import align
+
+    niches = tmp_path / "niches"; niches.mkdir()
+    pkl = tmp_path / "nodes.pkl"; pkl.write_bytes(b"x")
+    cfg = ProjectConfig(project_id="t", platform="p", niches_dir=str(niches),
+                        pathway_node_embeddings=str(pkl))
+    grid = align.AlignGrid(runs_root=str(tmp_path / "runs"),
+                           run_refs={"R1": "a", "R2": "b"}, computed=[])
+    per_run = align._stage_args("eval_alignment_biology.py", "per_run", "H2", cfg, grid, None)
+    assert len(per_run) == 2 and "--n-permutations" in per_run[0]
+    assert per_run[0][per_run[0].index("--n-permutations") + 1] == "10000"
+    (h3,) = align._stage_args("eval_h3_pathway_cca_gpath2vec_v2.py", "pathway_cca", "H3", cfg, grid, None)
+    assert h3[h3.index("--embeddings-pkl") + 1] == str(pkl)
+    assert h3[h3.index("--out-dir") + 1].endswith("eval/H3/pathway_cca_gpath2vec_v3")
+    assert "--allow-set-size-drift" in h3
+
+
+def test_h3_refuses_an_undeclared_or_different_pathway_build(tmp_path):
+    from omicstra.contracts.project import ProjectConfig
+    from omicstra.protocols import align
+
+    niches = tmp_path / "niches"; niches.mkdir()
+    grid = align.AlignGrid(runs_root=str(tmp_path), run_refs={"R1": "a"}, computed=[])
+    bare = ProjectConfig(project_id="t", platform="p", niches_dir=str(niches))
+    with pytest.raises(align.ComputeUnavailable, match="pathway_node_embeddings"):
+        align._stage_args("eval_h3_pathway_cca_gpath2vec_v2.py", "pathway_cca", "H3", bare, grid, None)
+    pkl = tmp_path / "nodes.pkl"; pkl.write_bytes(b"x")
+    wrong = ProjectConfig(project_id="t", platform="p", niches_dir=str(niches),
+                          pathway_node_embeddings=str(pkl), pathway_node_embeddings_sha256="0" * 64)
+    with pytest.raises(align.ComputeUnavailable, match="sha256"):
+        align._stage_args("eval_h3_pathway_cca_gpath2vec_v2.py", "pathway_cca", "H3", wrong, grid, None)
+
+
+def test_the_seed_cohort_declares_the_pathway_build_the_cited_artifact_used():
+    root = Path(__file__).resolve().parents[1]
+    pj = json.loads((root / "projects" / "tnbc-92" / "project.json").read_text())
+    meta = json.loads((FIXTURES / "h3_per_pathway_cca_v3.meta.json").read_text())
+    assert pj["pathway_node_embeddings_sha256"] == meta["provenance"]["embeddings_sha256"]
 
 
 def test_the_rollup_script_really_writes_each_hypothesis_summary():

@@ -34,6 +34,11 @@ class ProjectConfig(BaseModel):
     encoders: list[EncoderSpec] = []
     gpath2vec_sha256: str | None = None  # sha-lock; verified on every read
 
+    # the gpath2vec NODE embeddings the H3 pathway sets are embedded from - a
+    # different file from the niche-cluster parquet gpath2vec_sha256 locks.
+    pathway_node_embeddings: str = ""
+    pathway_node_embeddings_sha256: str | None = None
+
     h2_label: str = "mc_megacluster"       # audit-correct niche-level label
     supervision: str = "mc_weights_niche"  # supervision-only, never in st_features
     headline_view: str = "z_he"            # the confounder-clean view
