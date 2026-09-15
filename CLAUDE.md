@@ -54,6 +54,8 @@ layer 2: karpathy loop (outer optimization)
 - Virchow2: 1280d (primary H&E encoder, picked via encoder_qc_comparison_2026-04-09 on MC linear probe)
 - UNI2: 1536d (alternative H&E encoder, pluggable swap)
 - Novae GNN: 64d (novae_latent, raw GAT output - LayerNorm at MLP input required)
+- Novae edge scale: `novae.settings.scale_to_microns` is a GAT input (each edge length enters as distance x scale / 20), not a unit label. the seed cache was computed at 1.2195 (the old 200um assumption); declared in `platforms.*.st_graph.scale_to_microns` and required by `StGraph` - there is no default
+- ST input to alignment: 576d (novae 64 + gpath2vec 512) for every run except R6, which is novae only (64d)
 - shared space: 512d (CONCH convention; ST info bottleneck is Novae's 64d, not shared width)
 
 ---
@@ -93,7 +95,7 @@ every run must beat all three on Recall@1 before writing winner.json:
 
 - random retrieval
 - spatial-NN (ST coordinate nearest neighbor)
-- unaligned concat (L2-norm UNI2 + Novae, no projection)
+- unaligned (B3): each modality reduced to shared_dim by PCA fit on train, L2-norm, no alignment - Virchow2 niche against the run's ST features (`scripts/align_classical.py`). the proposal's raw unaligned concatenation has no exact counterpart; `projects/tnbc-92/proposal_deviations.md` records B3 as the substitute
 
 a run that does not beat all three baselines is not a winner.
 

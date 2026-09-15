@@ -98,6 +98,17 @@ def test_the_alternatives_are_declared_and_not_run():
         assert a["question"], f"{name}'s alternative states no question"
 
 
+def test_the_per_modality_neighbour_lists_are_on_the_record():
+    """the H&E and ST niches pool over neighbour lists computed separately.
+
+    on the seed cohort they coincide, so nothing published moves; the declaration
+    is for the cohort where they do not.
+    """
+    d = SEMANTICS["neighbour_lists"]
+    assert d["as_built"] == "computed_per_modality"
+    assert d["declared_alternative"]["value"] == "one_neighbour_list_for_both"
+
+
 def test_the_union_alternative_names_what_it_would_change():
     a = SEMANTICS["pathway_coverage"]["declared_alternative"]
     assert "67,131" in a["question"], "the alternative must carry the unit count at stake"

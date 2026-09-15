@@ -12,10 +12,11 @@ question - the three-fold spread from 10,571 to 33,047 genes per sample - lives
 upstream in the pathway build and is not settled here. calling this step's
 choices `gene_handling` would name the wrong thing in the manifest.
 
-what it does decide is which UNITS survive, and there are four such decisions.
-each is ported as built and declared, for the reason every other as-built
-declaration in this project exists: the ten-arm comparison is fair only while
-every arm saw the same rows.
+what it does decide is which UNITS survive, and there are four such decisions,
+plus a fifth - `neighbour_lists` - that decides which spots a surviving niche
+pools over on each side. each is ported as built and declared, for the reason
+every other as-built declaration in this project exists: the ten-arm
+comparison is fair only while every arm saw the same rows.
 """
 from __future__ import annotations
 
@@ -48,7 +49,7 @@ class CircularSupervision(RuntimeError):
     """
 
 
-# the four as-built decisions. each names the alternative it forecloses, so the
+# the five as-built decisions. each names the alternative it forecloses, so the
 # road not taken is recorded rather than rediscovered.
 SEMANTICS = {
     "spot_set": {
@@ -64,6 +65,21 @@ SEMANTICS = {
                "dropping the niche instead would remove boundary tissue, which is real.",
         "declared_alternative": {"value": "drop_incomplete_niche", "run": False,
                                  "question": "does excluding boundary niches change H1?"},
+    },
+    "neighbour_lists": {
+        "as_built": "computed_per_modality",
+        "why": "the H&E niche is pooled at encode time over a KDTree on the image-side "
+               "spot set, over whichever neighbours exist. the ST niche and the 7-token "
+               "stack are pooled over the ST encoder output's neighbor_spot_ids, "
+               "filtered to spots with an H&E vector and padded with the centre. the "
+               "two lists coincide when both modalities keep the same spots - on the "
+               "seed cohort all 260 subarrays with both do, so the published join is "
+               "unaffected - and diverge wherever one modality drops a spot the other "
+               "keeps: a QC filter, a failed tile, an encoder floor.",
+        "declared_alternative": {
+            "value": "one_neighbour_list_for_both", "run": False,
+            "question": "on a cohort whose modalities keep different spots, does pooling "
+                        "both sides over the same seven spots change H1?"},
     },
     "pathway_coverage": {
         "as_built": "drop_niche_on_nan_gpath2vec",
@@ -243,7 +259,7 @@ def assert_no_circular_supervision(feature_columns, supervision: str) -> None:
 
 
 def semantics_record(step_id: str = "niche_join_semantics") -> DiagnosticRecord:
-    """the four as-built decisions, as a record, so they reach the ledger."""
+    """the five as-built decisions, as a record, so they reach the ledger."""
     alts = {k: v["declared_alternative"] for k, v in SEMANTICS.items()
             if v["declared_alternative"]}
     return DiagnosticRecord(

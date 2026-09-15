@@ -59,6 +59,7 @@ by slide noise rather than biology, with no diagnostic signal.
 | L2 normalization | none - raw GAT output (mean norm=2.618, std=0.52). LayerNorm required at MLP input |
 | batch correction | native - suppresses patient/batch signal by design. within/between gap is not a valid QC metric |
 | spatial graph | novae.spatial_neighbors(adata) - Delaunay by default. consider radius cutoff for spot-based data |
+| edge scale | `novae.settings.scale_to_microns` converts coordinate units to microns, default 1.0. it is an input feature, not a label: each edge length enters the GAT as distance x scale / 20 um (`CELLS_CHARACTERISTIC_DISTANCE`, novae 1.0.3). the Delaunay topology does not depend on it; the embedding does. declare it per platform (`st_graph.scale_to_microns`) |
 | multimodal capability | natively supports H&E foundation model features as node-level attributes (early fusion); omicstra externalizes integration strategy to the orchestration layer, treating fusion mode as an experimental variable |
 | role in omicstra | primary ST encoder; spatial transcriptomics agent tool |
 | reference | Blampey et al. 2025, Nat. Methods; doi:10.1038/s41592-025-02899-6 |

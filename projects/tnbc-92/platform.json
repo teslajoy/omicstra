@@ -302,11 +302,22 @@
       "position_object": "spots",
       "position_note": "spots carries 6 columns: x,y (integer array grid), new_x,new_y (adjusted array), pixel_x,pixel_y (image pixels). every script reads the pixel pair - 34 occurrences, no other pair used. microns come from spot_pitch_um, never from these.",
       "um_per_pixel": 0.9282,
-      "um_per_pixel_note": "150um pitch / 161.6px nearest-neighbour. supersedes 1.2195, which was recorded in data/embeddings/novae_niche_full/run_manifest.json (2026-04-22) under the falsified 200um figure. that value was ANNOTATION ONLY: the Novae graph was built from pixel coordinates via Delaunay triangulation, which is scale-invariant, so the cached embeddings are unaffected and need no regeneration.",
+      "um_per_pixel_note": "150um pitch / 161.6px nearest-neighbour. the lattice has been measured twice: 161.6px is the nearest-neighbour figure in CLAUDE.md and docs/data_structure_flow.md; 158.6px is the median first-neighbour distance on CN1/C1 (design/progress.md F1), which gives 0.9458. this value uses the first, the he_tile micron figure uses the second. nothing in the package reads either, and a derived micron figure should name which one it used. this measurement supersedes 1.2195 as a description of the lattice. it does NOT replace 1.2195 as the scale the cached Novae embeddings were computed at - see st_graph.scale_to_microns.",
       "st_graph": {
         "method": "delaunay",
         "radius_cap_px": null,
-        "note": "bare Delaunay, as the published grid was built. Delaunay creates long boundary edges on this lattice - max 4550px against a 215px mean - so a radius cap is a reasonable alternative, but it changes H1/H2 numbers. it therefore becomes a DECLARED alternative run as its own arm and evaluated, never a silent switch."
+        "scale_to_microns": 1.2195121951219512,
+        "scale_as_built": true,
+        "note": "bare Delaunay, as the published grid was built. Delaunay creates long boundary edges on this lattice - max 4550px against a 215px mean - so a radius cap is a reasonable alternative, but it changes H1/H2 numbers. it therefore becomes a DECLARED alternative run as its own arm and evaluated, never a silent switch.",
+        "scale_note": "the value the cached Novae embeddings were computed with: 200 / 164, set as novae.settings.scale_to_microns in notebooks/embeddings/novae_st_embeddings.ipynb before compute_representations, and recorded as um_per_pixel_spot in the run manifest. it is an input, not an annotation: Novae 1.0.3 passes each edge length to the GAT as distance x scale_to_microns / 20 (novae/data/dataset.py; edge_dim=1 in novae/module/encode.py). the Delaunay topology is scale-invariant; the edge features are not. the 164px in that ratio was itself an estimate, so against the measured lattice the edge features are 1.29x (vs 0.9458) to 1.31x (vs 0.9282) what the 150um pitch implies. how much that moves the embeddings is unmeasured.",
+        "scale_declared_alternative": {
+          "scale_to_microns": null,
+          "rule": "spot_pitch_um / nearest-neighbour px, in the coordinate space passed to Novae",
+          "why_unset": "the two recorded nearest-neighbour measurements give 0.9282 and 0.9458. the value is fixed when the arm is run, against a stated measurement.",
+          "run": false,
+          "question": "does the lattice-true edge scale move the ST embeddings enough to change H1, H2 or H3?"
+        },
+        "identity_field": "scale_to_microns"
       },
       "image_pyramid": {
         "he_small_px": 9523,
@@ -331,9 +342,14 @@
       },
       "pitch_correction_consequences": {
         "corrected_on": "2026-09-11",
-        "novae": "ANNOTATION ONLY. um_per_pixel_spot 1.2195 was recorded in the run manifest but never passed to Novae - the graph was built from pixel coordinates by Delaunay triangulation, which is scale-invariant. cached embeddings unaffected.",
+        "novae": "REAL, SIZE UNMEASURED. corrected 2026-09-15 from 'annotation only'. 1.2195 was set as novae.settings.scale_to_microns before the representations were computed, and Novae uses it to scale every edge feature the GAT reads. the neighbour graph is unaffected; the edge features are 1.29-1.31x too large against the 150um pitch. the cached embeddings are internally consistent and every arm read the same ones, so the ten-arm comparison stands as a comparison. whether a lattice-true scale changes any result is the declared alternative at st_graph.scale_declared_alternative.",
         "virchow2": "REAL. the 200 um pitch sized the crop, so tiles are 95.9 um rather than the 128 um the constant named. cached embeddings are internally consistent and the ten-arm comparison stands; the tile is smaller than the spot it represents.",
-        "why_here": "the pitch correction has two consequences, one cosmetic and one real. a reader should find both in one place rather than discovering the second from the code."
+        "why_here": "the pitch correction reaches both encoders - the H&E crop size and the Novae edge features. a reader should find both in one place rather than discovering either from the code."
+      },
+      "nearest_neighbour_px": {
+        "claude_md_lattice": 161.6,
+        "cn1_c1_median_first": 158.6,
+        "note": "two measurements of the same spacing in HE-small coordinates, 1.9% apart. recorded side by side so a derived micron figure can say which it used."
       }
     }
   },

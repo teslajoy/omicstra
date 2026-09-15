@@ -172,13 +172,33 @@ class _Novae:
     the graph is built from the cohort's declared `st_graph`, not chosen here -
     bare Delaunay reproduces the published grid, and a radius cap is a different
     arm rather than a tweak. see platform.json#platforms.*.st_graph.
+
+    `scale_to_microns` is an INPUT, not a unit label. the Delaunay topology does
+    not depend on it, but Novae hands each edge length to the GAT as
+    ``distance * scale_to_microns / 20`` (novae/data/dataset.py, edge_dim=1 in
+    novae/module/encode.py). a different scale is a different edge feature and
+    therefore a different embedding, so it is required here rather than left to
+    Novae's default of 1.0, which no declared cohort was ever run at.
     """
 
     def __init__(self, model: Any) -> None:
         self.model = model
 
-    def embed(self, adata: Any) -> Any:
-        self.model.compute_representations(adata, zero_shot=True)
+    def embed(self, adata: Any, *, scale_to_microns: float) -> Any:
+        import novae
+
+        scale = float(scale_to_microns)
+        if not scale > 0:
+            raise ValueError(f"scale_to_microns must be a positive number, got {scale_to_microns!r}")
+        # novae reads the scale from a module-level setting. set it for this call
+        # and put back whatever was there, so one cohort's scale cannot leak into
+        # the next embed in the same process.
+        previous = novae.settings.scale_to_microns
+        novae.settings.scale_to_microns = scale
+        try:
+            self.model.compute_representations(adata, zero_shot=True)
+        finally:
+            novae.settings.scale_to_microns = previous
         return adata.obsm["novae_latent"]
 
 

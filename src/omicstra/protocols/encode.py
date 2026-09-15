@@ -255,6 +255,44 @@ class HeGeometry:
                    out_px=int(p["he_tile"]["resize_to"]), k=k)
 
 
+@dataclass(frozen=True)
+class StGraph:
+    """the declared spatial graph for one platform, lifted out of platform.json.
+
+    the ST counterpart of `HeGeometry`, and read the same way: from a
+    declaration, never computed here. `scale_to_microns` is the field that makes
+    this more than bookkeeping - Novae feeds every edge length to the GAT scaled
+    by it, so it moves the embedding and belongs in the record next to
+    `tile_px`. there is no default. a platform that does not declare it is
+    refused, because the only defaults on offer are Novae's 1.0 (pixels read as
+    microns) or a value guessed from a pitch, and neither is what any cache was
+    built with.
+    """
+    method: str
+    radius_cap_px: float | None
+    scale_to_microns: float
+
+    @classmethod
+    def from_platform(cls, platform: dict, name: str) -> StGraph:
+        g = platform["platforms"][name].get("st_graph") or {}
+        missing = [f for f in ("method", "scale_to_microns") if g.get(f) is None]
+        if missing:
+            raise ValueError(
+                f"platform {name!r} st_graph declares no {', '.join(missing)}. "
+                "scale_to_microns is an input to the ST encoder's edge features, so it "
+                "cannot default: declare the value the cache was built with, or the "
+                "one this run intends as its own arm.")
+        cap = g.get("radius_cap_px")
+        return cls(method=str(g["method"]),
+                   radius_cap_px=None if cap is None else float(cap),
+                   scale_to_microns=float(g["scale_to_microns"]))
+
+    def params(self) -> dict:
+        """the fields a record carries, so two runs at different scales differ."""
+        return {"st_graph": self.method, "radius_cap_px": self.radius_cap_px,
+                "scale_to_microns": self.scale_to_microns}
+
+
 def pick_device(declared: str | None = None):
     """mps where available, as the published grid ran. cpu otherwise.
 
