@@ -1,6 +1,6 @@
 # omic<span style="color:#5DCAA5">stra</span>
 
-a multi-agent MCP server for cross-modal embedding alignment and evidence-based routing in spatial biology. it exposes fixed scientific protocols as tools and returns evidence; the client holds the model. alignments are evaluated against declared metrics, and questions are routed from a cohort's own recorded evidence, refusing when that evidence is absent. foundation model encoders are pluggable; integration strategy is a configurable experimental dimension, not a fixed pipeline choice.
+a multi-agent MCP server for cross-modal embedding alignment, fusion, and evidence-based routing in spatial biology. it exposes fixed scientific protocols as tools and returns evidence; the client holds the model. alignments are evaluated against declared metrics, and questions are routed from a cohort's own recorded evidence, refusing when that evidence is absent. foundation model encoders are pluggable; integration strategy is a configurable experimental dimension, not a fixed pipeline choice.
 
 the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) using H&E morphology (Virchow2 primary, UNI2 swap) and spatial transcriptomics (Novae GNN).
 
@@ -67,6 +67,119 @@ identical across arms.
 MRR, median rank, alignment gap, AUC, CKA), preservation of biological structure
 (H2; ARI, silhouette) and pathway interpretability (H3; canonical correlation
 against a permutation null).
+
+---
+
+## evidence, defined
+
+**Evidence is a measurement of how well a method performs one task on this cohort, scored against a stated reference, compared to a floor, and traced to the artifact that produced it.**
+
+Five parts, all required:
+
+1. **Units** - what was scored, and how held out. Here: niches, held out by patient.
+2. **Reference** - the ground truth for that question.
+3. **Statistic** - the maths applied: area under the receiver operating characteristic curve (AUC), adjusted Rand index (ARI), canonical correlation analysis (CCA), or a z-score against a permutation null.
+4. **Floor or null** - what the number must beat to mean anything.
+5. **Guards** - conditions that would make the number misleading even when it is high.
+
+**the reference is per question**
+
+| question | ground truth | where it comes from |
+|---|---|---|
+| cross-modal retrieval | the known pairing - which haematoxylin and eosin (H&E) niche *is* which spatial transcriptomics (ST) niche | the assay itself, same physical section |
+| tissue state grouping | `mc_megacluster`, 14-class non-negative matrix factorisation (NMF) label. Normalised mutual information (NMI) 0.539 against patient identity, above the 0.5 bar - so ARI here is diagnostic and cannot rank the aligned methods against each other; the 9-archetype label is worse (0.645) and was dropped | per-spot NMF, molecular |
+| subject identity suppression | tumour immune microenvironment (TIME) class vs patient identity | clinical and pathology classification |
+| morphology decode | tertiary lymphoid structure (TLS) gene-signature score | molecular, continuous |
+| pathway transfer | Reactome pathway membership | curated knowledge graph, no human label |
+| compartment agreement | pathologist annotation (Wang: 15 categories). Not bound on the seed cohort, so this question routes to compute rather than to evidence | pathologist annotation |
+
+Pathologist annotations and molecular clusters are both references - each for the questions where it is the right one. Retrieval needs no label at all, because the correspondence *is* the truth. Pathway transfer uses a knowledge graph and a permutation null instead of a label.
+
+**A number without all five parts is not evidence. An ARI with no floor, or one scored against a label that encodes patient identity, is a number, and the guard is what says so.**
+
+---
+
+## using omicstra
+
+A question travels in three steps. A model reads the question and picks the task family; a rule does everything after that. The server itself holds no model.
+
+```
+human question  ->  task family  ->  route(task_id)  ->  outcome + why
+   (a model)         (7 defined)       (a rule)          (recorded)
+```
+
+**ask which method answers a question**
+
+> *"Given a piece of tissue image, which method best finds its matching expression profile?"*
+
+A model maps that to the family `cross_modal_retrieval` and calls the `route` tool. On the command line:
+
+```
+$ omicstra route cross_modal_retrieval --project-id tnbc-92
+
+[RECOMMEND] InfoNCE, cross-attention
+  why: AUC, matched vs mismatched pairs, cross-subarray patient-held-out:
+       0.8591 [0.8576, 0.8608]. below the floor: random-init projection,
+       unaligned principal components
+  record_id: ccbcf5ec8e9b
+```
+
+**name a method, and the evidence can decline it**
+
+> *"Can I use canonical correlation analysis to pool across patients?"*
+
+That is the family `subject_identity_suppression`, with a method named:
+
+```
+$ omicstra route subject_identity_suppression --proposed-method B1_v3
+
+CCA is contraindicated for this task. It scores below what the raw un-aligned
+modality already achieves: bio/patient ratio 0.071 [0.053, 0.088], below the
+raw H&E floor of 0.137. patient z 113.0 against raw H&E 36.8.
+proceed anyway? [y/N]
+```
+
+Proceeding is permitted, and is recorded as a decision taken against the evidence.
+
+**check the evidence still holds**
+
+> *"Do the published numbers still come out of the data?"*
+
+```
+$ omicstra run --project-id tnbc-92 --diff projects/tnbc-92/routing_evidence.json
+  ok embed_he  ok embed_st  ok niche_join  ok align  ok eval  ok promote
+  diff: 1 disagreement - pathway_transfer/B3_v3 absent_from_curated
+```
+
+Every routed number traces to a named artifact; this is the check that says so.
+
+**start a new cohort**
+
+> *"What can this dataset answer?"*
+
+```
+omicstra init --project-dir projects/mine   # scaffold the declarations
+omicstra inventory                          # what the data is
+omicstra gate                               # is it usable
+omicstra families                           # what it can answer, and what it cannot
+```
+
+A cohort with no evidence of its own is not routable, and the server says so rather than reusing another cohort's winner.
+
+**the tools**
+
+| tool | answers |
+|---|---|
+| `list_task_families` | which questions this cohort can be asked |
+| `route` | which method answers one question, or why none does |
+| `describe_data_structure` | what the data is, as declared |
+| `check_eda_gate` | is the cohort admissible, and on what grounds |
+| `run_eda_step` | re-run one admissibility check, with its permutation null |
+| `plot_spatial_autocorrelation` | the spatial signal behind that check, as a figure |
+| `plot_evidence` | the evidence behind one answer, as a figure |
+| `decision_record` | what has been decided here, by rule and by person |
+| `check_compute_gates` | what a compute run would need answered first |
+| `describe_compute_plan` | what it would read, write, and leave untouched |
 
 ---
 
