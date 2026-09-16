@@ -92,3 +92,28 @@ def test_recorded_sources_resolve_from_the_root(record):
                if not (ROOT / v["rdata"]).exists()]
     missing += [p for p in d.get("images", {}).values() if not (ROOT / p).exists()]
     assert not missing, f"{record} names {len(missing)} path(s) that do not exist: {missing[:3]}"
+
+
+def test_no_tracked_source_or_fixture_carries_a_machine_path():
+    """same rule as the ingest record, applied to source and fixtures.
+
+    an absolute path in a tracked file is machine-specific and, in a test, turns
+    an acceptance into a skip once the path is gone.
+    """
+    import subprocess
+
+    root = Path(__file__).resolve().parents[1]
+    tracked = subprocess.run(["git", "ls-files", "src", "tests", "projects", "configs"],
+                             cwd=root, capture_output=True, text=True, check=True)
+    offenders = []
+    # excluded: this file defines the pattern and so matches itself.
+    here = Path(__file__).relative_to(root).as_posix()
+    for rel in tracked.stdout.split():
+        f = root / rel
+        if rel == here or f.suffix not in {".py", ".json", ".md", ".cfg", ".toml"} or not f.is_file():
+            continue
+        text = f.read_text(errors="ignore")
+        for i, line in enumerate(text.splitlines(), 1):
+            if ABSOLUTE.search(line):
+                offenders.append(f"{rel}:{i}")
+    assert not offenders, f"absolute machine path in tracked files: {offenders[:5]}"

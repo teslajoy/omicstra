@@ -6,6 +6,7 @@ runs the real comparison where the cohort and the 75 GB cache exist.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import numpy as np
@@ -21,8 +22,10 @@ from omicstra.protocols.encode import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CACHE = ROOT / "data" / "embeddings" / "virchow2_niche"
-PORTED = Path("/private/tmp/claude-1227382601/-Users-sanati-BForePC-omicstra"
-              "/a5d1bbd1-2b2c-4f74-b8ea-d3518731d752/scratchpad/ported_cpu")
+# the port's output, from a declared location. an absolute path here makes the
+# acceptance a silent skip once that directory is gone.
+PORTED = Path(os.environ.get("OMICSTRA_PORTED_DIR",
+                             ROOT / "data" / "outputs" / "ported_slices" / "virchow2_niche"))
 
 
 def _blob(n=200, dim=64, seed=0):
@@ -131,7 +134,8 @@ def test_the_ported_encoder_reproduces_the_cache(sid):
     """
     ported, cached = PORTED / f"{sid}.npy", CACHE / f"{sid}.npy"
     if not (ported.is_file() and cached.is_file()):
-        pytest.skip("ported slice or cache absent on this machine")
+        pytest.skip("no ported slice: set OMICSTRA_PORTED_DIR or write the port's "
+                    "output to data/outputs/ported_slices/virchow2_niche")
 
     a, b = np.load(ported), np.load(cached)
     d = slice_diff(a, cached)

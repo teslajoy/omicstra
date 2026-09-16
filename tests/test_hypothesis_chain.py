@@ -201,7 +201,13 @@ def test_the_h3_pin_matches_the_parquet_and_its_null():
 
     assert sha(src / "per_pathway_cca.parquet") == meta["source_sha256"]
     assert sha(src / "perm_nulls.parquet") == meta["perm_nulls_sha256"]
-    assert json.loads((src / "provenance.json").read_text()) == meta["provenance"]
+    prov = json.loads((src / "provenance.json").read_text())
+    # the artifact records embeddings_path absolute; the pin rewrites it
+    # repo-relative. the sha is the identity, and it is compared verbatim.
+    assert prov["embeddings_sha256"] == meta["provenance"]["embeddings_sha256"]
+    assert prov["embeddings_path"].endswith(meta["provenance"]["embeddings_path"])
+    assert {k: v for k, v in prov.items() if k != "embeddings_path"} == \
+           {k: v for k, v in meta["provenance"].items() if k != "embeddings_path"}
 
 
 def test_every_h2c_number_the_pack_routes_is_in_the_pin():

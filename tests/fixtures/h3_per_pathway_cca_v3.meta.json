@@ -4,7 +4,7 @@
   "source_sha256": "3548d9d8e106e0ba93374c1842814c0e3e9bacaee901b0f696e03e063e1436b8",
   "perm_nulls_sha256": "8bea0c1dcff43fa0cdcd9b533c663b8e442a37270c4db6d40ccb058f5de14d80",
   "provenance": {
-    "embeddings_path": "/Users/sanati/BForePC/omicstra/data/embeddings/gpath2vec/fisher_madmean_low_dim512_e5_s1234/fisher_madmean_low_embeddings.pkl",
+    "embeddings_path": "data/embeddings/gpath2vec/fisher_madmean_low_dim512_e5_s1234/fisher_madmean_low_embeddings.pkl",
     "embeddings_sha256": "782fe64fa1b788a3ba1d3fecc8c29584d375bdd36197df9d77e259e5cd77b0f3",
     "is_legacy_path": false,
     "allow_legacy": false,
@@ -61,5 +61,6 @@
     "B3_v3": "4 of 4 testable pathways significant in the z_he view - present in the artifact, absent from the pack's candidates"
   },
   "view_clean_column": "the script hardcodes R1-R4 as the runs whose ST input carries gpath2vec. B1_v3, B2_v3, B3_v3 and R5_v3 also carry it (st_features), so their z_st and z_mean rows are marked clean and are circular. no row in those views is significant, and every z_he row is correctly clean, so no cited number is affected. gate_h3_pathway derives circularity from st_features and reports the disagreement.",
-  "sha256": "c3bccd6f5ece54ea8c73579cb1f93b651e42d2a6eb28095b58484d8fdc3eadf1"
+  "sha256": "c3bccd6f5ece54ea8c73579cb1f93b651e42d2a6eb28095b58484d8fdc3eadf1",
+  "provenance_note": "embeddings_path is stored repo-relative; the artifact records it absolute. embeddings_sha256 is verbatim and is the identity."
 }
