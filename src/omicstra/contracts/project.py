@@ -38,6 +38,8 @@ class ProjectConfig(BaseModel):
     # different file from the niche-cluster parquet gpath2vec_sha256 locks.
     pathway_node_embeddings: str = ""
     pathway_node_embeddings_sha256: str | None = None
+    # the niche-cluster table the join reads; gpath2vec_sha256 locks it
+    pathway_cluster_embeddings: str = ""
 
     h2_label: str = "mc_megacluster"       # audit-correct niche-level label
     supervision: str = "mc_weights_niche"  # supervision-only, never in st_features

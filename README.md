@@ -160,12 +160,12 @@ omicstra/
 │   · graphs/                        # LEVEL 1 - one per gate, each can interrupt()
 │   │   · eda.py                     #   inventory -> profile -> gate -> escalate
 │   │   · route.py                   #   orchestrator -> 3 agents -> judge -> ask_human
-│   │   ○ encode.py  promote.py      #   v1.1 - compute, and the reviewed evidence step
+│   │   · encode.py  promote.py      #   compute, and the reviewed evidence step
 │   · protocols/                     # LEVEL 2 - order, applicability, authority. no maths
 │   │   · inventory.py               #   8 steps: files .. bind - "what is this data"
 │   │   · eda.py                     #   10 checks registered - "is it usable"
-│   │   · align.py                   #   4 stages. resolve-only; compute is v1.1
-│   │   · evaluate.py                #   6 guards - becomes a chain in v1.1
+│   │   · align.py                   #   4 stages. resolve or compute
+│   │   · evaluate.py                #   6 guards, and the H1-H3 gates
 │   · measures/                      # the MATHS. pure functions, no ctx, no order,
 │   │   · __init__.py                #   no authority. callable from a notebook
 │   │   · tiling.py                  #   niche + tile geometry, diffed against the cache
@@ -335,8 +335,11 @@ argue with the report in places. Generating it would invent the judgements it
 records, so `run_eval` scores the grid and **resolves** the pack; it never
 produces one.
 
-**In v1.0 that promotion step is manual and recorded in `docs/`. In v1.1 it is
-`omicstra promote`** - a gate, not a protocol, because it asks a person.
+**`omicstra promote`** computes the half that is computable - candidates,
+intervals, floors, guard verdicts and the contract's outcome - and asks a person
+for the rest. It is a gate rather than a protocol because it pauses, and it
+refuses a pack in which a measurement was authored. Rebuilding this cohort
+reproduces every value and interval in the curated pack.
 
 The acceptance test for the port is pinned in `tests/fixtures/`: a full-grid
 rerun with one retrained baseline reproduced every numeric field of the H1

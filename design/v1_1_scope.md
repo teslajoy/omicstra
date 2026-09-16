@@ -100,19 +100,19 @@ definition above requires resumability until a full run proves it does.
 
 ```
 1   this file is the boundary. 1.0.0 tags first, from the read path   done
-2   [encode] extra: torch, timm, novae - must not leak into core
+2   [encode] extra: torch, timm, novae - must not leak into core      done
 3   encode as compute: Virchow2 + Novae run here. 5 preflight gates
-    fire, pre-answered from cohort.json. acceptance = slice-diff
-4   run_niche_join as compute. funnel + no-circular-supervision guard
+    fire, pre-answered from cohort.json. acceptance = slice-diff      done
+4   run_niche_join as compute. funnel + no-circular-supervision guard done
 5   protocols/evaluate as a chain: H1, H2 with the confounder gate on
     any derived reference, H3 cross-patient. H2/H3 get H1's
     fixture-pinned treatment                                          done
 6   graphs/promote.py: deterministic proposal, human gate,
-    per-section provenance
-7   report renderer: cohort-free, from pack + ledger
-8   omicstra run end-to-end on tnbc-92; diff against the curated pack
-9   merge the route-graph branch (promote sits beside it)
-10  shards + local dispatcher - ONLY if 8 shows it is needed
+    per-section provenance                                            done
+7   report renderer: cohort-free, from pack + ledger                  done
+8   omicstra run end-to-end on tnbc-92; diff against the curated pack done
+9   merge the route-graph branch (promote sits beside it)             in main
+10  shards + local dispatcher - ONLY if 8 shows it is needed          not needed
 ```
 
 ## out until later still

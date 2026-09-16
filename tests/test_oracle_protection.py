@@ -227,3 +227,47 @@ def test_training_into_a_finished_grid_is_refused(tmp_path, monkeypatch):
     monkeypatch.setattr(align, "_run_script", lambda s, a: pytest.fail("a script ran"))
     with pytest.raises(WouldOverwriteOracle, match="train into"):
         align.run_align(cfg, nj, run_ids=["R2_v3"], compute=True, runs_root=Path(grid.runs_root))
+
+
+# --- the join builds into a directory of its own ---------------------------
+def test_building_the_join_without_an_out_dir_is_refused():
+    """the cohort's declared join is what the ports are diffed against."""
+    from omicstra.contracts.project import ProjectConfig
+    from omicstra.protocols.align import ComputeUnavailable, run_niche_join
+
+    cfg = ProjectConfig(project_id="t", platform="p", niches_dir="n")
+    with pytest.raises(ComputeUnavailable, match="out_dir"):
+        run_niche_join(cfg, compute=True)
+
+
+def test_building_the_join_into_a_declared_path_is_refused(tmp_path, monkeypatch):
+    from omicstra.contracts.project import ProjectConfig
+    from omicstra.protocols import align
+
+    oracle = tmp_path / "niches"
+    oracle.mkdir()
+    cfg = ProjectConfig(project_id="t", platform="p", project_dir=tmp_path,
+                        niches_dir=str(oracle),
+                        read_only_inputs={"policy": "refuse_writes", "paths": [str(oracle)]})
+    monkeypatch.setattr(align, "_run_script", lambda s, a: pytest.fail("a script ran"))
+    with pytest.raises(WouldOverwriteOracle, match="build the niche join into"):
+        align.run_niche_join(cfg, compute=True, out_dir=oracle)
+
+
+def test_a_join_built_from_a_different_pathway_build_is_refused(tmp_path):
+    """the manifest records which gpath2vec produced the table; the cohort
+    declares which one it means. a mismatch carries the published name over
+    different numbers."""
+    import json as _json
+
+    from omicstra.contracts.project import ProjectConfig
+    from omicstra.protocols.align import ComputeUnavailable, run_niche_join
+
+    d = tmp_path / "niches"
+    d.mkdir()
+    (d / "manifest.json").write_text(_json.dumps(
+        {"sources": {"gpath2vec_sha256": "b" * 64}, "n_niches_total_post_intersection": 10}))
+    cfg = ProjectConfig(project_id="t", platform="p", project_dir=tmp_path,
+                        niches_dir=str(d), gpath2vec_sha256="a" * 64)
+    with pytest.raises(ComputeUnavailable, match="declares"):
+        run_niche_join(cfg)

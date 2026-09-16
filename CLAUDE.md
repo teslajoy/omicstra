@@ -147,7 +147,11 @@ to do:
 - `src/omicstra/graph.py` — LEVEL 0. the only entry, the only checkpointer.
   `discover` picks the arm: ask when an evidence pack exists, compute when not
 - `src/omicstra/graphs/` — LEVEL 1. one per gate, each can `interrupt()`.
-  `eda.py`, `route.py` built; `encode.py` and `promote.py` are v1.1
+  `eda.py`, `route.py`, `encode.py`, `promote.py` - promote is the gate that
+  asks for the pack's prose and refuses an edited number
+- `src/omicstra/report.py` — the report template: pack + ledger in, markdown out,
+  no cohort in the renderer. `src/omicstra/run.py` — the whole chain, plus the
+  diff that says it still reproduces the curated pack
 - `src/omicstra/protocols/` — LEVEL 2. order, applicability, authority, no maths.
   `inventory.py` (8 steps), `eda.py` (10 checks), `align.py` (4 stages,
   resolve-only until v1.1), `evaluate.py` (6 guards, and the H1-H3 gates over the pinned artifacts the evidence pack cites)

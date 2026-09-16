@@ -164,19 +164,38 @@ def run_embed_st(cfg: ProjectConfig, project_id: str | None = None):
 
 
 # --- the waist --------------------------------------------------------------
-def run_niche_join(cfg: ProjectConfig, project_id: str | None = None
+def run_niche_join(cfg: ProjectConfig, project_id: str | None = None, *,
+                   compute: bool = False, out_dir: Path | None = None
                    ) -> tuple[NicheJoin, TransformRecord]:
-    """resolve the cached niche join - the table every downstream stage reads.
+    """resolve the cached niche join - or build it, into a directory of its own.
 
     counts come from the manifest the join itself wrote, never recomputed here:
     the funnel is a property of that build, and two sources for one number is
     how they disagree.
+
+    compute=True runs `build_niche_join.py`. the cohort's declared join is an
+    oracle - every port is diffed against it - so a build targets `out_dir` and
+    is refused into any declared read-only path. the pathway table it joins is
+    sha-locked: a build that silently used a different gpath2vec would produce a
+    table wearing the published name.
     """
     # cfg.niches_dir is written relative to the PROJECT directory ("../../data/..."),
     # not the package root. resolving it against repo_root yields a path with
     # `../..` still in it that happens not to exist - a wrong answer that looks
     # like a missing artifact.
     d = _project_rel(cfg.niches_dir, project_id) if cfg.niches_dir else None
+    if compute:
+        if out_dir is None:
+            raise ComputeUnavailable(
+                "building the join needs an out_dir. the cohort's declared join is "
+                "what the ports are diffed against, so a build never writes into it.")
+        d = Path(out_dir).resolve()
+        _refuse_protected(cfg, d, "build the niche join into")
+        args = ["--out-dir", str(d)]
+        pw = cfg.pathway_cluster_embeddings
+        if pw:
+            args += ["--gpath2vec-parquet", str(_project_rel(pw, project_id))]
+        _run_script("build_niche_join.py", args)
     if d is None or not d.is_dir():
         raise ComputeUnavailable(
             f"no niche join at {d}. it is built by scripts/build_niche_join.py, "
@@ -189,8 +208,15 @@ def run_niche_join(cfg: ProjectConfig, project_id: str | None = None
         n_niches=m.get("n_niches_total_post_intersection", 0),
         n_subarrays=m.get("n_subarrays_enumerated", len(sorted(d.glob("*.parquet")))),
         n_dropped_no_coverage=m.get("n_niches_dropped_no_gpath2vec_coverage", 0))
-    return nj, _rec("niche_join", "pass", resolves_only=True,
-                    n_niches=nj.n_niches, n_dropped=nj.n_dropped_no_coverage)
+    declared_sha = cfg.gpath2vec_sha256
+    if declared_sha and nj.sha256 and nj.sha256 != declared_sha:
+        raise ComputeUnavailable(
+            f"the join at {d} was built from gpath2vec {nj.sha256[:12]}, and this cohort "
+            f"declares {declared_sha[:12]}. a table built from a different pathway build "
+            "would carry the published name over different numbers.")
+    return nj, _rec("niche_join", "pass", resolves_only=not compute,
+                    n_niches=nj.n_niches, n_dropped=nj.n_dropped_no_coverage,
+                    out_dir=str(d))
 
 
 # --- the two COMPUTE-OR-RESOLVE stages --------------------------------------
