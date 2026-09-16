@@ -195,6 +195,7 @@ root and needs no `../..`.
 - `PLAN_RULES.md` — constraints on when to proceed
 - `MODELS.md` — training provenance + tissue compatibility per model
 - `MODALITY_TEMPLATE.md` — how to add a new modality
+- `design/analysis_pipeline_steps.md` — every operation in the chain, one line each: geometry, both encoders, the pathway build, fusion, baselines, every statistic and its null
 - `projects/{project_id}/program.md` — search space, constraints, stopping criteria
 - `docs/papers/` — reference papers: Wang 2024 (dataset), Sanati 2025 (proposal), Komen 2025 (FM robustness)
 
