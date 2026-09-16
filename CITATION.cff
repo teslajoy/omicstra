@@ -1,8 +1,9 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "omicstra: a multi-agent MCP server for cross-modal embedding alignment and evidence-based routing in spatial biology"
+title: "omicstra: a multi-agent MCP server for cross-modal embedding alignment, fusion, and evidence-based routing in spatial biology"
 abstract: >-
-  A multi-agent MCP server for spatial biology. Modality-specialized agents and
+  A multi-agent MCP server for cross-modal embedding alignment, fusion, and
+  evidence-based routing in spatial biology. Modality-specialized agents and
   their integration are orchestrated with LangGraph; foundation-model encoders
   are pluggable; integration strategy is a configurable experimental dimension.
   Alignments are evaluated against declared metrics, and questions are routed
