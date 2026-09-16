@@ -39,7 +39,7 @@ TEMPLATE = {
 
 @click.group()
 def main() -> None:
-    """omicstra - cross-modal embedding alignment and evidence-based routing."""
+    """omicstra - cross-modal embedding alignment, fusion, and evidence-based routing."""
 
 
 @main.command()
