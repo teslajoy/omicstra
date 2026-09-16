@@ -503,6 +503,88 @@ def decisions(project_dir: Path | None, project_id: str | None) -> None:
 
 
 @main.command()
+@click.option("--project-dir", default=None, type=click.Path(path_type=Path))
+@click.option("--project-id", default=None)
+@click.option("--out", default=None, type=click.Path(path_type=Path),
+              help="where to write the pack. default: print it, write nothing.")
+@click.option("--note", "notes", multiple=True, metavar="TASK=TEXT",
+              help="a human note for one row. repeatable. the only prose this takes.")
+@click.option("--approve", is_flag=True, help="approve the proposal at the gate.")
+def promote(project_dir: Path | None, project_id: str | None, out: Path | None,
+            notes: tuple[str, ...], approve: bool) -> None:
+    """propose the evidence pack from the cohort's scored artifacts.
+
+    values, intervals, margins and outcomes are computed. notes are yours: pass
+    --note task=text, and --approve to write. without approval nothing is
+    written, which is the honest state for a pack nobody vouched for.
+    """
+    import json
+
+    from langgraph.checkpoint.memory import InMemorySaver
+    from langgraph.types import Command
+
+    from omicstra.graphs.promote import build_promote_graph
+
+    if project_dir is not None:
+        settings.project_dir = project_dir.expanduser()
+    root = settings.project_root(project_id)
+    src_path = root / "evidence_sources.json"
+    if not src_path.is_file():
+        click.echo(f"no evidence_sources.json in {root.name} - this cohort has not "
+                   "declared which artifact answers which task family.")
+        raise SystemExit(2)
+    src = json.loads(src_path.read_text())
+    runs_root = (root / src["runs_root"]).resolve()
+
+    app = build_promote_graph(checkpointer=InMemorySaver())
+    cfg = {"configurable": {"thread_id": "cli-promote"}}
+    res = app.invoke({"project_id": project_id or root.name, "sources": src,
+                      "runs_root": str(runs_root), "runs": src["runs"]}, cfg)
+
+    parsed: dict[str, dict[str, str]] = {}
+    for n in notes:
+        task, _, text = n.partition("=")
+        if not text:
+            raise SystemExit(f"--note wants TASK=TEXT, got {n!r}")
+        parsed.setdefault(task.strip(), {})["note"] = text.strip()
+
+    while "__interrupt__" in res:
+        v = res["__interrupt__"][0].value
+        click.echo(f"\ncohort:  {root.name}")
+        click.echo(f"grid:    {runs_root}")
+        click.echo("-" * 68)
+        for row in v["proposal"]:
+            if row["outcome"] == "not_available":
+                click.echo(f"  {row['task']:<30} not_available - {row['why'][:58]}")
+                continue
+            lead = row.get("leads") or "-"
+            margin = f"  margin {row['margin']}" if row.get("margin") is not None else ""
+            click.echo(f"  {row['task']:<30} {row['outcome']:<10} {lead}{margin}")
+            if row.get("refusal"):
+                click.echo(click.style(f"       {row['refusal']}", dim=True))
+        click.echo("-" * 68)
+        click.echo(v["asks"])
+        for task, fields in parsed.items():
+            click.echo(f"  note on {task}: {fields['note']}")
+        if not approve:
+            click.echo("\nnot approved, so nothing is written. re-run with --approve "
+                       "(and --note task=text) to emit the pack.")
+            raise SystemExit(0)
+        res = app.invoke(Command(resume={"notes": parsed, "approved": True}), cfg)
+
+    pack = res.get("pack") or {}
+    if not pack:
+        click.echo("halted - no pack written.")
+        raise SystemExit(0)
+    text = json.dumps(pack, indent=2) + "\n"
+    if out:
+        Path(out).write_text(text)
+        click.echo(f"wrote {out}")
+    else:
+        click.echo(text)
+
+
+@main.command()
 @click.option("--project-id", default="tnbc-92")
 @click.option("--project-dir", default=None, type=click.Path(path_type=Path),
               help="cohort root. defaults to OMICSTRA_PROJECT_DIR.")

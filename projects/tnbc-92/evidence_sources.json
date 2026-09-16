@@ -1,0 +1,100 @@
+{
+  "project_id": "tnbc-92",
+  "note": "which artifact answers which task family, and the floor each is judged against. the package ships the readers; this file says where this cohort's numbers live. promote computes candidates, intervals, floors and outcomes from these; notes and caveats are taken from a person at the gate.",
+  "runs_root": "../../runs/tnbc-92_v3",
+  "runs": [
+    "R1_v3",
+    "R2_v3",
+    "R3_v3",
+    "R4_v3",
+    "R5_v3",
+    "R6_v3",
+    "B1_v3",
+    "B2_v3",
+    "B3_v3",
+    "B4_v3"
+  ],
+  "tasks": {
+    "cross_modal_retrieval": {
+      "reader": "h1_auc_ci",
+      "metric": "AUC, matched vs mismatched pairs, cross-subarray patient-held-out",
+      "source": "{run}/metrics_h1_ci.json (bootstrap, 200x, seed 42); rollup eval/H1/summary.json",
+      "higher_is_better": true,
+      "floor": {
+        "id": "chance",
+        "value": 0.5,
+        "basis": "matched and mismatched pairs indistinguishable"
+      }
+    },
+    "tissue_state_grouping": {
+      "reader": "mc_coherence_ari",
+      "table": "eval/H2/mc_coherence.parquet",
+      "ci_file": "eval/H2/metrics_h2_ci.json",
+      "view": "z_he",
+      "metric": "KMeans ARI against mc_megacluster, niche level",
+      "source": "eval/H2/mc_coherence.parquet (point) + metrics_h2_ci.json h2a (interval)",
+      "higher_is_better": true,
+      "floor": {
+        "id": "raw_he",
+        "value": null,
+        "basis": "the raw morphology reference is in the same table; carried as a reference row"
+      },
+      "reference_reader": {
+        "reader": "mc_coherence_reference",
+        "table": "eval/H2/mc_coherence.parquet",
+        "view": "z_he",
+        "ids": [
+          "raw_he",
+          "raw_st"
+        ]
+      }
+    },
+    "subject_identity_suppression": {
+      "reader": "h2c_ratio_ci",
+      "ci_file": "eval/H2/metrics_h2_ci.json",
+      "metric": "bio/patient ratio = TIME-signature z / patient-identity z, z_he, 10k permutations",
+      "source": "eval/H2/metrics_h2_ci.json h2c (delta method over biology.parquet)",
+      "higher_is_better": true,
+      "guard": "G3_bio_vs_confounder",
+      "floor": {
+        "id": "raw_he",
+        "value": 0.137,
+        "basis": "docs/v2/tnbc92_results_summary.md H2 Part C - cited, not machine-readable"
+      }
+    },
+    "pathway_transfer": {
+      "reader": "pathway_cca_sig_count",
+      "table": "eval/H3/pathway_cca_gpath2vec_v3/per_pathway_cca.parquet",
+      "view": "z_he",
+      "alpha": 0.05,
+      "metric": "testable pathways significant under BH-FDR on held-out subjects, z_he view",
+      "source": "eval/H3/pathway_cca_gpath2vec_v3/per_pathway_cca.parquet + perm_nulls.parquet",
+      "higher_is_better": true,
+      "unit": "pathways of 4 testable",
+      "floor": {
+        "id": "none_significant",
+        "value": 1,
+        "basis": "a row with no pathway surviving FDR answers nothing"
+      }
+    },
+    "morphology_decode": {
+      "reader": "signature_cca_z",
+      "table": "eval/H2/tls_signature_cca.parquet",
+      "view": "z_he",
+      "metric": "univariate CCA z vs permutation null, TLS gene signature, cross-patient, BH-FDR<0.05",
+      "source": "eval/H2/tls_signature_cca.parquet",
+      "higher_is_better": true,
+      "floor": {
+        "id": "fails_fdr",
+        "value": 0.1,
+        "basis": "z is set to 0 where the run fails its own FDR; such a run decodes nothing"
+      }
+    },
+    "structural_agreement": {
+      "not_available": "reported, not routed: CKA and alignment gap are read from eval/H1/summary.json as descriptive geometry, with no floor declared that would make one arm the answer to a question"
+    },
+    "pathway_discrimination": {
+      "not_available": "the v3 DAG decomposition is deferred; the report, deck and session record disagree on the numbers. resolve to one artifact before this row exists"
+    }
+  }
+}
