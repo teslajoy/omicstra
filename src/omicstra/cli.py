@@ -638,6 +638,50 @@ def report(project_dir: Path | None, project_id: str | None, out: Path | None,
         click.echo(text)
 
 
+@main.command(name="run")
+@click.option("--project-dir", default=None, type=click.Path(path_type=Path))
+@click.option("--project-id", default=None)
+@click.option("--out-dir", default=None, type=click.Path(path_type=Path),
+              help="write report.md, pack.json, records.json and stages.json here.")
+@click.option("--compute", is_flag=True,
+              help="train and score rather than resolve. refused into declared read-only paths.")
+@click.option("--out-root", default=None, type=click.Path(path_type=Path),
+              help="with --compute: stage a rerun of a finished grid here.")
+@click.option("--diff", "diff_pack", default=None, type=click.Path(path_type=Path),
+              help="a curated pack to diff the rebuilt one against. exits 1 on disagreement.")
+def run_cmd(project_dir: Path | None, project_id: str | None, out_dir: Path | None,
+            compute: bool, out_root: Path | None, diff_pack: Path | None) -> None:
+    """the whole chain: join, grid, eval, pack, report - resolving by default.
+
+    a stage that cannot resolve is recorded with its reason and the chain
+    continues, so a cohort missing its grid still produces a report saying so.
+    """
+    import json
+
+    from omicstra.run import diff_against, run_cohort
+
+    if project_dir is not None:
+        settings.project_dir = project_dir.expanduser()
+    out = run_cohort(project_id, compute=compute, out_dir=out_dir, out_root=out_root)
+
+    click.echo(f"cohort: {out['project_id']}")
+    for stage, status in out["stages"].items():
+        mark = "ok " if status in ("resolved", "computed", "proposed") else "-- "
+        click.echo(f"  {mark}{stage:<12} {status}")
+    if out.get("written"):
+        click.echo(f"\nwrote {out['written']}/report.md and 3 more")
+
+    if diff_pack:
+        curated = json.loads(Path(diff_pack).read_text())
+        diffs = diff_against(out.get("pack") or {}, curated)
+        click.echo(f"\ndiff against {Path(diff_pack).name}: {len(diffs)} disagreement(s)")
+        for d in diffs:
+            click.echo(f"  {d['task']}/{d['method']}: {d['kind']}"
+                       + (f"  curated {d['curated']} vs computed {d['computed']}"
+                          if "curated" in d and "computed" in d else ""))
+        raise SystemExit(1 if diffs else 0)
+
+
 @main.command()
 @click.option("--project-id", default="tnbc-92")
 @click.option("--project-dir", default=None, type=click.Path(path_type=Path),
