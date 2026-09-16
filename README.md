@@ -8,7 +8,7 @@ the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.22754114-1682D4)](https://doi.org/10.5281/zenodo.22754114)
 
-`v1.0.0` · `v1.1.0a1` pre-release  `ResearchHub Foundation grant`  `Brenden-Colson Center / Sears Lab, OHSU`
+`v1.0.0` · `v1.1.0a1` pre-release · `v1.1.0`  `ResearchHub Foundation grant`  `Brenden-Colson Center / Sears Lab, OHSU`
 
 **v1.0** ships the read path (inventory, EDA, admissibility gate, routing) over
 stdio and HTTP, the alignment and evaluation stages verified bit-identical
