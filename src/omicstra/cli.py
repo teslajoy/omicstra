@@ -585,6 +585,60 @@ def promote(project_dir: Path | None, project_id: str | None, out: Path | None,
 
 
 @main.command()
+@click.option("--project-dir", default=None, type=click.Path(path_type=Path))
+@click.option("--project-id", default=None)
+@click.option("--out", default=None, type=click.Path(path_type=Path),
+              help="write the report here. default: print it.")
+@click.option("--pack", "pack_path", default=None, type=click.Path(path_type=Path),
+              help="a pack to render instead of the cohort's own routing_evidence.json.")
+@click.option("--derive", is_flag=True,
+              help="propose the pack from artifacts first, so outcomes are present.")
+def report(project_dir: Path | None, project_id: str | None, out: Path | None,
+           pack_path: Path | None, derive: bool) -> None:
+    """render this cohort's report from its declarations, records and pack.
+
+    the renderer is a template and knows no cohort: every line comes from a
+    declaration, a record or the pack, and a section a cohort has no input for
+    says so in one line rather than being dropped.
+    """
+    import json
+
+    from omicstra.report import gather, render
+
+    if project_dir is not None:
+        settings.project_dir = project_dir.expanduser()
+    root = settings.project_root(project_id)
+    bundle = gather(root)
+
+    if pack_path:
+        bundle["pack"] = json.loads(Path(pack_path).read_text())
+    elif derive:
+        from omicstra.protocols.promote import propose, provenance
+
+        src_path = root / "evidence_sources.json"
+        if not src_path.is_file():
+            click.echo("no evidence_sources.json - nothing to derive from.")
+            raise SystemExit(2)
+        src = json.loads(src_path.read_text())
+        p = propose(src, (root / src["runs_root"]).resolve(), src["runs"])
+        bundle["pack"] = p
+        bundle["provenance"] = provenance(p)
+
+    ledger = settings.resolve(settings.runs_dir) / root.name / "records"
+    jsonl = ledger / "decisions.jsonl"
+    if jsonl.is_file():
+        bundle["records"] = [json.loads(ln) for ln in jsonl.read_text().splitlines() if ln.strip()]
+    bundle["version"] = __import__("omicstra").__version__
+
+    text = render(bundle, f"{root.name} evaluation report")
+    if out:
+        Path(out).write_text(text)
+        click.echo(f"wrote {out}  ({len(text.splitlines())} lines)")
+    else:
+        click.echo(text)
+
+
+@main.command()
 @click.option("--project-id", default="tnbc-92")
 @click.option("--project-dir", default=None, type=click.Path(path_type=Path),
               help="cohort root. defaults to OMICSTRA_PROJECT_DIR.")
