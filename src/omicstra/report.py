@@ -78,7 +78,7 @@ def section_cohort(b: dict) -> list[str]:
     decl = b.get("project") or {}
     cohort = b.get("cohort") or {}
     plat = b.get("platform") or {}
-    platforms = list((plat.get("platforms") or {}))
+    platforms = list(plat.get("platforms") or {})
     lines += _kv([
         ("project", decl.get("project_id")),
         ("platform", decl.get("platform") or ", ".join(platforms)),
@@ -169,8 +169,8 @@ def section_hypotheses(b: dict) -> list[str]:
                                 if t.get("floor") else None)])
         guards = [g for g in (t.get("guards") or []) if g.get("contraindicated")]
         if guards:
-            lines += ["", f"guard: {guards[0].get('guard')} contraindicates "
-                          f"{len(guards)} of {len(t.get('guards', []))} candidates"]
+            lines += ["", (f"guard: {guards[0].get('guard')} contraindicates "
+                           f"{len(guards)} of {len(t.get('guards', []))} candidates")]
         cands = t.get("candidates") or []
         if cands:
             lines += ["", *_table(
@@ -214,8 +214,8 @@ def section_matrix(b: dict) -> list[str]:
                                     if outcome == "not_derived" else "")
         rows.append([task_id, outcome, answer, best.get("value"), note[:60]])
     lines += _table(["question", "outcome", "method", "value", "note"], rows)
-    lines += ["", "*outcome vocabulary is the routing contract's: recommend, tie, "
-                  "refuse, not_available. a refusal is an answer.*"]
+    lines += ["", ("*outcome vocabulary is the routing contract's: recommend, tie, "
+                   "refuse, not_available. a refusal is an answer.*")]
     return lines
 
 
@@ -231,8 +231,8 @@ def section_notes(b: dict) -> list[str]:
     if not rows:
         return lines + _absent("notes", "no human fields in the pack")
     lines += _table(["question", "field", "text (authored)"], rows)
-    lines += ["", "*authored by a person at the promote gate. every other number in "
-                  "this report was computed from an artifact.*"]
+    lines += ["", ("*authored by a person at the promote gate. every other number in "
+                   "this report was computed from an artifact.*")]
     return lines
 
 
