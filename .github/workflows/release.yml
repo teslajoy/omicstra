@@ -8,11 +8,15 @@
 # workflow_dispatch, so the release path is exercised continuously rather than
 # discovered on tag day. publish is the only step gated on a tag.
 #
+# the working branch is listed alongside main because work lands there for weeks
+# before it merges, and a branch CI never sees is verified on one laptop against
+# one interpreter. publish stays safe: it is gated on `refs/tags/v`, and a push
+# to a branch does not match that.
 name: release
 
 on:
   push:
-    branches: [main]
+    branches: [main, v1.2]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:
