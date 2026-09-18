@@ -1,58 +1,185 @@
-"""ingest: HEST-1k breast cohort -> canonical.
+"""ingest: HEST-1k breast cohort -> canonical (.h5ad + _spots.parquet).
 
-STUB. written alongside ingest_wang.py so the canonical contract is defined by
-two cohorts rather than one. it is not runnable until the cohort's files are on
-disk, and it is deliberately committed unfinished: an interface defined by a
-single cohort is an interface shaped like that cohort.
+the second cohort's converter, and the witness for the four-way split. it was
+committed as a stub so that finishing it would test one claim: that adding a
+cohort needs a declaration, an adapter-shaped conversion and nothing inside
+`src/omicstra`. if a line here had to change the package, that is where
+"declarations only" tears.
 
-what this cohort proves about the contract
-------------------------------------------
-hest already ships .h5ad, so ingest here is nearly a no-op - write a spots
-table from `adata.obsm["spatial"]`, record shas, done. that is the point. if
-adding hest needed anything in src/omicstra to change, the four-way split
-(adapter / declaration / package method / encoder wrapper) would have failed.
+what the conversion is
+----------------------
+HEST already ships .h5ad, so this is nearly a no-op: link the object, write the
+coordinates table beside it, record what came from where. the canonical
+contract is ".h5ad plus a coordinates table", and the split exists because the
+morphology arm needs spot_id, x, y and must not load a 20,000-gene matrix to
+read two columns.
 
-three things hest has that tnbc-92 cannot reveal, and which the contract had to
-survive:
+three things this cohort has that the seed cohort cannot reveal
+--------------------------------------------------------------
+- THREE platforms in one cohort - original-ST, Visium, Xenium. platform is a
+  property of a SAMPLE, so platform.json keys samples individually. this script
+  reads that declaration and refuses a sample it does not cover, rather than
+  guessing from the object's schema: HEST stores Xenium in a spot schema, so
+  sniffing columns reports a cell platform as a spot one, confidently.
+- a platform with NO PITCH. Xenium declares neither pitch nor spot diameter.
+  nothing here invents them, and the geometry step reports the spacing without
+  a pitch rather than deriving one.
+- a TARGETED PANEL rather than a whole transcriptome, which is a different claim
+  for any gene-set statistic. that is the EDA contract's applicability question,
+  not this script's.
 
-- THREE platforms in one cohort: original-ST, Visium, and Xenium. platform is a
-  property of a SAMPLE, not of a cohort, which is why platform.json keys samples
-  individually rather than declaring one platform for the lot.
-- a platform with NO PITCH. Xenium is subcellular; `spot_pitch_um` and
-  `spot_diameter_um` are null. any geometry that assumes a pitch exists breaks
-  here, which is why TileGeometry takes a scale and an integer crop size rather
-  than deriving them from a pitch.
-- a TARGETED PANEL rather than whole transcriptome. gene-set enrichment over a
-  panel is a different claim from enrichment over a transcriptome, and the EDA
-  contract's applicability rules are what stop a check running where it cannot
-  mean anything.
+the objects are LINKED, not copied
+----------------------------------
+hard links where the filesystem allows, else a symlink. 7.9 GB copied twice is
+7.9 GB of the same bytes, and the source is read-only for this cohort. the sha
+in the record is what ties the canonical file to what it came from.
 
-the cohort itself lives in its own repo. a cohort is a project, not part of the
-package - see commit 9690c42.
+usage
+-----
+    python scripts/ingest_hest.py --project-dir ~/path/to/hest-breast
+    python scripts/ingest_hest.py --project-dir ... --limit 3    # the thin path
 """
 from __future__ import annotations
 
-import sys
+import hashlib
+import json
+import os
+from pathlib import Path
+
+import click
 
 
-def main() -> int:
-    print(__doc__.strip())
-    print()
-    print("not runnable yet. to finish it:")
-    for line in (
-        "1  point it at the HEST-1k breast subset (its own repo, not this one)",
-        "2  for each sample: copy/symlink the .h5ad, and write _spots.parquet as",
-        "   spot_id, x, y from adata.obsm['spatial'] - that is the whole conversion",
-        "3  record source shas in data/canonical/ingest.json, keyed by sample_id",
-        "4  declare each sample's platform in platform.json: 108 original-ST,",
-        "   8 Visium, 9 Xenium. per SAMPLE, never per cohort",
-        "5  Xenium samples declare no pitch and no spot diameter. do not invent them",
-    ):
-        print(f"   {line}")
-    print()
-    print("if finishing this needs an edit inside src/omicstra, that is the bug.")
-    return 1
+def _sha(p: Path, blocks: int = 8) -> str:
+    """sha256 of the first blocks*1MB. the full file is up to 700 MB here and the
+    prefix is enough to tie a canonical link to its source; the record says so."""
+    h = hashlib.sha256()
+    with p.open("rb") as fh:
+        for _ in range(blocks):
+            b = fh.read(1 << 20)
+            if not b:
+                break
+            h.update(b)
+    return h.hexdigest()[:16]
+
+
+def _link(src: Path, dest: Path) -> str:
+    """hard link, symlink, or copy - whichever the filesystem allows, recorded."""
+    if dest.exists() or dest.is_symlink():
+        return "present"
+    try:
+        os.link(src, dest)
+        return "hardlink"
+    except OSError:
+        pass
+    try:
+        dest.symlink_to(src.resolve())
+        return "symlink"
+    except OSError:
+        import shutil
+
+        shutil.copy2(src, dest)
+        return "copy"
+
+
+def _spots(h5ad: Path, dest: Path) -> dict:
+    """the coordinates table: spot_id, x, y, from the object's own positions."""
+    import anndata as ad
+    import pandas as pd
+
+    a = ad.read_h5ad(h5ad, backed="r")
+    if "spatial" not in a.obsm:
+        return {"ok": False, "why": "no obsm['spatial'] - nothing to write"}
+    xy = a.obsm["spatial"]
+    df = pd.DataFrame({"spot_id": list(a.obs_names),
+                       "x": [float(v) for v in xy[:, 0]],
+                       "y": [float(v) for v in xy[:, 1]]})
+    df.to_parquet(dest, index=False)
+    return {"ok": True, "n_spots": len(df),
+            "extent": [float(df.x.max() - df.x.min()), float(df.y.max() - df.y.min())]}
+
+
+@click.command()
+@click.option("--project-dir", required=True, type=click.Path(path_type=Path, exists=True),
+              help="the cohort's project root. a cohort is a project, not part of the package.")
+@click.option("--src", default="data/inputs/st",
+              help="where the source .h5ad files are, relative to the project root.")
+@click.option("--out", default="data/canonical",
+              help="where the canonical pair goes. this is what the package reads.")
+@click.option("--limit", default=None, type=int,
+              help="convert only the first N samples - the thin path before the cohort.")
+@click.option("--samples", default=None,
+              help="comma-separated sample ids, for a targeted run.")
+def main(project_dir: Path, src: str, out: str, limit: int | None, samples: str | None) -> None:
+    """convert HEST .h5ad files into the canonical pair, and record provenance."""
+    root = project_dir.expanduser().resolve()
+    src_dir, out_dir = root / src, root / out
+    if not src_dir.is_dir():
+        raise SystemExit(f"no source directory at {src_dir}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    plat_path = root / "platform.json"
+    if not plat_path.is_file():
+        raise SystemExit(
+            f"no platform.json in {root}. the platform is a DECLARATION - this cohort has "
+            "three of them and the schema cannot be sniffed, so ingest refuses rather "
+            "than guessing.")
+    by_sample = json.loads(plat_path.read_text()).get("samples", {})
+
+    found = sorted(src_dir.rglob("*.h5ad"))
+    wanted = {s.strip() for s in samples.split(",")} if samples else None
+    if wanted:
+        found = [p for p in found if p.stem in wanted]
+    if limit:
+        found = found[:limit]
+
+    # the record describes the DIRECTORY, not this invocation. a --limit or
+    # --samples run that overwrote it would leave a record listing three samples
+    # beside six canonical files, which is a provenance artifact that lies.
+    prior = {}
+    rec_path = out_dir / "ingest.json"
+    if rec_path.is_file():
+        prior = json.loads(rec_path.read_text())
+
+    record = {
+        "cohort": root.name,
+        "source": f"{src}/{{sample_id}}.h5ad - HEST-1k, already .h5ad",
+        "coords_space": ("full-resolution image pixels, as the object records them. the micron "
+                         "scale is NOT declared here: inventory#geometry measures it per sample "
+                         "from the object's own scalefactors."),
+        "paths_relative_to": "the cohort's project root",
+        "conversion": "link the object, write spot_id/x/y beside it. no values are changed.",
+        "samples": list(prior.get("samples", [])),
+        "sources": dict(prior.get("sources", {})),
+        "skipped": [s for s in prior.get("skipped", []) if s["sample"] not in {p.stem for p in found}],
+    }
+
+    for p in found:
+        sid = p.stem
+        platform = by_sample.get(sid)
+        if platform is None:
+            record["skipped"].append({"sample": sid, "why": "no_platform_declared"})
+            continue
+        how = _link(p, out_dir / f"{sid}.h5ad")
+        spots = _spots(p, out_dir / f"{sid}_spots.parquet")
+        if not spots.get("ok"):
+            record["skipped"].append({"sample": sid, "why": spots["why"]})
+            continue
+        if sid not in record["samples"]:
+            record["samples"].append(sid)
+        record["sources"][sid] = {
+            "h5ad": str(p.relative_to(root)), "sha256_16": _sha(p), "linked_as": how,
+            "platform": platform, "n_spots": spots["n_spots"], "extent_px": spots["extent"],
+        }
+        click.echo(f"  {sid:<12} {platform:<12} {spots['n_spots']:>6} spots  ({how})")
+
+    record["samples"] = sorted(record["samples"])
+    rec_path.write_text(json.dumps(record, indent=2) + "\n")
+    click.echo(f"\n{len(record['samples'])} sample(s) canonical in {out_dir}")
+    if record["skipped"]:
+        click.echo(f"{len(record['skipped'])} skipped: "
+                   + ", ".join(f"{s['sample']} ({s['why']})" for s in record["skipped"][:4]))
+    click.echo("wrote ingest.json")
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
