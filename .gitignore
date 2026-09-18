@@ -100,3 +100,6 @@ site/
 
 # a second venv that was being packaged into the sdist
 venv_test/
+
+# private context: briefs and notes that are not the repo's subject
+docs/context/
