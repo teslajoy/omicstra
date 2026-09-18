@@ -902,7 +902,7 @@ def test_compute_backend_is_a_closed_set_declared_in_the_contract():
     spec = contract["compute_backend"]
     assert spec["closed"] is True
     values = set(spec["values"])
-    assert values == {"local", "cloud", "slurm"}
+    assert values == {"in_process", "slurm"}, "one closed set per axis: this is the executor"
 
     # settings' default must itself be a member
     from omicstra.settings import Settings
@@ -917,7 +917,11 @@ def test_every_cohort_declares_a_backend_the_contract_offers(cohort):
     contract = json.loads(
         (Path(omicstra.__file__).parent / "configs" / "data_contract.json").read_text())
     values = set(contract["compute_backend"]["values"])
-    declared = json.loads(cohort.read_text()).get("compute_backend")
+    decl = json.loads(cohort.read_text())
+    declared = decl.get("compute_backend")
+    # the pool is a deployment fact and deliberately not a closed set; it is
+    # optional in 1.1 and required in 1.2, so only its presence is checked here.
+    assert isinstance(decl.get("pool", ""), str)
     assert declared in values, (
         f"{cohort.parent.name} declares compute_backend={declared!r}, which is not one of "
         f"{sorted(values)}. the contract's set is closed.")

@@ -74,7 +74,7 @@ class Settings(BaseSettings):
 
     # the closed set lives in configs/data_contract.json#compute_backend, not
     # here. it was a comment on this line and a cohort drifted outside it.
-    compute_backend: str = "local"
+    compute_backend: str = "in_process"
 
     # durable execution, opt-in by presence. unset means the dispatcher runs
     # shards in-process - not a degraded mode, the normal one for a laptop. a
