@@ -165,7 +165,8 @@ def run_embed_st(cfg: ProjectConfig, project_id: str | None = None):
 
 # --- the waist --------------------------------------------------------------
 def run_niche_join(cfg: ProjectConfig, project_id: str | None = None, *,
-                   compute: bool = False, out_dir: Path | None = None
+                   compute: bool = False, out_dir: Path | None = None,
+                   subarrays: list[str] | None = None
                    ) -> tuple[NicheJoin, TransformRecord]:
     """resolve the cached niche join - or build it, into a directory of its own.
 
@@ -195,6 +196,12 @@ def run_niche_join(cfg: ProjectConfig, project_id: str | None = None, *,
         pw = cfg.pathway_cluster_embeddings
         if pw:
             args += ["--gpath2vec-parquet", str(_project_rel(pw, project_id))]
+        if subarrays:
+            # a SUBSET build, for exercising the path rather than producing a
+            # cohort. the manifest records how many subarrays it covers, so a
+            # partial table cannot be mistaken for the cohort's join by anything
+            # that reads the counts - which is every stage downstream.
+            args += ["--subarrays", *subarrays]
         _run_script("build_niche_join.py", args)
     if d is None or not d.is_dir():
         raise ComputeUnavailable(
