@@ -136,7 +136,7 @@ the original script. This session's port produced 13 subarrays, all for
 verification. On tnbc-92 there is no reason to run more; on a cohort with no
 cache, those 5.8 hours are real and unavoidable work.
 
-So the next version's goal is the **SLURM / ARC dispatch backend**: a third
+So the next version's goal is the **SLURM dispatch backend**: a third
 executor beside `local` and `temporal`, submitting one job per shard against the
 same `Shard` contract and the same output-file idempotency. The pieces are
 already shaped for it -

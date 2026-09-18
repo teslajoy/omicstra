@@ -86,7 +86,7 @@ Three traps, each of which has already caught someone:
 {
   "subject_id_column": "patient_id",
   "data_classification": "public | restricted",
-  "compute_backend": "mac | slurm | arc",
+  "compute_backend": "mac | slurm",
   "model_backend": "anthropic | bedrock"
 }
 ```

@@ -1092,7 +1092,7 @@ Two smaller items, both recorded and neither urgent:
 dated **9 April**, produced by the original script - it is the oracle, not
 output. The port has produced **13 subarrays**, all for verification. On
 tnbc-92 there is no reason to run more; on a cohort with no cache, ~5.8 hours is
-real work. That is why the next version's goal is the SLURM/ARC dispatch backend,
+real work. That is why the next version's goal is the SLURM dispatch backend,
 recorded in `v1_1_scope.md`.
 
 ## next
