@@ -438,9 +438,11 @@
       },
       {
         "id": "PIVOT",
-        "scope": "UNVERIFIED",
-        "status": "placeholder",
-        "why": "named as in local use. capabilities, scope and publication status not confirmed - do not route to it until its fields are filled in."
+        "scope": "multi-omic image co-registration: WSI plus point/spot data",
+        "ref": "bioRxiv 2025.06.08.658506",
+        "why": "two-stage nonlinear registration - point-cloud registration, then elastic fine-tuning - with RMSE reported at each stage, which is the field this node requires as registration_error_um. demonstrated across Visium, COMET/Lunaphore and imaging mass cytometry, i.e. several assays onto one frame rather than slice-to-slice within one modality.",
+        "verified": "2026-09-18: publication and capabilities confirmed. it was a placeholder named as in local use; the fields are now filled in and it may be routed to.",
+        "interface": "GUI-driven, which is a constraint on unattended use rather than on accuracy"
       }
     ],
     "benchmarks": [
@@ -472,7 +474,12 @@
     "recorded_exclusions": [
       "registration mismatch was tested and RULED OUT as a cause of the observed H2 fragmentation on this cohort. it is a same-section cohort; the fragmentation has another cause. do not re-open this."
     ],
-    "bites_on": "serial-section cohorts sampled at intervals, and 3D reconstruction across a block. not this cohort."
+    "bites_on": "serial-section cohorts sampled at intervals, and 3D reconstruction across a block. not this cohort.",
+    "stacking": {
+      "finding": "for 3D reconstruction across a block, align CONSECUTIVE pairs sequentially. all-to-all alignment introduced more false correspondence on the larger datasets.",
+      "source": "Hu et al., Genome Biol 25:212 (2024), 5 datasets including 12- and 33-slice stacks",
+      "applies_to": "the ST <-> ST serial entries above, not to the image-registration ones"
+    }
   },
   "guards": {
     "note": "data-level invariants. these sit upstream of configs/routing_contract.json guards, which govern evaluation.",

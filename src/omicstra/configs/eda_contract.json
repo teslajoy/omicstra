@@ -2,7 +2,6 @@
   "contract_version": "1.1",
   "source": "EDA.md - decision rule",
   "note": "generalizable. thresholds and verdict logic only - no cohort measurements. a new cohort is evaluated against this same file.",
-
   "authority": {
     "note": "every check declares where its criterion draws its warrant from. a check with no authority field is a load error - missing must not mean permissive.",
     "values": {
@@ -13,7 +12,6 @@
     "calibration_record": "{project_root}/eda_calibration.json - the cohort declares which calibrated values it derived or adopted, and on what evidence. absent file = nothing calibrated = every cohort_calibrated check escalates.",
     "why_the_numbers_are_not_here": "a threshold in this file is a default, not a warrant. the warrant is per cohort and lives with the cohort, because that is the thing a second cohort must not inherit."
   },
-
   "checks": [
     {
       "id": "cohort_counts",
@@ -75,7 +73,11 @@
       "authority": "universal",
       "field": "encoder_input_decision",
       "rule": "resolved_string",
-      "unresolved_values": ["", "unresolved", null],
+      "unresolved_values": [
+        "",
+        "unresolved",
+        null
+      ],
       "description": "encoder input format decided; blocking if unresolved",
       "authority_basis": "resolved-or-not is a property of the field. the measurement behind it - are the values integer counts - is a property of the matrix, not a threshold. a directory named raw is not evidence anywhere"
     },
@@ -96,8 +98,13 @@
       "applies_when": "foundation_model_encoders",
       "field": "model_tissue_fit",
       "rule": "all_encoders_assessed",
-      "acceptable": ["validated", "validated_with_constraints"],
-      "escalate": ["uncertain"],
+      "acceptable": [
+        "validated",
+        "validated_with_constraints"
+      ],
+      "escalate": [
+        "uncertain"
+      ],
       "description": "encoder-tissue compatibility documented per encoder",
       "authority_basis": "the categories are a fixed vocabulary (decisions.md A11), not a measured bar. which category an encoder-tissue pair lands in is cohort-specific; that it must land in one is not"
     },
@@ -122,7 +129,6 @@
       "authority_basis": "boolean. no threshold declared here"
     }
   ],
-
   "verdict_rule": {
     "stop_if": [
       "any required check fails",
@@ -139,7 +145,6 @@
     "proceed_otherwise": true,
     "escalation_note": "a cohort_calibrated check with no calibration record is not evaluated at all. it escalates through the gate's existing interrupt - the workflow pauses, checkpoints, and resumes at that point. there is no default."
   },
-
   "learned_checks": {
     "note": "checks established in practice but never encoded in EDA.md. advisory in contract 1.1 - reported, never verdict-changing. `promotes_to` records the authority each would carry if it became a gating check, so the classification is settled before the promotion rather than during it.",
     "items": [
@@ -193,6 +198,16 @@
         "description": "flag any cohort-level statistic computed on one sample",
         "rationale": "an n=1 measurement should not gate a cohort decision",
         "expected_field": null
+      },
+      {
+        "id": "image_artifact_screen",
+        "authority": "advisory",
+        "promotes_to": "cohort_calibrated",
+        "description": "fraction of each tile's area flagged as pen mark, fold or blur",
+        "rationale": "an artifact enters the encoder as tissue and leaves as a vector that looks like every other vector. the registered report committed to excluding tiles over a declared area fraction, with counts; no cohort here has run it, so it is reported absent rather than assumed clean",
+        "expected_field": "artifact_screen",
+        "tooling": "TRIDENT (mahmoodlab) carries --remove_artifacts and --remove_penmarks over a segmentation backend, so this is a declared alternative to route to rather than maths to write here",
+        "threshold_if_promoted": "the area fraction is cohort_calibrated: it depends on the scanner and the staining batch, and a fraction that is ordinary on one cohort is a rejection on another"
       }
     ]
   }
