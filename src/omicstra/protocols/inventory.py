@@ -158,8 +158,13 @@ def files(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     rel = ctx["params"].get("inputs_dir", "data/inputs")
     root = (_root(ctx) / rel).resolve()
     if not root.exists():
-        return _rec("files", "fail", f"no data/inputs under {root.parent}",
-                    "place the cohort's raw data there, or fix project_dir"), {}
+        # name the path that was CHECKED, not the default. the message read
+        # "no data/inputs" whatever inputs_dir said, which sends a reader to
+        # look for the wrong directory - and did.
+        return _rec("files", "fail", f"no {rel} under {_root(ctx)}",
+                    f"place the cohort's per-sample files at {root}, declare a different "
+                    "inputs_dir, or fix project_dir",
+                    {"checked": str(root), "inputs_dir": rel}), {}
     paths = sorted(root.rglob("*.h5ad")) or sorted(root.rglob("selection.RData"))
     ext = Counter(p.suffix for p in root.rglob("*") if p.is_file())
     total = sum(p.stat().st_size for p in paths)
@@ -477,8 +482,19 @@ def _pixel_size_um(o, diameter_um) -> tuple[float | None, str]:
 
 
 def geometry(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
-    """measure the lattice, and escalate where it contradicts the declaration."""
-    rows, escalate = [], []
+    """measure the lattice, and escalate where it contradicts the declaration.
+
+    a pitch is never derived from a declared pixel size, because that declaration
+    may itself have been computed from a pitch - which would verify the
+    declaration against itself. declining to do that is what the label guards do
+    one level up, and it is the reason this step reports the seed cohort's
+    spacing without a pitch rather than confirming its own input.
+
+    a platform may ANSWER the escalation in advance by declaring
+    `pitch_authority`, the same way a cohort pre-answers a preflight gate: one
+    recorded human decision instead of one prompt per sample.
+    """
+    rows, escalate, resolved = [], [], []
     for sid, _p in ctx["paths_by_sid"].items():
         o = _CACHE[_p]
         pk = ctx["platform_by_sample"].get(sid)
@@ -510,7 +526,13 @@ def geometry(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                 row["pitch_rel_delta"] = round(rel, 4)
                 row["agrees"] = rel <= PITCH_TOLERANCE
                 if rel > PITCH_TOLERANCE:
-                    escalate.append(sid)
+                    answer = defs.get("pitch_authority") or {}
+                    if answer.get("value") in ("measured", "declared"):
+                        row["resolved_by"] = answer["value"]
+                        row["resolved_source"] = "platform.json#pitch_authority"
+                        resolved.append(sid)
+                    else:
+                        escalate.append(sid)
         else:
             row["pitch_measured_um"] = None
             row["why_not_derived"] = ("pixel size not measurable from the object, so a pitch "
@@ -548,13 +570,18 @@ def geometry(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
             for d in [(ctx["platform_defs"].get(k) or {}).get("spot_pitch_um")]
             if d and abs(v["median_um"] - d) / d > PITCH_TOLERANCE]
         return rec, {"geometry": rows}
+    authority = {k: (ctx["platform_defs"].get(k) or {}).get("pitch_authority", {}).get("value")
+                 for k in summary}
     return _rec("geometry", "pass",
                 f"{len(derived)} of {len(rows)} sample(s) measured; "
-                + ", ".join(f"{k} {v['median_um']}um" for k, v in summary.items()),
-                "the lattice agrees with the declaration where both exist; where the pixel size "
-                "is not in the object the spacing is recorded without a pitch",
-                {"per_platform": summary, "tolerance": PITCH_TOLERANCE, "rows": rows}), {
-                    "geometry": rows}
+                + ", ".join(f"{k} {v['median_um']}um" for k, v in summary.items())
+                + (f"; {len(resolved)} disagreement(s) answered in advance" if resolved else ""),
+                ("the lattice agrees with the declaration where both exist, or the platform "
+                 "declared which is authoritative; where the pixel size is not in the object "
+                 "the spacing is recorded without a pitch"),
+                {"per_platform": summary, "tolerance": PITCH_TOLERANCE,
+                 "resolved_by_declaration": len(resolved), "pitch_authority": authority,
+                 "rows": rows}), {"geometry": rows}
 
 
 INVENTORY_STEPS: list[Step] = [

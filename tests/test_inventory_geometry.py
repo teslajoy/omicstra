@@ -144,3 +144,41 @@ def test_the_seed_cohort_reproduces_its_recorded_spacing():
     assert float(np.median(nn)) == pytest.approx(158.6, abs=0.5), "the measured lattice moved"
     assert all(r["pitch_measured_um"] is None for r in rows), (
         "this cohort's objects carry no pixel size; a derived pitch would be circular")
+
+
+# --- the escalation can be answered in advance ------------------------------
+def test_a_platform_may_answer_the_disagreement_in_advance():
+    """one recorded human decision, not one prompt per sample - the same
+    pre-answered-gate rule the preflight gates use."""
+    obj = _Obj(_grid(step=150.0), diameter_px=100.0)
+    ctx = _ctx(obj, pitch=200.0, diameter=100.0)
+    ctx["platform_defs"]["p"]["pitch_authority"] = {
+        "value": "measured", "why": "the nominal figure is a vendor spec", "actor": "human"}
+    rec, _ = geometry(ctx)
+    row = rec.observed["rows"][0]
+    assert row["resolved_by"] == "measured"
+    assert row["resolved_source"] == "platform.json#pitch_authority"
+    assert not rec.caveats, "an answered question is not a caution"
+    assert rec.observed["resolved_by_declaration"] == 1
+    assert "answered in advance" in rec.result
+
+
+def test_an_answer_outside_the_two_options_does_not_resolve_anything():
+    obj = _Obj(_grid(step=150.0), diameter_px=100.0)
+    ctx = _ctx(obj, pitch=200.0, diameter=100.0)
+    ctx["platform_defs"]["p"]["pitch_authority"] = {"value": "whichever", "actor": "human"}
+    rec, _ = geometry(ctx)
+    assert rec.caveats, "an unrecognised answer leaves the question open"
+    assert "resolved_by" not in rec.observed["rows"][0]
+
+
+def test_a_missing_inputs_directory_names_the_path_it_checked(tmp_path):
+    """the message said "no data/inputs" whatever inputs_dir declared, which
+    sends a reader to the wrong directory."""
+    from omicstra.protocols.inventory import files
+
+    rec, out = files({"project_dir": str(tmp_path), "project_id": None,
+                      "params": {"inputs_dir": "data/somewhere_else"}})
+    assert rec.status == "fail" and out == {}
+    assert "data/somewhere_else" in rec.result
+    assert rec.observed["checked"].endswith("data/somewhere_else")
