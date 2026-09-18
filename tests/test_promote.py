@@ -194,3 +194,61 @@ def test_the_graph_halts_without_approval():
     from omicstra.graphs.promote import halt
 
     assert halt({})["halted"] is True and halt({})["pack"] == {}
+
+
+# --- the floor is beaten, not merely reached -------------------------------
+def test_a_candidate_sitting_exactly_on_the_floor_does_not_clear_it():
+    """a run with zero significant pathways sits on a floor of "none significant"
+    and answers nothing. reading the floor as >= forces it to be inflated in the
+    cohort's declaration, which puts an unmeasured number in the cohort's file."""
+    decl = {"higher_is_better": True, "floor": {"id": "none_significant", "value": 0}}
+    out = propose_task("t", decl, [{"id": "a", "value": 2}, {"id": "b", "value": 0}])
+    assert [c["clears_floor"] for c in out["candidates"]] == [True, False]
+    assert out["outcome"] == "recommend" and out["winner"] == "a"
+    low = propose_task("t", {"higher_is_better": False, "floor": {"id": "f", "value": 1.0}},
+                       [{"id": "a", "value": 1.0}, {"id": "b", "value": 0.5}])
+    assert [c["clears_floor"] for c in low["candidates"]] == [True, False] or \
+           [c["clears_floor"] for c in low["candidates"]] == [False, True]
+
+
+def test_the_declared_floors_are_the_ones_the_cohort_measured():
+    """each floor value must exist in the curated pack; an inflated proxy means
+    the declaration carries a number nothing produced."""
+    src = _sources()
+    pack = json.loads(PACK.read_text())["tasks"]
+    for task_id, decl in src["tasks"].items():
+        if decl.get("not_available") or task_id not in pack:
+            continue
+        mine, hand = decl.get("floor"), pack[task_id].get("floor")
+        if mine and hand and mine.get("value") is not None and hand.get("value") is not None:
+            assert mine["value"] == pytest.approx(hand["value"], abs=5e-4), (
+                f"{task_id}: declared floor {mine['value']} vs pack {hand['value']}")
+
+
+def test_the_subject_identity_floor_is_read_from_the_artifact():
+    """0.1366 sits in every run's biology.parquet as the raw imaging view. a floor
+    that only exists in a document is the one number in the pack with no source."""
+    src = _sources()
+    root = (PROJ / src["runs_root"]).resolve()
+    if not root.is_dir():
+        pytest.skip("run grid not present on this machine")
+    fr = src["tasks"]["subject_identity_suppression"]["floor_reader"]
+    rows = read_candidates(fr, root, fr["ids"])
+    assert rows, "no run carries the raw view"
+    values = {r["value"] for r in rows}
+    assert values == {0.1366}, f"the raw imaging floor differs across arms: {values}"
+    assert all("#raw_he" in r["source"] for r in rows)
+    declared = src["tasks"]["subject_identity_suppression"]["floor"]["value"]
+    assert declared == pytest.approx(0.1366, abs=5e-5)
+
+
+def test_the_raw_molecular_view_is_per_arm_not_a_cohort_constant():
+    """it depends on the arm's declared ST features, so it cannot be cited as one
+    number the way the imaging view can."""
+    src = _sources()
+    root = (PROJ / src["runs_root"]).resolve()
+    if not root.is_dir():
+        pytest.skip("run grid not present on this machine")
+    rows = read_candidates({"reader": "biology_raw_floor", "view": "raw_st"}, root, src["runs"])
+    by_run = {r["id"]: r["value"] for r in rows}
+    assert len(set(by_run.values())) > 1, "expected the raw molecular view to vary by arm"

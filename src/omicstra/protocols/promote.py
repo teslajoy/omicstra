@@ -95,6 +95,36 @@ def _h2a(root: Path, runs: list[str], *, table: str, view: str = "z_he",
     return out
 
 
+@reader("biology_raw_floor")
+def _raw_floor(root: Path, runs: list[str], *, view: str = "raw_he",
+               label: str = "TIME", table: str = "eval/biology.parquet", **_: Any) -> list[dict]:
+    """the same biology-vs-subject test on the UN-PROJECTED features.
+
+    every run's biology table carries the raw views beside the projected ones,
+    so the floor a method is judged against is measured on the same niches, by
+    the same statistic, under the same null - not cited from a document.
+
+    the raw H&E view is identical across arms because the morphology input is;
+    the raw ST view is NOT, because an arm may declare different ST features.
+    the reader therefore returns one row per run and lets the caller see that.
+    """
+    import pandas as pd
+
+    out = []
+    for r in runs:
+        f = root / r / table
+        if not f.is_file():
+            continue
+        df = pd.read_parquet(f)
+        d = df[df["view"] == view]
+        bio = d[(d["label"] == label) & (d["test_type"] == "biology")]["z"]
+        pat = d[d["test_type"] == "patient"]["z"]
+        if len(bio) and len(pat) and float(pat.iloc[0]):
+            out.append({"id": r, "value": round(float(bio.iloc[0]) / float(pat.iloc[0]), 4),
+                        "source": f"{r}/{table}#{view}"})
+    return out
+
+
 @reader("mc_coherence_reference")
 def _h2a_ref(root: Path, runs: list[str], *, table: str, view: str = "z_he",
              **_: Any) -> list[dict]:
@@ -145,9 +175,16 @@ def _tls(root: Path, runs: list[str], *, table: str, view: str = "z_he", **_: An
 
 # --- the proposal ----------------------------------------------------------
 def _clears(value: float, floor: dict | None, higher_is_better: bool) -> bool:
+    """strictly beats it. a floor is what a number must BEAT to mean anything.
+
+    at-floor is not cleared: a run with zero significant pathways sits exactly on
+    a floor of "none significant" and answers nothing. reading `>=` here forces
+    the floor to be inflated in the declaration instead, which puts a number in
+    the cohort's file that the cohort never measured.
+    """
     if not floor or floor.get("value") is None:
         return True
-    return value >= floor["value"] if higher_is_better else value <= floor["value"]
+    return value > floor["value"] if higher_is_better else value < floor["value"]
 
 
 def _overlaps(a: dict, b: dict) -> bool:

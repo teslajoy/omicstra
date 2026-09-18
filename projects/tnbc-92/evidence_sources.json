@@ -35,9 +35,9 @@
       "source": "eval/H2/mc_coherence.parquet (point) + metrics_h2_ci.json h2a (interval)",
       "higher_is_better": true,
       "floor": {
-        "id": "raw_he",
-        "value": null,
-        "basis": "the raw morphology reference is in the same table; carried as a reference row"
+        "id": "raw_st",
+        "value": 0.046,
+        "basis": "mc_coherence.parquet raw_st row - the molecular modality alone"
       },
       "reference_reader": {
         "reader": "mc_coherence_reference",
@@ -58,8 +58,26 @@
       "guard": "G3_bio_vs_confounder",
       "floor": {
         "id": "raw_he",
-        "value": 0.137,
-        "basis": "docs/v2/tnbc92_results_summary.md H2 Part C - cited, not machine-readable"
+        "value": 0.1366,
+        "basis": "measured, not cited: every run's eval/biology.parquet carries the raw_he view of the same test. identical across arms because the morphology input is.",
+        "reader": "biology_raw_floor",
+        "view": "raw_he"
+      },
+      "floor_reader": {
+        "reader": "biology_raw_floor",
+        "view": "raw_he",
+        "ids": [
+          "R1_v3",
+          "R2_v3",
+          "R3_v3",
+          "R4_v3",
+          "R5_v3",
+          "R6_v3",
+          "B1_v3",
+          "B2_v3",
+          "B3_v3",
+          "B4_v3"
+        ]
       }
     },
     "pathway_transfer": {
@@ -73,8 +91,8 @@
       "unit": "pathways of 4 testable",
       "floor": {
         "id": "none_significant",
-        "value": 1,
-        "basis": "a row with no pathway surviving FDR answers nothing"
+        "value": 0,
+        "basis": "no pathway survives BH-FDR on held-out subjects"
       }
     },
     "morphology_decode": {
@@ -85,9 +103,9 @@
       "source": "eval/H2/tls_signature_cca.parquet",
       "higher_is_better": true,
       "floor": {
-        "id": "fails_fdr",
-        "value": 0.1,
-        "basis": "z is set to 0 where the run fails its own FDR; such a run decodes nothing"
+        "id": "not_significant",
+        "value": 0,
+        "basis": "does not survive BH-FDR on held-out subjects; z is set to 0 there"
       }
     },
     "structural_agreement": {
