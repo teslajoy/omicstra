@@ -88,7 +88,7 @@ Five parts, all required:
 |---|---|---|
 | cross-modal retrieval | the known pairing - which haematoxylin and eosin (H&E) niche *is* which spatial transcriptomics (ST) niche | the assay itself, same physical section |
 | tissue state grouping | `mc_megacluster`, 14-class non-negative matrix factorisation (NMF) label. Normalised mutual information (NMI) 0.539 against patient identity, above the 0.5 bar - so ARI here is diagnostic and cannot rank the aligned methods against each other; the 9-archetype label is worse (0.645) and was dropped | per-spot NMF, molecular |
-| subject identity suppression | tumour immune microenvironment (TIME) class vs patient identity | clinical and pathology classification |
+| subject identity suppression | tumour immune microenvironment (TIME) class, defined on global pseudobulk expression, one per patient - so the label is patient-level by construction, which is why only cross-patient pairs are scored and the null permutes labels between patients | expression, patient-level pseudobulk |
 | morphology decode | tertiary lymphoid structure (TLS) gene-signature score | molecular, continuous |
 | pathway transfer | Reactome pathway membership | curated knowledge graph, no human label |
 | compartment agreement | pathologist annotation (Wang: 15 categories). Not bound on the seed cohort, so this question routes to compute rather than to evidence | pathologist annotation |

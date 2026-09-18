@@ -183,6 +183,13 @@ H2-B decode   per compartment: mean_i cos(z_he, z_st);  contrast by Welch z (unp
 H2-C bio/subj cross-subject pairs only; δ = mean(sim | same label) - mean(sim | diff label)
               null: permute the label ACROSS SUBJECTS, 10,000×   -> z = (δ - µ_0)/σ_0
               ratio = z_bio / z_subject      # >1 required to claim suppression
+              labels are subject-level pseudobulk (molecular subtype, TIME class). the design
+              answers that rather than ignoring it: pairs are cross-subject and the null
+              permutes at subject level
+              the SAME δ and null run on the un-projected views, in the same file. that is
+              where the floor comes from - measured on the same units, not cited. the raw
+              imaging view is one number for the cohort; the raw molecular view is per-arm,
+              because an arm may declare different ST features
 H3 pathway    Z (N, D) shared view;  Y (N, |members|) pathway cosines
               option B (in-sample):  r_B = top canonical corr(Z, Y) via QR + SVD
               option A (transfer):   fit (a, b) on train subjects    [3 held-out subjects]
