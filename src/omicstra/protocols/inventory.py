@@ -430,6 +430,133 @@ def bind(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                 {"roles": bound, "unbound_required": unbound}), {"roles": bound}
 
 
+# --- step 9: the lattice, measured ------------------------------------------
+# the declared pitch and the lattice can disagree, and on the seed cohort they
+# did: 200um declared, 150um measured, found by hand months in, after every
+# micron-denominated figure had been scaled by the wrong number. this step is
+# that discovery turned into a measurement, per sample.
+#
+# what is measured and what is taken on trust is the whole point:
+#
+#   measured   nearest-neighbour spacing, in the coordinate space as stored
+#   measured   pixel size, ONLY from the object's own scalefactors
+#   derived    pitch = spacing x pixel size, only when both came from the object
+#   declared   the platform's nominal pitch, compared but never substituted
+#
+# the pixel size is derived from the SPOT DIAMETER, which is a vendor spec and
+# independent of the pitch. deriving it from a declared pixel size that was
+# itself computed from a pitch would verify the pitch against itself - which is
+# exactly the shape of the error this step exists to catch.
+PITCH_TOLERANCE = 0.02
+
+
+def _lattice(xy) -> dict:
+    """spacing and grid from coordinates alone. no units, no assumptions."""
+    from scipy.spatial import KDTree
+
+    xy = np.asarray(xy, dtype=float).reshape(-1, 2)
+    if len(xy) < 3:
+        return {"n": len(xy), "nn": None, "why": "fewer than 3 positions"}
+    d, _ = KDTree(xy).query(xy, k=2)
+    return {"n": len(xy), "nn": float(np.median(d[:, 1]))}
+
+
+def _pixel_size_um(o, diameter_um) -> tuple[float | None, str]:
+    """um per pixel from the OBJECT, or a reason it is not measurable."""
+    if diameter_um is None:
+        return None, "platform declares no spot diameter"
+    try:
+        spatial = o.uns["spatial"]
+        lib = next(iter(spatial))
+        px = float(spatial[lib]["scalefactors"]["spot_diameter_fullres"])
+    except (AttributeError, KeyError, StopIteration, TypeError, ValueError):
+        return None, "object carries no scalefactors"
+    if not px > 0:
+        return None, "scalefactor is not positive"
+    return float(diameter_um) / px, "object scalefactors"
+
+
+def geometry(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """measure the lattice, and escalate where it contradicts the declaration."""
+    rows, escalate = [], []
+    for sid, _p in ctx["paths_by_sid"].items():
+        o = _CACHE[_p]
+        pk = ctx["platform_by_sample"].get(sid)
+        defs = ctx["platform_defs"].get(pk) or {}
+        side = _sidecar_coords(Path(_p))
+        xy = None
+        if side and side.get("ok"):
+            import pandas as pd
+
+            df = pd.read_parquet(Path(_p).with_name(f"{Path(_p).stem}_spots.parquet"))
+            xy, source = df[["x", "y"]].to_numpy(), "sidecar"
+        elif hasattr(o, "obsm") and "spatial" in o.obsm:
+            xy, source = np.asarray(o.obsm["spatial"]), "obsm/spatial"
+        row = {"sample": sid, "platform": pk}
+        if xy is None:
+            rows.append(row | {"measurable": False, "why": "no positions"})
+            continue
+        lat = _lattice(xy)
+        um_px, how = _pixel_size_um(o, defs.get("spot_diameter_um"))
+        declared = defs.get("spot_pitch_um")
+        row |= {"source": source, "n": lat["n"], "nn_units": lat["nn"],
+                "um_per_px": None if um_px is None else round(um_px, 4),
+                "pixel_size_from": how, "pitch_declared_um": declared}
+        if lat["nn"] and um_px:
+            measured = lat["nn"] * um_px
+            row["pitch_measured_um"] = round(measured, 1)
+            if declared:
+                rel = abs(measured - declared) / declared
+                row["pitch_rel_delta"] = round(rel, 4)
+                row["agrees"] = rel <= PITCH_TOLERANCE
+                if rel > PITCH_TOLERANCE:
+                    escalate.append(sid)
+        else:
+            row["pitch_measured_um"] = None
+            row["why_not_derived"] = ("pixel size not measurable from the object, so a pitch "
+                                      "derived from a declared pixel size would test the "
+                                      "declaration against itself")
+        if hasattr(o, "obs") and {"array_row", "array_col"} <= set(getattr(o.obs, "columns", [])):
+            row["grid"] = [int(np.ptp(o.obs["array_row"]) + 1), int(np.ptp(o.obs["array_col"]) + 1)]
+        rows.append(row | {"measurable": True})
+
+    derived = [r for r in rows if r.get("pitch_measured_um")]
+    by_platform = {}
+    for r in derived:
+        by_platform.setdefault(r["platform"], []).append(r["pitch_measured_um"])
+    summary = {k: {"n": len(v), "median_um": round(float(np.median(v)), 1),
+                   "min_um": min(v), "max_um": max(v)} for k, v in by_platform.items()}
+
+    if escalate:
+        # a caveat, not a failure: a failed inventory step halts eda, and the
+        # cohort is readable - what is unresolved is which number is authoritative.
+        # the gate surfaces caveats as cautions, which is where a person sees it.
+        rec = _rec("geometry", "pass",
+                   f"{len(escalate)} of {len(derived)} sample(s) disagree with the declared "
+                   f"pitch by more than {PITCH_TOLERANCE:.0%}",
+                   "a person resolves which number is authoritative BEFORE any "
+                   "micron-denominated figure is produced. the declaration may be a nominal "
+                   "vendor spec and the lattice the real one, or the measurement may be wrong - "
+                   "the record carries both rather than choosing",
+                   {"per_platform": summary, "escalate": escalate[:8],
+                    "tolerance": PITCH_TOLERANCE, "rows": rows})
+        rec.caveats = [
+            (f"{k}: declared {d} um, measured {v['median_um']} um over {v['n']} sample(s) "
+             f"({v['min_um']}-{v['max_um']}) - every micron-denominated figure scales with "
+             f"whichever is authoritative")
+            for k, v in summary.items()
+            for d in [(ctx["platform_defs"].get(k) or {}).get("spot_pitch_um")]
+            if d and abs(v["median_um"] - d) / d > PITCH_TOLERANCE]
+        return rec, {"geometry": rows}
+    return _rec("geometry", "pass",
+                f"{len(derived)} of {len(rows)} sample(s) measured; "
+                + ", ".join(f"{k} {v['median_um']}um" for k, v in summary.items()),
+                "the lattice agrees with the declaration where both exist; where the pixel size "
+                "is not in the object the spacing is recorded without a pitch",
+                {"per_platform": summary, "tolerance": PITCH_TOLERANCE, "rows": rows}), {
+                    "geometry": rows}
+
+
 INVENTORY_STEPS: list[Step] = [
     Step(id="files",    fn=files,    produces=frozenset({"files"})),
     Step(id="platform", fn=platform, produces=frozenset({"platform"}), requires=frozenset({"files"})),
@@ -438,6 +565,8 @@ INVENTORY_STEPS: list[Step] = [
     Step(id="join_key", fn=join_key, produces=frozenset({"key"}),      requires=frozenset({"shape"})),
     Step(id="counts",   fn=counts,   produces=frozenset({"molecular"}), requires=frozenset({"shape"})),
     Step(id="funnel",   fn=funnel,   produces=frozenset({"funnel"}),   requires=frozenset({"files"})),
+    Step(id="geometry", fn=geometry, produces=frozenset({"geometry"}),
+         requires=frozenset({"coords", "platform"})),
     Step(id="bind",     fn=bind,     produces=frozenset({"roles"}),
          requires=frozenset({"files", "platform", "shape", "coords", "key", "molecular", "funnel"})),
 ]
