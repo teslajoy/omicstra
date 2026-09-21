@@ -29,6 +29,7 @@ tests our port rather than testing Virchow2, and it runs in minutes.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -291,6 +292,90 @@ class StGraph:
         """the fields a record carries, so two runs at different scales differ."""
         return {"st_graph": self.method, "radius_cap_px": self.radius_cap_px,
                 "scale_to_microns": self.scale_to_microns}
+
+
+# --- what a run will cost ---------------------------------------------------
+def machine() -> dict:
+    """what THIS machine has. measured, and the parts that cannot be are None.
+
+    free disk and total memory are readable anywhere; a walltime limit and a
+    concurrency cap are properties of a scheduler and arrive as declarations.
+    """
+    import shutil
+
+    out: dict = {"cpus": os.cpu_count()}
+    try:
+        page, pages = os.sysconf("SC_PAGE_SIZE"), os.sysconf("SC_PHYS_PAGES")
+        out["memory_gb"] = round(page * pages / 1e9, 1)
+    except (ValueError, OSError, AttributeError):
+        out["memory_gb"] = None
+    try:
+        out["free_disk_gb"] = round(shutil.disk_usage(Path.cwd()).free / 1e9, 1)
+    except OSError:
+        out["free_disk_gb"] = None
+    return out
+
+
+def estimate(encoder: str, n_units: int, device: str | None = None,
+             pool: dict | None = None) -> dict:
+    """how long, how much disk, how much memory - or why it cannot be said.
+
+    an estimate refuses rather than guesses. the encoder carries measurements
+    per DEVICE because the same model is a different job on a laptop and on a
+    card, and a run planned against an invented number is worse off than one
+    planned against none: peak memory is what has actually stopped a run here.
+
+    `pool` is what the machine offers. when it is not supplied the local one is
+    measured, which is right for a laptop and wrong for a scheduler - so a
+    scheduler declares its own and the verdict says which was used.
+    """
+    from omicstra.models.encoders import spec
+
+    dev = device or str(pick_device()).replace("device(type=", "").strip("')")
+    es = spec(encoder)
+    c = es.cost_on(dev)
+    have = pool or machine()
+    out = {"encoder": encoder, "unit": es.unit, "n_units": int(n_units),
+           "device": dev, "pool": "declared" if pool else "measured on this machine",
+           "have": have}
+    if c is None:
+        return out | {"estimated": False,
+                      "why_not": (f"no measurement for {encoder} on {dev}. measured devices: "
+                                  f"{[x.device for x in es.cost] or 'none'}. run a few units and "
+                                  "record what they cost rather than estimating from another "
+                                  "device"),
+                      "verdict": "unknown"}
+
+    hours = n_units * c.seconds_per_unit / 3600
+    out_gb = n_units * c.bytes_per_unit / 1e9
+    checks = []
+    if have.get("free_disk_gb") is not None:
+        checks.append({"resource": "disk", "need_gb": round(out_gb, 2),
+                       "have_gb": have["free_disk_gb"],
+                       "fits": out_gb < have["free_disk_gb"] * 0.9})
+    if have.get("memory_gb") is not None:
+        checks.append({"resource": "memory", "need_gb": c.peak_memory_gb,
+                       "have_gb": have["memory_gb"],
+                       "fits": c.peak_memory_gb < have["memory_gb"] * 0.8})
+    if have.get("walltime_limit_s"):
+        checks.append({"resource": "walltime", "need_gb": None,
+                       "need_hours": round(hours, 2),
+                       "have_hours": round(have["walltime_limit_s"] / 3600, 2),
+                       "fits": hours < have["walltime_limit_s"] / 3600})
+    blocked = [c_["resource"] for c_ in checks if not c_["fits"]]
+    return out | {
+        "estimated": True,
+        "hours": round(hours, 2),
+        "output_gb": round(out_gb, 2),
+        "peak_memory_gb": c.peak_memory_gb,
+        "measured_on": c.measured_on,
+        "checks": checks,
+        "verdict": "fits" if not blocked else "does_not_fit",
+        "blocked_by": blocked,
+        "advice": ("run it here" if not blocked else
+                   f"{', '.join(blocked)} is short on this machine - run it somewhere with "
+                   "more, or reduce the scope"),
+    }
 
 
 def pick_device(declared: str | None = None):

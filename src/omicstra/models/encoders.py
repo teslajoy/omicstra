@@ -31,6 +31,21 @@ class EncoderUnavailable(RuntimeError):
 
 
 @dataclass(frozen=True)
+class EncoderCost:
+    """measured throughput and footprint for one encoder on one device.
+
+    `unit` is the encoder's own unit - a tile for morphology, a spot for the
+    molecular graph - so an estimate multiplies by what the cohort actually has
+    rather than by a sample count that means something different per platform.
+    """
+    device: str                  # cpu | mps | cuda
+    seconds_per_unit: float
+    bytes_per_unit: int
+    peak_memory_gb: float
+    measured_on: str             # what the number came from, so it can be re-measured
+
+
+@dataclass(frozen=True)
 class EncoderSpec:
     """what a cohort is choosing when it names an encoder.
 
@@ -49,6 +64,16 @@ class EncoderSpec:
     min_units: int | None = None    # below this the output is not meaningful
     notes: str = ""
     extras: tuple[str, ...] = field(default=("encode",))
+
+    # what a run COSTS, measured rather than guessed. one entry per device,
+    # because the same encoder is a different job on a laptop and on a card.
+    # a plan with no entry for the device says so instead of estimating: the
+    # number that has actually stopped a run here is peak memory, and an
+    # invented one would be worse than none.
+    cost: tuple[EncoderCost, ...] = field(default=())
+
+    def cost_on(self, device: str) -> EncoderCost | None:
+        return next((c for c in self.cost if c.device == device), None)
 
 
 _REGISTRY: dict[str, tuple[EncoderSpec, Callable[[], Any]]] = {}
@@ -154,6 +179,14 @@ register(
         gated=True,
         notes="CLS token. gated on Hugging Face - accepting terms and a token is the "
               "gated_weights preflight gate, not a runtime surprise.",
+        cost=(
+            EncoderCost(device="mps", seconds_per_unit=0.073, bytes_per_unit=5120,
+                        peak_memory_gb=4.0,
+                        measured_on="the published extraction: 280 subarrays, ~5.8 h"),
+            EncoderCost(device="cpu", seconds_per_unit=0.185, bytes_per_unit=5120,
+                        peak_memory_gb=4.0,
+                        measured_on="port acceptance 2026-09-15: 5,216 tiles in 966 s"),
+        ),
     ),
     _load_virchow2,
 )
@@ -208,6 +241,12 @@ register(
         trained_on="image-based ST only - MERSCOPE, Xenium, CosMx, ~30M cells at "
                    "subcellular resolution (Blampey et al. 2025, Nat. Methods, MICS-Lab)",
         min_units=512,
+        cost=(
+            EncoderCost(device="cpu", seconds_per_unit=0.013, bytes_per_unit=256,
+                        peak_memory_gb=2.0,
+                        measured_on="edge-scale reruns 2026-09-15: 5 subarrays x 3 scales, "
+                                    "5,246 spots each pass, 199 s total including model load"),
+        ),
         notes="min_units is the prototype count: below 512 spots the zero-shot output is "
               "not meaningful, which is the platform_floor gate. the training distribution "
               "does NOT overlap 100um spot platforms, so compatibility on such a cohort is "

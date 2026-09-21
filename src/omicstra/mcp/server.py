@@ -184,6 +184,7 @@ def plot_evidence(task_id: str, project_id: str | None = None) -> list:
     "stored verdict."))
 def run_eda_step(step: str, n_perm: int = 199) -> dict:
     import anndata as ad
+
     from omicstra import measures as st
     from omicstra.eda import load_summary
 
@@ -560,10 +561,22 @@ def describe_compute_plan(encoder: str | None = None,
     done = {q.stem for q in out_dir.glob("*.npy")} if out_dir.is_dir() else set()
     todo = [s.sample_id for s in with_image if s.sample_id not in done]
 
+    # how long, how much disk, how much memory - from measurements, or a refusal.
+    # the units are the ENCODER's units (tiles here, not samples), taken from the
+    # inventory record rather than re-counted.
+    from omicstra.protocols.encode import estimate
+
+    n_units, coverage = _unit_counts(project_id)
+    todo_units = sum(n for sid, n in (n_units or {}).items() if sid in set(todo))
+    cost = estimate(enc, todo_units) if todo_units else {
+        "estimated": False, "why_not": "nothing left to run", "verdict": "unknown"}
+    cost["units_from"] = coverage
+
     return {
         "project_id": _bound_id(project_id),
         "encoder": enc,
         "runnable": bool(with_image),
+        "cost": cost,
         "n_samples": len(samples),
         "n_with_image": len(with_image),
         "n_shards": len(with_image),
