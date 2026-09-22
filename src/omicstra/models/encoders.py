@@ -181,8 +181,12 @@ register(
               "gated_weights preflight gate, not a runtime surprise.",
         cost=(
             EncoderCost(device="mps", seconds_per_unit=0.073, bytes_per_unit=5120,
-                        peak_memory_gb=4.0,
-                        measured_on="the published extraction: 280 subarrays, ~5.8 h"),
+                        peak_memory_gb=6.3,
+                        measured_on="rate from the published extraction: 280 subarrays, ~5.8 h. "
+                                    "memory from a six-subarray pass 2026-09-21, where resident "
+                                    "size held at 6.3 GB - the 4.0 GB here before that was never "
+                                    "measured. a rate that is 20% optimistic costs an hour; a "
+                                    "memory figure that is 57% low costs the run"),
             EncoderCost(device="cpu", seconds_per_unit=0.185, bytes_per_unit=5120,
                         peak_memory_gb=4.0,
                         measured_on="port acceptance 2026-09-15: 5,216 tiles in 966 s"),
