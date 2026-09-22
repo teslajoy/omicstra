@@ -153,6 +153,64 @@ $ omicstra run --project-id tnbc-92 --diff projects/tnbc-92/routing_evidence.jso
 
 Every routed number traces to a named artifact; this is the check that says so.
 
+**ask what a run will cost before spending it**
+
+> *"I have my own cohort. What do I need to produce the embeddings, and can this machine do it?"*
+
+That is `describe_compute_plan`. Units come from the inventory, seconds and
+bytes per unit from the encoder's own measurements, free space from the volume
+being written to. Nothing here is extrapolated:
+
+```
+280 shards, 286,250 tiles, none done yet
+  5.8 h on mps      1.47 GB out      6.3 GB peak
+  verdict: fits - run it here
+  measured on: the published extraction, 280 subarrays
+```
+
+An encoder with no measurement on this device refuses instead of guessing, and
+a resource the pool declares no value for is reported as unchecked rather than
+as passed. If the plan says the output will not fit where the cohort declared
+it, the declaration stops standing and the gate re-opens.
+
+**produce the embeddings, and survive the run being interrupted**
+
+> *"Run it. What happens if my laptop sleeps four hours in?"*
+
+One shard per sample, three attempts each, and the output file is the only
+record of what finished - so resume is decided by the filesystem rather than by
+a ledger that can disagree with it:
+
+```python
+from omicstra.protocols.encode import HeGeometry, encode_he_cohort
+
+geom = HeGeometry.from_platform(platform, "original_st")   # declared, not inferred
+encode_he_cohort(samples, out_dir, geom, device="mps")
+```
+
+Killed mid-shard and started again, the same command skipped the two finished
+shards in 8.8 s and re-ran only the one that was interrupted. Nothing was told
+what had completed. A shard that fails three times is recorded as failed and the
+run continues - one unreadable slide does not cost the other 279.
+
+**check the vectors are the ones the published grid used**
+
+The 75 GB embedding cache is the oracle, and it is read, never written. A port
+is verified by diffing against it rather than by re-extracting:
+
+```
+6 shards, 6 accepted, 0 rejected
+  drift 2.2e-06 to 4.7e-06   against a 1e-05 tolerance
+  cosine 0.9999998           knn top-6 set 1.000
+```
+
+Bit-identity is available for alignment - deterministic linear algebra, 13/13
+metrics at exactly zero - and is not available for a 631M-parameter float32
+transformer across backends. The two backends on one machine differ by as much
+as either differs from the cache, so the tolerance is declared and the run is
+labelled a tolerance run rather than an exact one. The dispatcher refuses any
+shard whose output would land inside a path the cohort declares read-only.
+
 **start a new cohort**
 
 > *"What can this dataset answer?"*
@@ -179,7 +237,7 @@ A cohort with no evidence of its own is not routable, and the server says so rat
 | `plot_evidence` | the evidence behind one answer, as a figure |
 | `decision_record` | what has been decided here, by rule and by person |
 | `check_compute_gates` | what a compute run would need answered first |
-| `describe_compute_plan` | what it would read, write, and leave untouched |
+| `describe_compute_plan` | what a run would cost, read, write, and leave untouched |
 
 ---
 
@@ -309,7 +367,8 @@ omicstra/
 │   · {project_id}/
 │       · project.json  program.md   # encoders, runs, metric · search space + constraints
 │       · cohort.json                # DECLARED: subject_id_column, classification,
-│       │                            #   compute_backend, client_model_backend - fail closed
+│       │                            #   compute_backend, pool, client_model_backend -
+│       │                            #   fail closed
 │       · platform.json              # DECLARED per sample: platform, position_columns, pitch
 │       · inventory.json             # inventory protocol output - conformance report
 │       · eda_summary.json           # EDA gate output
@@ -362,10 +421,12 @@ omicstra families        # which questions it can answer, and which it cannot ye
 omicstra route cross_modal_retrieval
 ```
 
-`omicstra --help` lists all eight: `selftest`, `describe`, `families`, `route`,
-`gate`, `eda`, `decisions`, `init`. **`selftest` first** - it tells a new cohort
-owner whether their declarations and evidence hang together before they spend
-time on anything else.
+`omicstra --help` lists all twelve. Four answer *what is this cohort* -
+`describe`, `inventory`, `gate`, `families`. Four answer *what does it say* -
+`route`, `selftest`, `decisions`, `report`. Three do the work - `eda`, `run`,
+`promote`. One starts a cohort - `init`. **`selftest` first** - it tells a new
+cohort owner whether their declarations and evidence hang together before they
+spend time on anything else.
 
 **stdio** - the usual client config:
 
