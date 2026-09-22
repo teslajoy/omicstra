@@ -488,6 +488,33 @@ def _bound_id(project_id: str | None) -> str:
 # compute path - what it would ask, what it would do, and what already exists -
 # because until now a client could not tell that one existed at all.
 
+def _device_here(project_id: str | None) -> str | None:
+    """what the plan should be priced against: declared first, probed second.
+
+    the package never probes - planning has to work on a machine that could not
+    run the encoder, so `preflight` and `capacity_plan` take a device rather than
+    asking for one. a SERVER is the other case: it runs where the work would run,
+    so it may look. it looks last, it looks in a try, and a missing tensor
+    library returns None rather than raising - an unpriced plan is a worse answer
+    than a priced one and a better answer than a traceback.
+    """
+    from omicstra.graph import _load_cohort
+    from omicstra.protocols.encode import pool_resources
+
+    try:
+        declared, _ = pool_resources(_load_cohort(project_id))
+    except Exception:                                   # noqa: BLE001 - a malformed
+        return None                                     # pool is reported by the gate
+    if declared and declared.get("device"):
+        return str(declared["device"])
+    try:
+        from omicstra.protocols.encode import pick_device
+
+        return str(pick_device())
+    except Exception:                                   # noqa: BLE001 - no torch here
+        return None
+
+
 @srv.tool(description=(
     "Report the preflight gates on the compute path for one encoder: which are "
     "resolved from this cohort's declarations, which are still open, and what "
@@ -537,7 +564,7 @@ def check_compute_gates(encoder: str | None = None,
 def describe_compute_plan(encoder: str | None = None,
                           project_id: str | None = None) -> dict:
     from omicstra.adapters.canonical import CanonicalMissing, list_samples
-    from omicstra.graph import _primary_encoder
+    from omicstra.graph import _load_cohort, _primary_encoder
 
     enc = encoder or _primary_encoder(project_id) or "virchow2"
     root = settings.project_root(project_id)
@@ -563,12 +590,13 @@ def describe_compute_plan(encoder: str | None = None,
 
     # how long, how much disk, how much memory - from measurements, or a refusal.
     # the units are the ENCODER's units (tiles here, not samples), taken from the
-    # inventory record rather than re-counted.
-    from omicstra.protocols.encode import estimate
+    # inventory record rather than re-counted, and only for what is LEFT to run.
+    from omicstra.protocols.encode import capacity_plan
 
     n_units, coverage = _unit_counts(project_id)
-    todo_units = sum(n for sid, n in (n_units or {}).items() if sid in set(todo))
-    cost = estimate(enc, todo_units) if todo_units else {
+    remaining = {sid: n for sid, n in (n_units or {}).items() if sid in set(todo)}
+    cost = capacity_plan(_load_cohort(project_id), enc, unit_counts=remaining,
+                         device=_device_here(project_id), at=out_dir) if remaining else {
         "estimated": False, "why_not": "nothing left to run", "verdict": "unknown"}
     cost["units_from"] = coverage
 

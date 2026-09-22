@@ -79,6 +79,9 @@ class OmicstraState(TypedDict, total=False):
     encoder: str             # which encoder the gates are being asked about
     unit_counts: dict        # sample -> n_obs, lifted from the inventory record
     min_scope: int | None    # declared minimum for an authoritative run
+    device: str | None       # declared, never probed - planning must work where the
+                             # encoder cannot run, so nothing here imports a tensor library
+    plan: dict               # what the run will cost, or why that is not sayable yet
     gates: list[dict]
     answers: dict
     report: dict

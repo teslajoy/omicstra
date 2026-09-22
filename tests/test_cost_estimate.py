@@ -9,17 +9,49 @@ from __future__ import annotations
 import pytest
 
 from omicstra.models.encoders import EncoderCost, EncoderSpec, spec
-from omicstra.protocols.encode import estimate, machine
+from omicstra.protocols.encode import (
+    ComputeRefused,
+    capacity_plan,
+    estimate,
+    machine,
+    pool_resources,
+)
 
-LAPTOP = {"memory_gb": 16.0, "free_disk_gb": 500.0, "cpus": 8}
-SMALL = {"memory_gb": 2.0, "free_disk_gb": 1.0, "cpus": 2}
+# the field names are the data contract's pool vocabulary, not names of this
+# test's choosing - that is the property being protected.
+LAPTOP = {"memory_gb_per_task": 16.0, "free_disk_gb": 500.0, "cpus_per_task": 8}
+SMALL = {"memory_gb_per_task": 2.0, "free_disk_gb": 1.0, "cpus_per_task": 2}
 
 
 def test_the_machine_reports_what_it_can_measure():
     m = machine()
-    assert m["cpus"] and m["cpus"] > 0
-    for k in ("memory_gb", "free_disk_gb"):
+    assert m["cpus_per_task"] and m["cpus_per_task"] > 0
+    for k in ("memory_gb_per_task", "free_disk_gb"):
         assert k in m, "a resource that cannot be measured is reported as None, not omitted"
+
+
+def test_a_measured_machine_speaks_the_declared_pools_vocabulary():
+    """a declared pool and a measured one are compared field by field. if the
+    names diverge, a declared limit is read by nothing and enforced by nothing."""
+    import json
+
+    from omicstra.settings import settings
+    fields = set(json.loads(
+        (settings.resolve(settings.configs_dir) / "data_contract.json").read_text()
+    )["pool"]["fields_in_1_2"])
+    measured = set(machine()) - {"measured_at"}
+    assert measured <= fields, f"machine() invents {measured - fields}, which no pool may declare"
+
+
+def test_free_space_is_read_at_the_output_location():
+    """the question is whether the OUTPUT volume holds it, not the current one."""
+    m = machine(at="/")
+    assert m["free_disk_gb"] is not None and m["measured_at"] == "/"
+
+
+def test_an_output_directory_that_does_not_exist_yet_still_has_a_volume():
+    m = machine(at="/tmp/omicstra-not-created-yet/deeper/still")
+    assert m["free_disk_gb"] is not None, "planning must work before the run makes its dirs"
 
 
 def test_an_estimate_is_time_disk_and_memory_from_a_measurement():
@@ -42,6 +74,14 @@ def test_an_unmeasured_device_refuses_rather_than_extrapolating():
     assert e["estimated"] is False and e["verdict"] == "unknown"
     assert "no measurement" in e["why_not"] and "mps" in e["why_not"]
     assert "hours" not in e
+
+
+def test_a_resource_with_no_value_is_reported_unchecked_not_passed():
+    """silence is the failure mode: a pool that declares no disk must not read as
+    a pool whose disk was checked and found sufficient."""
+    e = estimate("virchow2", 1000, device="mps", pool={"memory_gb_per_task": 64.0})
+    assert e["verdict"] == "fits" and e["not_checked"] == ["disk"]
+    assert "never checked" in e["advice"]
 
 
 def test_a_machine_too_small_says_which_resource_and_does_not_hedge():
@@ -88,3 +128,37 @@ def test_a_cost_is_looked_up_by_device():
                                       peak_memory_gb=1.0, measured_on="a note"),))
     assert s.cost_on("cpu").seconds_per_unit == 1.0
     assert s.cost_on("mps") is None
+
+
+# --- the cohort's own plan -------------------------------------------------
+def test_a_pool_declared_by_name_only_is_not_mistaken_for_a_checked_one():
+    res, note = pool_resources({"pool": "mac"})
+    assert res is None and "name only" in note
+
+
+def test_a_pool_declaring_a_field_no_gate_reads_is_refused():
+    """the limit that is declared and never compared against is the one that
+    fails at the end of the run it should have prevented."""
+    with pytest.raises(ComputeRefused, match="which no gate reads"):
+        pool_resources({"pool": {"id": "x", "memory_gb": 16}})
+
+
+def test_a_plan_needs_counts_and_a_device_and_says_which_is_missing():
+    cohort = {"pool": "mac", "output_dir": "data/embeddings"}
+    assert "no unit counts" in capacity_plan(cohort, "virchow2")["why_not"]
+    no_dev = capacity_plan(cohort, "virchow2", unit_counts={"a": 10})
+    assert no_dev["verdict"] == "unknown" and "no device" in no_dev["why_not"]
+
+
+def test_a_plan_multiplies_the_cohorts_own_counts_by_the_encoders_measurement():
+    cohort = {"pool": "mac", "output_dir": "data/embeddings"}
+    plan = capacity_plan(cohort, "virchow2", unit_counts={"a": 286250}, device="mps")
+    assert plan["hours"] == pytest.approx(5.8, abs=0.1)
+    assert plan["n_units"] == 286250 and plan["output_dir"] == "data/embeddings"
+
+
+def test_a_device_declared_on_the_pool_is_enough_to_plan_with():
+    cohort = {"pool": {"id": "mac", "device": "mps", "memory_gb_per_task": 64.0,
+                       "free_disk_gb": 500.0}}
+    plan = capacity_plan(cohort, "virchow2", unit_counts={"a": 1000})
+    assert plan["estimated"] is True and plan["device"] == "mps"

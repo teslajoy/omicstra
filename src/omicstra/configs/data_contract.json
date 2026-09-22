@@ -69,6 +69,7 @@
       "gpus": "count, and gpu_memory_gb",
       "cpus_per_task": "number",
       "memory_gb_per_task": "number - the resource that has actually killed a run here",
+      "free_disk_gb": "number - space available to the run at its output location. on a scheduler this is a quota, not a disk, and the two differ",
       "max_concurrent_tasks": "number - a laptop's 1, a scheduler's throttle",
       "walltime_limit_s": "number | null when unbounded",
       "filesystem": "shared | node_local",

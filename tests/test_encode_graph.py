@@ -20,10 +20,10 @@ BARE: dict = {}
 COUNTS = {"big": 1000, "small": 8}
 
 
-def _run(cohort, answer=None, encoder="novae", counts=None, tid="t"):
+def _run(cohort, answer=None, encoder="novae", counts=None, tid="t", device=None):
     app = build_encode_graph(checkpointer=InMemorySaver())
     cfg = {"configurable": {"thread_id": tid}}
-    out = app.invoke({"cohort": cohort, "encoder": encoder,
+    out = app.invoke({"cohort": cohort, "encoder": encoder, "device": device,
                       "unit_counts": counts if counts is not None else COUNTS}, cfg)
     if answer is not None and "__interrupt__" in out:
         out = app.invoke(Command(resume=answer), cfg)
@@ -133,3 +133,40 @@ def test_tnbc92_runs_the_graph_unattended():
         out = _run(cohort, encoder=enc, counts=counts, tid=f"fixture-{enc}")
         assert "__interrupt__" not in out, f"{enc} paused; step 8 cannot run unattended"
         assert out["report"]["status"] == "ready"
+
+
+# --- what it costs ---------------------------------------------------------
+def test_the_person_being_asked_is_told_what_the_run_costs():
+    """the gates say what is being decided. the plan says what the decision buys,
+    and "run it here or somewhere else" cannot be answered without it."""
+    v = _run(BARE, tid="cost", device="cpu")["__interrupt__"][0].value
+    assert v["plan"]["estimated"] is True
+    assert v["plan"]["hours"] > 0 and v["plan"]["n_units"] == sum(COUNTS.values())
+
+
+def test_a_run_that_pauses_for_nobody_still_records_what_it_expected_to_cost():
+    """an unattended run leaves the number the next plan is checked against."""
+    out = _run(DECLARED, encoder="virchow2", tid="unattended-cost", device="mps")
+    assert out["report"]["status"] == "ready"
+    assert out["report"]["plan"]["hours"] > 0
+
+
+def test_an_unplannable_run_proceeds_and_says_it_was_never_priced():
+    """no device declared is not a reason to stop a cohort - but it must not read
+    as a run whose cost was checked and found acceptable."""
+    out = _run(DECLARED, encoder="virchow2", tid="unpriced")
+    assert out["report"]["status"] == "ready"
+    assert out["report"]["plan"]["verdict"] == "unknown"
+    assert "no device" in out["report"]["plan"]["why_not"]
+
+
+def test_a_measurement_that_contradicts_the_declaration_reopens_the_gate():
+    """a declared output_dir says WHERE to write. it does not say the volume can
+    hold it, and when the plan says it cannot, the declaration stops standing."""
+    cohort = dict(DECLARED, pool={"id": "tiny", "device": "cpu",
+                                  "memory_gb_per_task": 1.0, "free_disk_gb": 0.001})
+    out = _run(cohort, encoder="virchow2", counts={"a": 5_000_000}, tid="too-small")
+    v = out["__interrupt__"][0].value
+    cap = next(g for g in v["gates"] if g["id"] == "capacity")
+    assert cap["observed"]["verdict"] == "does_not_fit"
+    assert cap["observed"]["declaration_overridden"] == "data/embeddings"

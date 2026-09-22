@@ -30,6 +30,7 @@ from omicstra.protocols.encode import (
     ComputeRefused,
     GateRequest,
     assert_clear,
+    capacity_plan,
     contract,
     gate_record,
     preflight,
@@ -47,6 +48,8 @@ class EncodeState(TypedDict, total=False):
     encoder: str
     unit_counts: dict[str, int]      # from the inventory record, never re-measured
     min_scope: int | None
+    device: str | None               # declared; never probed here - see preflight()
+    plan: dict                       # what the run will cost, or why that is not sayable
     gates: list[dict]                # GateRequest, as plain dicts for the trace
     answers: dict[str, str]          # gate id -> the option a person picked
     records: list[dict]
@@ -72,11 +75,16 @@ def gates(state: EncodeState) -> dict:
     no judgement here - this is the protocol's answer, lifted into state so the
     branch below and the interrupt payload read the same thing.
     """
-    reqs = preflight(state.get("cohort", {}), state.get("encoder", "virchow2"),
-                     unit_counts=state.get("unit_counts"),
-                     min_scope=state.get("min_scope"))
-    rec = gate_record(reqs, state.get("encoder", "virchow2"))
-    return {"gates": _as_dicts(reqs),
+    cohort, encoder = state.get("cohort", {}), state.get("encoder", "virchow2")
+    reqs = preflight(cohort, encoder, unit_counts=state.get("unit_counts"),
+                     min_scope=state.get("min_scope"), device=state.get("device"))
+    rec = gate_record(reqs, encoder)
+    # the price, computed whether or not anyone is asked. a run that clears every
+    # gate unattended should still leave behind what it expected to cost, because
+    # that is the number the next plan is checked against.
+    plan = capacity_plan(cohort, encoder, unit_counts=state.get("unit_counts"),
+                         device=state.get("device"))
+    return {"gates": _as_dicts(reqs), "plan": plan,
             "records": [*state.get("records", []), rec.model_dump(mode="json")]}
 
 
@@ -99,6 +107,10 @@ def ask(state: EncodeState) -> dict:
         "consequence": "each answer is recorded with actor=human and travels with the run",
         "pre_answerable": {g["id"]: g["pre_answerable_by"] for g in open_gates
                            if g["pre_answerable_by"]},
+        # what it costs, in front of the person deciding whether to spend it.
+        # the gates say what is being decided; this says what the decision buys,
+        # and "run it here or somewhere else" cannot be answered without it.
+        "plan": state.get("plan", {}),
         "no_default": "the system does not pick",
     })
     return _accept(state, answer)
@@ -183,6 +195,7 @@ def encode(state: EncodeState) -> dict:
         assert_clear(reqs)
 
     return {"report": {"status": "ready",
+                       "plan": state.get("plan", {}),
                        "note": ("gates cleared. the shard run is dispatch's job - "
                                 "protocols.encode.encode_he_cohort(), which this node "
                                 "calls once a cohort supplies its sample list."),

@@ -130,12 +130,18 @@ def _resolve_option(value, options: tuple[str, ...], gate_id: str,
 
 
 def preflight(cohort: dict, encoder: str, *, unit_counts: dict[str, int] | None = None,
-              min_scope: int | None = None) -> list[GateRequest]:
+              min_scope: int | None = None, device: str | None = None) -> list[GateRequest]:
     """every preflight gate, resolved as far as the declarations allow.
 
     deterministic and side-effect free: same cohort and same counts give the same
     list. it reads the inventory's counts rather than re-measuring them - the
     platform_floor gate's own contract entry says it re-asks nothing.
+
+    `device` is what turns capacity from a declared value into a checked one. it
+    is a parameter rather than a probe because probing it needs a tensor library,
+    and this function is the one thing that must stay callable on a machine that
+    could not run the encoder it is planning for. a cohort whose pool declares a
+    device supplies it without being asked.
     """
     try:
         es = spec(encoder)
@@ -179,6 +185,28 @@ def preflight(cohort: dict, encoder: str, *, unit_counts: dict[str, int] | None 
             observed = {"encoder": encoder,
                         "trained_on": es.trained_on if es else None,
                         "probe": "not_run"}
+
+        elif g["id"] == "capacity":
+            # the one gate whose declared answer can be CONTRADICTED by a
+            # measurement. a declared output_dir says where to write; it does not
+            # say the volume can hold what is about to be written. when the plan
+            # says it cannot, the declaration stops being sufficient and the gate
+            # re-opens - the same rule the inventory's geometry step follows when
+            # a measured lattice disagrees with a declared pitch.
+            # ONLY on does_not_fit. an absent measurement is not a contradicted
+            # declaration: "we never checked" and "we checked and it will not
+            # fit" are different states, and pausing a cohort for the first would
+            # stop every unattended run that declares no device. the record still
+            # carries the why_not, so unchecked never reads as checked.
+            plan = capacity_plan(cohort, encoder, unit_counts=unit_counts, device=device)
+            observed = plan
+            if plan.get("verdict") == "does_not_fit" and answer is not None:
+                observed = plan | {
+                    "declaration_overridden": answer,
+                    "why": (f"{g.get('pre_answerable_by')} answers where to write, not "
+                            f"whether it fits. "
+                            f"the plan says {plan['verdict']}, so this is re-asked")}
+                answer = None
 
         out.append(GateRequest(
             id=g["id"], when=g["when"], question=g["question"],
@@ -295,25 +323,122 @@ class StGraph:
 
 
 # --- what a run will cost ---------------------------------------------------
-def machine() -> dict:
-    """what THIS machine has. measured, and the parts that cannot be are None.
+def machine(at: str | Path | None = None) -> dict:
+    """what THIS machine has, in the POOL's vocabulary. measured, and the parts
+    that cannot be are None.
 
-    free disk and total memory are readable anywhere; a walltime limit and a
-    concurrency cap are properties of a scheduler and arrive as declarations.
+    the field names are `data_contract.json#pool.fields_in_1_2`, not names of
+    this function's choosing. a declared pool and a measured one have to be
+    comparable without a translation step, because a translation step is where a
+    declared `memory_gb_per_task` quietly stops being checked.
+
+    a measured machine is a pool of one: nothing here launches two shards at
+    once, so per-task is the whole machine and `max_concurrent_tasks` says so.
+    a walltime limit is a property of a scheduler and cannot be measured, so it
+    is None rather than absent - the check is skipped, not silently passed.
     """
     import shutil
 
-    out: dict = {"cpus": os.cpu_count()}
+    out: dict = {"cpus_per_task": os.cpu_count(), "max_concurrent_tasks": 1,
+                 "walltime_limit_s": None}
     try:
         page, pages = os.sysconf("SC_PAGE_SIZE"), os.sysconf("SC_PHYS_PAGES")
-        out["memory_gb"] = round(page * pages / 1e9, 1)
+        out["memory_gb_per_task"] = round(page * pages / 1e9, 1)
     except (ValueError, OSError, AttributeError):
-        out["memory_gb"] = None
+        out["memory_gb_per_task"] = None
+    # the free space that matters is the free space on the volume being WRITTEN
+    # to, which is the declared output location and not necessarily the one this
+    # process happens to be running from.
+    where = Path(at) if at else Path.cwd()
+    while not where.exists() and where != where.parent:
+        where = where.parent          # the output dir may not exist yet; its volume does
     try:
-        out["free_disk_gb"] = round(shutil.disk_usage(Path.cwd()).free / 1e9, 1)
+        out["free_disk_gb"] = round(shutil.disk_usage(where).free / 1e9, 1)
+        out["measured_at"] = str(where)
     except OSError:
         out["free_disk_gb"] = None
     return out
+
+
+# the pool fields this package knows how to check, read from the data contract
+# rather than repeated here: a field added to the contract and not to a gate is
+# a field that looks declared and is never compared against anything.
+def _pool_fields() -> set[str]:
+    from omicstra.settings import settings
+
+    data = json.loads((settings.resolve(settings.configs_dir) / "data_contract.json").read_text())
+    return set(data.get("pool", {}).get("fields_in_1_2") or {})
+
+
+def pool_resources(cohort: dict) -> tuple[dict | None, str]:
+    """the cohort's declared pool as resources, plus how it was obtained.
+
+    1.1 let a cohort declare `pool` as a bare NAME - "mac" - which says where the
+    work runs and nothing about what it has. that is still valid and still means
+    the local machine must be measured; what it must not do is look like a
+    declaration that was checked. hence the note, which travels into the plan.
+
+    an unknown field is refused rather than ignored. ignoring it is the failure
+    this is here to prevent: a pool declaring a resource the checker does not
+    read is a pool whose limit is never enforced, and it fails at the far end of
+    a six-hour run instead of before it starts.
+    """
+    pool = cohort.get("pool")
+    if pool is None:
+        return None, "no pool declared; this machine measured instead"
+    if isinstance(pool, str):
+        return None, f"pool {pool!r} is declared by name only; this machine measured instead"
+    if not isinstance(pool, dict):
+        raise ComputeRefused(
+            f"pool must be a name or an object of declared resources, got {type(pool).__name__}")
+
+    known = _pool_fields() | {"id"}
+    unknown = sorted(set(pool) - known)
+    if unknown:
+        raise ComputeRefused(
+            f"pool declares {unknown}, which no gate reads. the fields a pool may carry are "
+            f"{sorted(known)} (data_contract.json#pool.fields_in_1_2). a resource nothing "
+            "compares against is a limit that is not enforced, so it is refused here rather "
+            "than at the end of the run it should have stopped")
+    return dict(pool), f"pool {pool.get('id', '<unnamed>')!r} declared with resources"
+
+
+def capacity_plan(cohort: dict, encoder: str, *, unit_counts: dict[str, int] | None = None,
+                  device: str | None = None, at: str | Path | None = None) -> dict:
+    """what this cohort's run will cost, or why that cannot be said yet.
+
+    the bridge between the two halves that already existed and never met: the
+    inventory counted the units, the encoder carries seconds and bytes per unit,
+    and nothing multiplied them. every input here is something the cohort has
+    already declared or already measured - this invents no number of its own.
+
+    it never raises on a MISSING input. "cannot be said yet" is a legitimate
+    state before inventory has run, and a planner that throws cannot be called
+    from a gate that is trying to describe the situation. a malformed pool is a
+    different thing - that is a wrong declaration rather than an absent one, and
+    it is refused where it is read.
+    """
+    n_units = sum((unit_counts or {}).values())
+    resources, pool_note = pool_resources(cohort)
+    dev = device or (resources or {}).get("device")
+    # `at` is where the shards actually land, which is not always what the
+    # cohort declares: a run writing to runs/ must have runs/'s volume checked,
+    # not the declared cache's.
+    out_dir = str(at) if at else cohort.get("output_dir")
+    base = {"n_units": n_units, "pool_note": pool_note, "output_dir": out_dir}
+
+    if not n_units:
+        return base | {"estimated": False, "verdict": "unknown",
+                       "why_not": ("no unit counts. the inventory produces them and this "
+                                   "reads them; it does not re-measure the cohort")}
+    if not dev:
+        return base | {"estimated": False, "verdict": "unknown",
+                       "why_not": ("no device. declare one on the pool "
+                                   "(data_contract.json#pool.fields_in_1_2.device) or pass "
+                                   "it in - it is not probed here, because planning must "
+                                   "work on a machine that cannot run the encoder")}
+    have = resources or machine(at=out_dir)
+    return base | estimate(encoder, n_units, device=dev, pool=have)
 
 
 def estimate(encoder: str, n_units: int, device: str | None = None,
@@ -346,33 +471,50 @@ def estimate(encoder: str, n_units: int, device: str | None = None,
                                   "device"),
                       "verdict": "unknown"}
 
-    hours = n_units * c.seconds_per_unit / 3600
+    seconds = n_units * c.seconds_per_unit
+    hours = seconds / 3600
     out_gb = n_units * c.bytes_per_unit / 1e9
     checks = []
     if have.get("free_disk_gb") is not None:
         checks.append({"resource": "disk", "need_gb": round(out_gb, 2),
                        "have_gb": have["free_disk_gb"],
                        "fits": out_gb < have["free_disk_gb"] * 0.9})
-    if have.get("memory_gb") is not None:
+    if have.get("memory_gb_per_task") is not None:
         checks.append({"resource": "memory", "need_gb": c.peak_memory_gb,
-                       "have_gb": have["memory_gb"],
-                       "fits": c.peak_memory_gb < have["memory_gb"] * 0.8})
+                       "have_gb": have["memory_gb_per_task"],
+                       "fits": c.peak_memory_gb < have["memory_gb_per_task"] * 0.8})
     if have.get("walltime_limit_s"):
         checks.append({"resource": "walltime", "need_gb": None,
                        "need_hours": round(hours, 2),
                        "have_hours": round(have["walltime_limit_s"] / 3600, 2),
                        "fits": hours < have["walltime_limit_s"] / 3600})
+    # a resource with no declared or measured value is NOT a resource that
+    # passed. saying so is the difference between "checked and fine" and "never
+    # looked at", which is the whole reason a declared pool is refused when it
+    # carries a field nothing reads.
+    #
+    # walltime is deliberately not in this set. an absent disk figure means
+    # nobody looked; an absent walltime means there is no limit, which is a pass
+    # rather than a gap - a laptop has none and is not thereby under-checked.
+    not_checked = sorted({"disk", "memory"} - {c_["resource"] for c_ in checks})
     blocked = [c_["resource"] for c_ in checks if not c_["fits"]]
     return out | {
         "estimated": True,
-        "hours": round(hours, 2),
+        # seconds is the exact figure; hours is the one a person reads. a short
+        # run rounded to two decimals reads "0.0 hours", which looks like a bug
+        # in the planner rather than a cheap job.
+        "seconds": round(seconds, 1),
+        "hours": round(hours, 2) if hours >= 0.1 else round(hours, 4),
         "output_gb": round(out_gb, 2),
         "peak_memory_gb": c.peak_memory_gb,
         "measured_on": c.measured_on,
         "checks": checks,
+        "not_checked": not_checked,
         "verdict": "fits" if not blocked else "does_not_fit",
         "blocked_by": blocked,
-        "advice": ("run it here" if not blocked else
+        "advice": ((("run it here" if not not_checked else
+                     f"run it here; {', '.join(not_checked)} was never checked because the "
+                     "pool declares no value for it")) if not blocked else
                    f"{', '.join(blocked)} is short on this machine - run it somewhere with "
                    "more, or reduce the scope"),
     }
