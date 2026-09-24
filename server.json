@@ -58,16 +58,17 @@
       "generatesCode": false,
       "note": "The server executes nothing a model wrote. A model has three narrow jobs, all client-side: classify a question into a closed task set, choose among enumerated options at a gate, and write the rationale. Every consequence resolves from lookup tables, so swapping the model cannot change a route.",
       "tools": [
-        "check_compute_gates",
         "check_eda_gate",
-        "decision_record",
-        "describe_compute_plan",
+        "describe_encoder_fit",
         "describe_data_structure",
         "list_task_families",
-        "plot_evidence",
-        "plot_spatial_autocorrelation",
         "route",
-        "run_eda_step"
+        "decision_record",
+        "plot_evidence",
+        "run_eda_step",
+        "plot_spatial_autocorrelation",
+        "check_compute_gates",
+        "describe_compute_plan"
       ],
       "humanInTheLoop": "The admissibility gate raises an interrupt carrying its full record set, so a client is never asked to accept cautions without seeing the diagnostics behind them. A client that cannot surface an interrupt cannot complete a gated protocol.",
       "dataClassification": "Declared per cohort and defaulting to restricted, so a missing declaration fails closed. Public cohorts additionally require provenance - a redistribution claim with no source is not checkable.",

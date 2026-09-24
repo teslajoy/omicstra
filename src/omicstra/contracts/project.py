@@ -19,8 +19,12 @@ from omicstra.settings import settings
 
 class EncoderSpec(BaseModel):
     name: str
-    dim: int
-    role: str          # primary | alternative | st | pathway
+    # None is legal, and the second cohort is why. a fallback whose width is
+    # decided when it is fit - a PCA on highly variable genes, say - has no dim
+    # to declare in advance. requiring one encoded an assumption from a cohort
+    # whose encoders were all fixed-width, and refused a correct declaration.
+    dim: int | None = None
+    role: str          # primary | alternative | st | pathway | st_fallback
     raw: bool = False  # True = no stain-norm / no z-score before the FM
 
 

@@ -46,6 +46,25 @@ class EncoderCost:
 
 
 @dataclass(frozen=True)
+class UnitExpectation:
+    """the unit an encoder was BUILT for, as distinct from the unit it is handed.
+
+    this is package-level metadata because it is a property of the weights, not
+    of any cohort - which is what lets a client ask "may this encoder run on my
+    data" without the package knowing any cohort but the caller's.
+
+    `footprint_um` is the tissue span of one training unit, or None where the
+    encoder has no fixed one. `declared` marks a number taken from a model card
+    or paper rather than measured here, because the two deserve different trust
+    and a reader should not have to guess which this is.
+    """
+    resolution_class: tuple[str, ...]      # what the training data was
+    footprint_um: float | None             # tissue span of one unit, if fixed
+    declared: bool                         # True = from the model card, not measured here
+    source: str
+
+
+@dataclass(frozen=True)
 class EncoderSpec:
     """what a cohort is choosing when it names an encoder.
 
@@ -71,6 +90,10 @@ class EncoderSpec:
     # number that has actually stopped a run here is peak memory, and an
     # invented one would be worse than none.
     cost: tuple[EncoderCost, ...] = field(default=())
+
+    # what the weights were built to see. absent means the encoder declares no
+    # fixed unit, which is itself an answer and is reported rather than guessed.
+    expects: UnitExpectation | None = None
 
     def cost_on(self, device: str) -> EncoderCost | None:
         return next((c for c in self.cost if c.device == device), None)
@@ -177,6 +200,15 @@ register(
         name="virchow2", dim=1280, role="primary", modality="he", unit="tile",
         trained_on="3.1M whole-slide images, Memorial Sloan Kettering (Vorontsov et al. 2024, Paige)",
         gated=True,
+        expects=UnitExpectation(
+            resolution_class=("tile",),
+            footprint_um=112.0,
+            declared=True,
+            source="224 px at 0.5 um/px (20x) per the model card = 112 um of tissue per "
+                   "tile. DECLARED, not measured here - a cohort whose tile covers a "
+                   "different span is handing the weights something they were not built "
+                   "for, and the size of that gap is the useful number",
+        ),
         notes="CLS token. gated on Hugging Face - accepting terms and a token is the "
               "gated_weights preflight gate, not a runtime surprise.",
         cost=(
@@ -245,6 +277,15 @@ register(
         trained_on="image-based ST only - MERSCOPE, Xenium, CosMx, ~30M cells at "
                    "subcellular resolution (Blampey et al. 2025, Nat. Methods, MICS-Lab)",
         min_units=512,
+        expects=UnitExpectation(
+            resolution_class=("subcellular", "single_cell"),
+            footprint_um=None,
+            declared=True,
+            source="trained on image-based ST at subcellular resolution. it has no fixed "
+                   "footprint - its unit is a cell - so a spot platform is out of "
+                   "distribution by CLASS rather than by a margin, which is why "
+                   "encoder_compatibility is a measured probe and not a tolerance check",
+        ),
         cost=(
             EncoderCost(device="cpu", seconds_per_unit=0.013, bytes_per_unit=256,
                         peak_memory_gb=2.0,

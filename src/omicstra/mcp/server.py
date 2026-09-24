@@ -60,6 +60,30 @@ def check_eda_gate(project_id: str | None = None) -> dict:
 
 
 @srv.tool(description=(
+    "Whether this cohort's data is the kind of data its declared encoders were "
+    "built on. For each encoder: the unit it was trained for, the unit each of "
+    "this cohort's platforms supplies, and how far apart they are - a footprint "
+    "ratio where the units are the same kind, or an out-of-class verdict where "
+    "no tolerance applies. Decides nothing: the encoder_compatibility gate "
+    "decides, by probe. Answers 'can these encoders legitimately run on my "
+    "data', which is the first question a cohort that is not the seed one has."))
+def describe_encoder_fit(project_id: str | None = None) -> dict:
+    """read path. declarations plus package metadata, no compute, no model load.
+
+    a platform is a property of a SAMPLE, so the answer is per platform rather
+    than per cohort - and a cohort carrying several can have one encoder both in
+    and out of distribution at once, which a single verdict would hide.
+    """
+    import json
+
+    from omicstra.models.fit import encoder_fit
+
+    cfg = ProjectConfig.load(project_id)
+    decl = json.loads((cfg.project_dir / "platform.json").read_text())
+    return encoder_fit(cfg, decl.get("platforms", {}), decl.get("samples"))
+
+
+@srv.tool(description=(
     "Describe a cohort's data structure: platform, encoders and their "
     "dimensions, atomic unit, split protocol, and the supervision/label roles "
     "that must never enter a feature vector."))
