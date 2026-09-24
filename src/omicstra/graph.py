@@ -69,7 +69,6 @@ class OmicstraState(TypedDict, total=False):
     # directions. so every key a subgraph reads from or writes to the parent
     # must appear here, or it silently vanishes and the subgraph raises a
     # KeyError that looks like a bug in the subgraph.
-    adata_path: str          # produced by inventory A7, consumed by eda.profile
     params: dict             # per-step params, cohort-supplied
     # the inventory chain takes its OWN params, keyed by inventory step id, and
     # the eda subgraph reads them under this name. undeclared, it was dropped at

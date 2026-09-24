@@ -272,3 +272,33 @@ def test_no_cohort_id_appears_in_an_aggregation_warrant():
     blob = json.dumps(load_contract()).lower()
     for token in ("tnbc", "hest", "wang"):
         assert token not in blob, f"a cohort name reached the eda contract: {token}"
+
+
+def test_no_protocol_reads_a_single_assembled_object():
+    """the shape the design rejected, held out by a lint.
+
+    `adata_path` named one object that no inventory step ever produced, so the
+    eda chain could not run through the graph at all. it is gone, and so is the
+    --adata-path override: a flag for a rejected shape is how the shape comes
+    back. this fails if either returns.
+    """
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "src" / "omicstra"
+    offenders = []
+    for py in root.rglob("*.py"):
+        tree = ast.parse(py.read_text())
+        for node in ast.walk(tree):
+            # a string CONSTANT naming it is prose; a subscript or attribute is use
+            if isinstance(node, ast.Subscript) and isinstance(node.slice, ast.Constant) \
+                    and node.slice.value == "adata_path":
+                offenders.append(f"{py.relative_to(root)}: reads ctx/state['adata_path']")
+    assert not offenders, "single-object path is back: " + "; ".join(offenders)
+
+
+def test_the_cli_offers_no_single_object_override():
+    import inspect
+
+    from omicstra import cli
+    assert "--adata-path" not in inspect.getsource(cli)

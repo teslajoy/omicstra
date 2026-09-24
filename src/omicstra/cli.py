@@ -218,13 +218,10 @@ def inventory(project_dir, project_id, inputs_dir, max_samples, write) -> None:
 @main.command()
 @click.option("--project-dir", default=None, type=click.Path(path_type=Path))
 @click.option("--project-id", default=None)
-@click.option("--adata-path", default=None, type=click.Path(path_type=Path),
-              help="override the object path. normally produced by the inventory "
-                   "protocol's A7 step and passed through state.")
 @click.option("--step", "steps", multiple=True,
               help="step id to run. repeatable. a step with no params is skipped, "
                    "never guessed at.")
-def eda(project_dir, project_id, adata_path, steps):
+def eda(project_dir, project_id, steps):
     """run the EDA through the level-0 graph, gates and all.
 
     this is the whole orchestrator from a terminal: discover picks the arm, the
@@ -277,8 +274,6 @@ def eda(project_dir, project_id, adata_path, steps):
     payload = {"question": "", "project_id": project_id,
                "params": {s: {} for s in steps} or {c: {} for c in all_checks},
                "inventory_params": inv_params}
-    if adata_path:
-        payload["adata_path"] = str(adata_path.expanduser())
 
     out = app.invoke(payload, cfg)
     click.echo(f"cohort:  {settings.project_root(project_id).name}")

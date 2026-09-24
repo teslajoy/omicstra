@@ -23,9 +23,90 @@ from omicstra.records import DiagnosticRecord
 Ctx = dict
 
 
-def _adata(ctx: Ctx):
+def _samples(ctx: Ctx):
+    """this cohort's sections, through the canonical adapter.
+
+    the chain profiles a cohort the way the analysis did - per sample. nothing
+    assembles a single object, and `adata_path` is gone: no inventory step ever
+    produced one, so the chain could not run through the graph at all.
+    """
+    from omicstra.adapters.canonical import list_samples
+    from omicstra.settings import settings
+    return [x for x in list_samples(settings.project_root(ctx.get("project_id")))
+            if x.counts is not None]
+
+
+def _load(sample):
     import anndata as ad
-    return ad.read_h5ad(ctx["adata_path"])
+    return ad.read_h5ad(sample.counts)
+
+
+def _aggregate(step_id: str, rows: list, rule: str, p: float | None,
+               why_none: str) -> DiagnosticRecord:
+    """per-section records -> one status, by the rule the CONTRACT declares.
+
+    the rows stay in the record. a status with no rows underneath cannot be
+    argued with, and "which sections failed" is the first question anyone asks.
+    """
+    ran = [r for r in rows if r.get("status") in ("pass", "fail")]
+    if not ran:
+        return DiagnosticRecord(
+            step_id=step_id, status="not_applicable", result=why_none,
+            observed={"per_section": rows[:12], "n_sections": len(rows)},
+            decision="no section could be measured - not a verdict about the cohort")
+
+    passed = [r for r in ran if r["status"] == "pass"]
+    frac = len(passed) / len(ran)
+    if rule == "all":
+        ok, crit = len(passed) == len(ran), "every section passes"
+    else:
+        ok, crit = frac >= p, f"at least {p:.0%} of sections pass"
+    return DiagnosticRecord(
+        step_id=step_id, status="pass" if ok else "fail",
+        method=f"per section, aggregated by the declared rule: {rule}",
+        scope=f"{len(ran)} of {len(rows)} sections measurable",
+        observed={"n_sections": len(rows), "n_measured": len(ran),
+                  "n_passed": len(passed), "fraction": round(frac, 4),
+                  "failed_sections": [r.get("scope") or r.get("step_id")
+                                      for r in ran if r["status"] == "fail"][:20],
+                  "per_section": rows[:12]},
+        criterion=crit,
+        result=f"{len(passed)}/{len(ran)} sections pass ({frac:.1%})",
+        decision="proceed" if ok else
+                 "below the declared coverage - a cohort-level failure, not a bad section")
+
+
+def _per_section(step_id: str, measure, applicable=None, why_not: str = ""):
+    """run one measure over every section and aggregate by the contract's rule.
+
+    the measure is untouched: `measures/` is already per sample, and this only
+    decides WHICH sections it sees and how their answers combine.
+    """
+    def fn(ctx: Ctx) -> DiagnosticRecord:
+        from omicstra.contracts.eda import load_contract
+        spec = next((c for c in load_contract()["checks"] if c["id"] == step_id), {})
+        agg = spec.get("aggregation") or {}
+        rule, p = agg.get("rule", "all"), agg.get("p")
+        if rule == "fraction" and p is None:
+            return DiagnosticRecord(
+                step_id=step_id, status="not_run",
+                result="the contract declares a fraction rule with p unset",
+                decision="declare p with a reason - it is never defaulted")
+
+        rows = []
+        for smp in _samples(ctx):
+            a = _load(smp)
+            if applicable is not None and not applicable(a, ctx):
+                rows.append({"status": "not_applicable", "scope": smp.sample_id,
+                             "result": why_not})
+                continue
+            rec = measure(a, ctx)
+            d = rec.model_dump() if hasattr(rec, "model_dump") else dict(rec)
+            d["scope"] = smp.sample_id
+            rows.append(d)
+        return _aggregate(step_id, rows, rule, p,
+                          why_not or "no section was applicable")
+    return fn
 
 
 def _unimplemented(step_id: str):
@@ -39,28 +120,26 @@ def _unimplemented(step_id: str):
 
 
 # --- applicability predicates: measured, never declared ---------------------
-def _has_spatial(ctx: Ctx) -> bool:
-    import anndata as ad
-    return "spatial" in ad.read_h5ad(ctx["adata_path"]).obsm
+# SECTION-unit predicates take a loaded section. a section that does not
+# qualify is recorded not_applicable and excluded from the aggregation, rather
+# than failing it - a spot platform has no segmentation to be bad at.
+def _has_spatial(a, ctx: Ctx) -> bool:
+    return "spatial" in a.obsm
 
 
+def _has_segmentation(a, ctx: Ctx) -> bool:
+    return any(c in a.obs for c in ("cell_id", "segmentation", "nucleus_id"))
+
+
+# COHORT-unit predicates take the sample list. "more than one sample" is a
+# property of the cohort, and asking it inside one object was only ever possible
+# because a stacked object was assumed to exist.
 def _multi_sample(ctx: Ctx) -> bool:
-    import anndata as ad
-    a = ad.read_h5ad(ctx["adata_path"])
-    k = ctx.get("params", {}).get("sample_key", "sample")
-    return k in a.obs and a.obs[k].nunique() > 1
-
-
-def _has_segmentation(ctx: Ctx) -> bool:
-    import anndata as ad
-    obs = ad.read_h5ad(ctx["adata_path"]).obs
-    return any(c in obs for c in ("cell_id", "segmentation", "nucleus_id"))
+    return len(_samples(ctx)) > 1
 
 
 def _multi_section(ctx: Ctx) -> bool:
-    import anndata as ad
-    obs = ad.read_h5ad(ctx["adata_path"]).obs
-    return "section" in obs and obs["section"].nunique() > 1
+    return len(_samples(ctx)) > 1
 
 
 def _project(ctx: Ctx) -> dict:
@@ -105,9 +184,117 @@ def _declared_field(field: str, unresolved=("", None)):
     return fn
 
 
+def _pseudobulk(ctx: Ctx):
+    """one row per section - the only "assembled" object in the chain, and the
+    smallest one that answers the question.
+
+    batch_structure looks like it needs a stacked cohort, but it only ever uses
+    the per-sample MEAN: it pseudobulks each sample and runs PCA plus silhouette
+    over those vectors. so the per-section shape supplies it exactly - a few
+    hundred mean vectors rather than a few hundred thousand spots - and measures/
+    consumes it unchanged. pseudobulking a one-row group is the identity, so the
+    numbers are the same ones it would have computed from a stacked object.
+    """
+    import anndata as ad
+    import numpy as np
+    import pandas as pd
+
+    rows, ids = [], []
+    for smp in _samples(ctx):
+        a = _load(smp)
+        rows.append(np.asarray(a.X.mean(axis=0)).ravel())
+        ids.append(smp.sample_id)
+    if not rows:
+        return ad.AnnData(np.zeros((0, 0)))
+    key = ctx.get("params", {}).get("sample_key", "sample")
+    return ad.AnnData(np.vstack(rows), obs=pd.DataFrame({key: ids}, index=ids))
+
+
+def _cohort_counts(ctx: Ctx) -> DiagnosticRecord:
+    """the root: does this cohort exist, and how deep is what is in it.
+
+    counts ADD across sections; rates are weighted by n_obs, because a mean of
+    per-section means overweights a small section. measures/ is untouched - it is
+    called once per section and the combining happens here.
+
+    the verdict is the EXISTENCE question, per the contract: patients present and
+    positive. the depth statistics ride along as observation. a cohort of shallow
+    sections is a cohort; a cohort of zero units is not.
+    """
+    samples = _samples(ctx)
+    if not samples:
+        return DiagnosticRecord(
+            step_id="cohort_counts", status="fail",
+            method="per section through the canonical adapter",
+            criterion="cohort counts present and non-zero",
+            result="no section carries counts",
+            decision="a cohort with no units is not a cohort - nothing downstream can run")
+
+    rows, n_obs, n_vars, nnz = [], 0, 0, 0
+    for smp in samples:
+        a = _load(smp)
+        r = measures.count_statistics(a, **{k: v for k, v in ctx["params"].items()
+                                            if k in ("sample_key", "source")})
+        o = (r.observed or {}) if hasattr(r, "observed") else {}
+        rows.append({"sample": smp.sample_id, "n_obs": o.get("n_obs"),
+                     "n_vars": o.get("n_vars"), "status": r.status})
+        n_obs += int(o.get("n_obs") or 0)
+        n_vars = max(n_vars, int(o.get("n_vars") or 0))
+        nnz += int(o.get("nnz") or 0)
+
+    # the subject axis the cohort declares, bound by the inventory
+    subject = (_project(ctx).get("subject_id_column") or "").strip()
+    with_units = [r for r in rows if (r["n_obs"] or 0) > 0]
+    ok = bool(with_units) and n_obs > 0
+
+    return DiagnosticRecord(
+        step_id="cohort_counts", status="pass" if ok else "fail",
+        method="count_statistics per section; counts summed, rates weighted by n_obs",
+        scope=f"{len(samples)} sections",
+        observed={
+            "n_sections": len(samples),
+            "n_sections_with_units": len(with_units),
+            "n_obs_total": n_obs,
+            "n_vars": n_vars,
+            "sparsity": round(1.0 - nnz / (n_obs * n_vars), 4) if n_obs and n_vars else None,
+            "subject_id_column": subject or None,
+            "per_section": rows[:12],
+            "two_questions": "the verdict is existence, per the contract. the depth "
+                             "statistics are observation and carry no threshold here.",
+        },
+        criterion="cohort counts present and non-zero",
+        result=f"{len(with_units)}/{len(samples)} sections carry units, {n_obs} total",
+        decision="proceed" if ok else
+                 "a cohort with no units is not a cohort - nothing downstream can run",
+        caveats=[] if subject else
+                ["no subject_id_column declared - the patient axis is unbound"])
+
+
 EDA_STEPS: list[Step] = [
+    # THE ROOT. nine steps require the token it produces, and the contract's
+    # authority_basis says what it is for: "no threshold. a cohort with no units
+    # is not a cohort". that is an EXISTENCE question, not a quality one - you
+    # cannot ask whether markers are present if there are no units to look in,
+    # and you certainly can ask it of shallow data.
+    #
+    # one id has carried two questions since before this port:
+    #
+    #   the contract     field `patients`, rule present_and_positive. universal
+    #                    authority, no threshold. written from the analysis, and
+    #                    the recorded summary carries exactly its fields
+    #   the code         measures.count_statistics - per-spot depth, detection,
+    #                    sparsity. added later with measures/, wired under this
+    #                    id because both words contain "count". the summary
+    #                    records NONE of its fields
+    #
+    # both are answered here and neither is bent. the depth statistics are summed
+    # across sections rather than measured on an object that does not exist;
+    # the existence question is answered from what the sections already report.
+    # whether the depth half deserves its own id - with cohort_calibrated
+    # authority and a declared threshold, neither of which it has ever had - is a
+    # contract decision for after the acceptance run, on evidence.
     Step(id="cohort_counts", produces=frozenset({"counts"}),
-         fn=lambda c: measures.count_statistics(_adata(c), **c["params"])),
+         fn=lambda c: _cohort_counts(c)),
 
     # the contract declares positive_markers and negative_markers as two
     # required checks with two fields. measures.marker_expression computes both
@@ -118,32 +305,33 @@ EDA_STEPS: list[Step] = [
          produces=frozenset({"positive_markers"}),
          authority="cohort_calibrated",
          params_space=("positive", "min_pct_positive"),
-         fn=lambda c: measures.marker_expression(
-             _adata(c), positive=c["params"]["positive"], negative={},
-             min_pct_positive=c["params"].get("min_pct_positive", 1.0))),
+         fn=_per_section("positive_markers", lambda a, c: measures.marker_expression(
+             a, positive=c["params"]["positive"], negative={},
+             min_pct_positive=c["params"].get("min_pct_positive", 1.0)))),
 
     Step(id="negative_markers", requires=frozenset({"counts"}),
          produces=frozenset({"negative_markers"}),
          authority="cohort_calibrated",
          params_space=("negative", "max_pct_negative"),
-         fn=lambda c: measures.marker_expression(
-             _adata(c), positive={}, negative=c["params"]["negative"],
-             max_pct_negative=c["params"].get("max_pct_negative", 10.0))),
+         fn=_per_section("negative_markers", lambda a, c: measures.marker_expression(
+             a, positive={}, negative=c["params"]["negative"],
+             max_pct_negative=c["params"].get("max_pct_negative", 10.0)))),
 
     Step(id="spatial_autocorrelation", requires=frozenset({"counts"}),
          produces=frozenset({"spatial_autocorrelation"}),
          authority="cohort_calibrated",
-         applicable_when=_has_spatial,
-         why_not_applicable="no spatial coordinates in obsm - not a spatial assay",
          params_space=("k", "n_perm", "threshold"),
-         fn=lambda c: measures.spatial_autocorrelation(_adata(c), **c["params"])),
+         fn=_per_section("spatial_autocorrelation",
+                         lambda a, c: measures.spatial_autocorrelation(a, **c["params"]),
+                         applicable=_has_spatial,
+                         why_not="no spatial coordinates in obsm - not a spatial assay")),
 
     Step(id="batch_structure", requires=frozenset({"counts"}),
          produces=frozenset({"batch_structure"}),
          authority="cohort_calibrated",   # contract: the absolute floor is calibrated
          applicable_when=_multi_sample,
          why_not_applicable="single sample - no batch axis to test",
-         fn=lambda c: measures.batch_structure(_adata(c), **c["params"])),
+         fn=lambda c: measures.batch_structure(_pseudobulk(c), **c["params"])),
 
     # declared in the contract, not yet implemented. registered so their absence
     # is a RECORD rather than a silence.
@@ -169,7 +357,8 @@ EDA_STEPS: list[Step] = [
 
     Step(id="segmentation_qc", requires=frozenset({"counts"}),
          produces=frozenset({"segmentation_qc"}),
-         applicable_when=_has_segmentation,
+         applicable_when=lambda c: any(_has_segmentation(_load(x), c)
+                                       for x in _samples(c)),
          why_not_applicable="no segmentation masks - spot-resolution platform",
          fn=_unimplemented("segmentation_qc")),
 

@@ -60,7 +60,6 @@ class EDAState(TypedDict, total=False):
     params: dict[str, Any]          # cohort-supplied, per eda step
     inventory_params: dict[str, Any]
     inventory: dict[str, dict]
-    adata_path: str                 # a REFERENCE, never the object
     records: list[dict]
     verdict: str
     violations: list[str]
@@ -98,24 +97,31 @@ def inventory(state: EDAState) -> dict:
 def profile(state: EDAState) -> dict:
     """"is it usable" - the eda protocol, run as one chain.
 
-    loads from `adata_path` rather than receiving an object: checkpointed state
-    must be serialisable, so state carries references and nodes load. that is
-    also why the protocol takes a path, not an AnnData.
+    the chain reads the cohort's sections through the canonical adapter and
+    profiles each one, aggregating by the rule the contract declares. it takes no
+    object and no path: `adata_path` named a single assembled object that nothing
+    ever produced, so this node could not run at all.
     """
     # a scaffolded cohort has no data yet, and that is the NORMAL first state
     # after `omicstra init` - not an error to crash on. a KeyError traceback here
     # was the first thing a new cohort owner saw, which is a poor way to learn
     # that the inventory has to bind an object first.
-    if not state.get("adata_path"):
-        # inside the GRAPH this is a halt, not a raise. the parent asked a
-        # routing question and is owed an answer; an exception crossing the
-        # boundary turns "this cohort has no data yet" into a stack trace and
-        # loses the arm decision that was already correctly made.
+    # a cohort with nothing ingested is the NORMAL first state after `init`, not
+    # an error to crash on. this used to guard a missing adata_path; the same
+    # guard now asks whether the cohort has any sections at all, so the guidance
+    # survives the shape change.
+    from omicstra.adapters.canonical import CanonicalMissing, list_samples
+    from omicstra.settings import settings
+    try:
+        sections = list_samples(settings.project_root(state.get("project_id")))
+    except CanonicalMissing:
+        sections = []
+    if not any(x.counts for x in sections):
         return {"halted": True, "records": [*state.get("records", []), {
             "step_id": "profile", "kind": "gate", "status": "not_run",
             "verdict": "halt", "reason": _NO_DATA}]}
-    ctx = {"adata_path": state["adata_path"],
-           "project_id": state.get("project_id"),
+
+    ctx = {"project_id": state.get("project_id"),
            "params": state.get("params", {})}
     recs = build_protocol(EDA_STEPS, "eda").invoke(ctx)
     return {"records": list(state.get("records", [])) + list(recs.values())}
