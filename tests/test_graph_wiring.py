@@ -132,3 +132,36 @@ def test_the_fixture_reaches_encode_with_zero_open_gates():
                  **counts})
     assert not [g for g in out["gates"] if g["open"]], \
         f"open on the fixture: {[g['id'] for g in out['gates'] if g['open']]}"
+
+
+def test_level_zero_declares_the_inventory_chain_params():
+    """undeclared, the key is dropped at the boundary and the chain silently dies.
+
+    graph.py's own docstring says a key the parent does not declare is discarded
+    in both directions. `inventory_params` was not declared, so every inventory
+    step reported "cohort supplied no params for this step" and each one after it
+    reported "upstream failed" - eight cautions that all trace to one missing
+    line. it survived because the only cohort that existed carried an evidence
+    pack and therefore never entered the compute arm.
+    """
+    from omicstra.graph import OmicstraState
+    assert "inventory_params" in OmicstraState.__annotations__
+
+
+def test_the_compute_arm_supplies_params_for_every_inventory_step():
+    """the two chains take separate params, keyed by different step ids.
+
+    a step with no entry is skipped rather than guessed at - which is right, and
+    is exactly why an empty mapping disables the whole chain instead of erroring.
+    """
+    import inspect
+
+    from omicstra import cli
+    from omicstra.protocols.inventory import INVENTORY_STEPS
+
+    src = inspect.getsource(cli)
+    assert "inventory_params" in src, "the compute arm never builds them"
+    assert "INVENTORY_STEPS" in src, "params must cover every declared step, not a fixed list"
+    # the first step needs a directory to look in; the rest default empty
+    assert '"files"' in src and "inputs_dir" in src
+    assert len(INVENTORY_STEPS) >= 8

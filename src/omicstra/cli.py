@@ -256,8 +256,18 @@ def eda(project_dir, project_id, adata_path, steps):
                                eda=build_eda_graph(checkpointer=None),
                                encode=build_encode_graph(checkpointer=None))
     cfg = {"configurable": {"thread_id": "cli"}}
+    # the two chains take separate params. `params` is eda's, keyed by check id;
+    # `inventory_params` is the inventory chain's, keyed by inventory step id. a
+    # step with no entry is skipped rather than guessed at, so an empty mapping
+    # silently disables the whole chain - which is what it did.
+    from omicstra.protocols.inventory import INVENTORY_STEPS
+
+    inv_params = {st.id: {} for st in INVENTORY_STEPS}
+    inv_params["files"] = {"inputs_dir": "data/canonical"}
+
     payload = {"question": "", "project_id": project_id,
-               "params": {s: {} for s in steps} or {"count_statistics": {}}}
+               "params": {s: {} for s in steps} or {"count_statistics": {}},
+               "inventory_params": inv_params}
     if adata_path:
         payload["adata_path"] = str(adata_path.expanduser())
 

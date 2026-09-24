@@ -71,6 +71,13 @@ class OmicstraState(TypedDict, total=False):
     # KeyError that looks like a bug in the subgraph.
     adata_path: str          # produced by inventory A7, consumed by eda.profile
     params: dict             # per-step params, cohort-supplied
+    # the inventory chain takes its OWN params, keyed by inventory step id, and
+    # the eda subgraph reads them under this name. undeclared, it was dropped at
+    # this boundary and every inventory step reported "no params for this step" -
+    # which is the failure this class of key is documented above to produce. it
+    # went unseen because the only cohort that existed carried an evidence pack
+    # and therefore always took the ask arm.
+    inventory_params: dict
     # --- the encode subgraph's half of the boundary ------------------------
     # the gate decides from DECLARATIONS plus counts the inventory already
     # measured. it re-measures nothing, which is why `unit_counts` crosses the
