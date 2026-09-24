@@ -38,8 +38,7 @@
       "aggregation": {
         "rule": "fraction",
         "p": 0.9,
-        "p_basis": "a marker panel is a claim about the TISSUE. one section in ten failing is a bad section - thin tissue, low depth, a torn edge - not the cohort lacking the marker. below that the panel is wrong for the tissue and the check should say so.",
-        "p_not_fitted": "a statement about sections in general, not about any cohort. it was NOT chosen to make a recorded verdict reproduce - that would put a cohort measurement inside a package contract and make the acceptance circular."
+        "p_basis": "a marker panel is a claim about the TISSUE. one section in ten failing is a bad section - thin tissue, low depth, a torn edge - not the cohort lacking the marker. below that the panel is wrong for the tissue and the check should say so."
       }
     },
     {
@@ -56,8 +55,7 @@
       "aggregation": {
         "rule": "fraction",
         "p": 0.9,
-        "p_basis": "same shape, same reason. a control present in a third of sections is not a control.",
-        "p_not_fitted": "a statement about sections in general, not about any cohort. it was NOT chosen to make a recorded verdict reproduce - that would put a cohort measurement inside a package contract and make the acceptance circular."
+        "p_basis": "same shape, same reason. a control present in a third of sections is not a control."
       }
     },
     {
@@ -78,8 +76,7 @@
       "aggregation": {
         "rule": "fraction",
         "p": 0.8,
-        "p_basis": "looser on purpose. Moran's I is measured on one section's own lattice, so a section with few informative spots can fail for geometry rather than biology. the check's inner rule is already 'I above threshold for >= k of the top n markers', so this is a second and weaker screen, across sections rather than within one.",
-        "p_not_fitted": "a statement about sections in general, not about any cohort. it was NOT chosen to make a recorded verdict reproduce - that would put a cohort measurement inside a package contract and make the acceptance circular."
+        "p_basis": "looser on purpose. Moran's I is measured on one section's own lattice, so a section with few informative spots can fail for geometry rather than biology. the check's inner rule is already 'I above threshold for >= k of the top n markers', so this is a second and weaker screen, across sections rather than within one."
       }
     },
     {
@@ -270,7 +267,9 @@
       "fraction"
     ],
     "all": "every section must pass",
-    "fraction": "at least p of the sections must pass. p is NOT defaulted - a fraction check with p unset is refused, and the value is set by acceptance against a cohort whose verdict is already recorded.",
-    "coverage_is_the_contracts": "the notebooks define the CHECKS, not the COVERAGE. which markers, Moran's I over the top n, what 'present' means - those come from the analysis. how many sections must agree was never answered there, because the exploratory work looked at one section and generalised by hand. so coverage is the contract's to declare, and p is a package decision with a reason rather than a number read off a notebook."
+    "fraction": "at least p of the sections must pass. p is a package decision declared with a reason; a fraction check with p unset is refused rather than defaulted.",
+    "coverage_is_the_contracts": "the notebooks define the CHECKS, not the COVERAGE. which markers, Moran's I over the top n, what 'present' means - those come from the analysis. how many sections must agree was never answered there, because the exploratory work looked at one section and generalised by hand. so coverage is the contract's to declare, and p is a package decision with a reason rather than a number read off a notebook.",
+    "p_is_never_fitted": "p is a property of sections in general and is never chosen to reproduce a cohort's recorded verdict. the per-check p_basis carries the reason for each value.",
+    "p_basis_is_prose": "p_basis is a warrant for a human reader and is not machine-read. nothing downstream parses it."
   }
 }

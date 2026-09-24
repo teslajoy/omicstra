@@ -250,7 +250,18 @@ def test_a_fraction_rule_carries_p_and_the_reason_for_it():
         if agg.get("rule") != "fraction":
             continue
         assert isinstance(agg.get("p"), float) and 0 < agg["p"] <= 1, f"{c['id']}: p unset"
-        assert agg.get("p_basis") and agg.get("p_not_fitted"), f"{c['id']}: p with no warrant"
+        assert agg.get("p_basis"), f"{c['id']}: p with no warrant"
+
+
+def test_the_contract_does_not_argue_with_itself_about_p():
+    """the fraction clause said p was set by acceptance against a recorded verdict,
+    which is the one thing the rest of the block forbids. a contract that states
+    both rules teaches the next reader whichever they happen to read first."""
+    from omicstra.contracts.eda import load_contract
+    agg = load_contract()["aggregation"]
+    assert "set by acceptance" not in agg["fraction"]
+    assert "refused" in agg["fraction"]
+    assert agg.get("p_is_never_fitted"), "the rule must be stated once, at the top"
 
 
 def test_no_cohort_id_appears_in_an_aggregation_warrant():
