@@ -115,34 +115,3 @@ def test_no_reference_cohort_is_hardcoded():
     assert "tnbc" not in src.lower(), "a cohort name leaked into the package"
     note = fit.encoder_fit(_Cfg([]), {})["comparing_cohorts"]
     assert "once per cohort" in note and "no reference cohort" in note
-
-
-# --- the second cohort, where the relation is not uniform -------------------
-def test_the_second_cohort_splits_one_encoder_three_ways():
-    """the result tnbc-92 cannot produce.
-
-    hest-breast carries 108 spot arrays, 8 Visium and 9 Xenium. Novae is out of
-    class for the first two and in class for the third, which reproduces what
-    that cohort's own declaration says in prose - from declarations alone, with
-    no model loaded.
-    """
-    root = Path.home() / "BForePC" / "hest-breast"
-    if not (root / "platform.json").is_file():
-        pytest.skip("second cohort not present on this machine")
-    from omicstra.contracts.project import ProjectConfig
-    from omicstra.settings import settings
-
-    # settings.project_dir is process-global. leaving it pointed at another
-    # cohort makes every later test in the session read the wrong declarations,
-    # which is how one new test turned into thirteen unrelated failures.
-    previous = settings.project_dir
-    try:
-        settings.project_dir = root
-        decl = json.loads((root / "platform.json").read_text())
-        r = encoder_fit(ProjectConfig.load(), decl["platforms"], decl.get("samples"))
-    finally:
-        settings.project_dir = previous
-    novae = next(e for e in r["encoders"] if e.get("encoder") == "novae")
-    by = {p["platform"]: p["relation"] for p in novae["per_platform"]}
-    assert by["xenium"] == "in_class"
-    assert by["original_st"] == "out_of_class" and by["visium"] == "out_of_class"

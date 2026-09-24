@@ -182,9 +182,16 @@ def preflight(cohort: dict, encoder: str, *, unit_counts: dict[str, int] | None 
                 continue
 
         elif g["id"] == "encoder_compatibility":
+            # "not_run" and "ran and failed" are different states and the person
+            # answering needs to know which. nothing runs the probe yet, so it is
+            # always the former here - said plainly rather than implied by a
+            # question that asserts a result.
             observed = {"encoder": encoder,
                         "trained_on": es.trained_on if es else None,
-                        "probe": "not_run"}
+                        "probe": "not_run",
+                        "probe_state": "no probe has been run on this cohort - this gate "
+                                       "is open because fit is UNESTABLISHED, not because "
+                                       "a measurement came back below chance"}
 
         elif g["id"] == "capacity":
             # the one gate whose declared answer can be CONTRADICTED by a

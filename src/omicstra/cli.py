@@ -265,8 +265,17 @@ def eda(project_dir, project_id, adata_path, steps):
     inv_params = {st.id: {} for st in INVENTORY_STEPS}
     inv_params["files"] = {"inputs_dir": "data/canonical"}
 
+    # every DECLARED check by default, not one. a step is skipped when its id is
+    # absent from this mapping - by key, not by value - so naming only
+    # count_statistics ran 1 of 10 and left the gate to reach a verdict on
+    # silence. --step narrows; it should never be the only thing that widens.
+    from omicstra.contracts.eda import load_contract
+
+    declared = load_contract()["checks"]
+    all_checks = [c["id"] for c in (declared if isinstance(declared, list)
+                                    else declared.values())]
     payload = {"question": "", "project_id": project_id,
-               "params": {s: {} for s in steps} or {"count_statistics": {}},
+               "params": {s: {} for s in steps} or {c: {} for c in all_checks},
                "inventory_params": inv_params}
     if adata_path:
         payload["adata_path"] = str(adata_path.expanduser())

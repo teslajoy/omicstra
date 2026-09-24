@@ -61,7 +61,7 @@
     {
       "id": "encoder_compatibility",
       "when": "preflight",
-      "question": "the encoder's compatibility probe did not clear chance on this cohort. demote to the declared fallback, or halt?",
+      "question": "the encoder's fit to this cohort is not established. demote to the declared fallback, or halt?",
       "options": [
         "demote_to_fallback",
         "proceed_anyway_recorded_as_dissent",
@@ -72,7 +72,8 @@
       "emits": "SelectionRecord",
       "forecloses": "proceeding anyway means every downstream metric carries an encoder that could not be shown to separate this tissue. the dissent travels with the results.",
       "measured_by": "a patient-grouped linear probe on a sampled subset, before any full extraction. cheap, and it runs before GPU time is spent.",
-      "answer_kind": "value"
+      "answer_kind": "value",
+      "question_note": "this asked about a probe that 'did not clear chance', which asserts a RESULT. the gate also fires when the probe has not run at all, and a person answering it was being told a measurement failed when none was taken. failing closed on an absent probe is right; describing absence as failure is not. the observed block carries which of the two it is."
     },
     {
       "id": "platform_floor",
