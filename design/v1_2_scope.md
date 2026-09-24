@@ -139,3 +139,18 @@ oracle. four cases, named before starting so none is discovered mid-port:
 
 a check that disagrees is named with its reason. nothing is adjusted to make it
 match.
+
+### open, found by the acceptance run - not worked on
+
+- **marker panels are undeclared.** `positive_markers`, `negative_markers` and
+  `spatial_autocorrelation` each need a panel naming genes expected in this
+  tissue. the exploratory notebook held one inline; the calibration record says
+  it is declared in `project.json`, where it is not. all three now refuse with a
+  reason rather than raising.
+- **the gene axis is undeclared.** sections span 10,571 to 33,047 genes, so
+  `batch_structure` cannot stack their means without a rule - intersection, union
+  with zeros, or a declared panel. the join declares unit semantics and states
+  that the gene universe is settled upstream; no cohort declaration names it.
+  it refuses rather than choosing.
+
+both are cohort declarations, not package work. neither is a defect in the port.

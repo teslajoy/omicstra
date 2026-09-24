@@ -111,7 +111,16 @@ def _link(step: Step, producer_of: dict[str, str] | None = None) -> Callable[[Ct
                 decision="a step with no params is skipped, never guessed at")
         else:
             try:
-                out = step.fn({**ctx, "params": ctx["params"][step.id]})
+                # a step sees only the params it DECLARES. params_space was
+                # declared and recorded in the trace but never enforced, so
+                # whatever a cohort's file happened to carry was splatted into
+                # the measure - provenance fields arriving as keyword arguments
+                # and surfacing as a TypeError that reads like a broken measure.
+                # an undeclared space means no filter, which is the old behaviour.
+                supplied = ctx["params"][step.id]
+                if step.params_space and isinstance(supplied, dict):
+                    supplied = {k: v for k, v in supplied.items() if k in step.params_space}
+                out = step.fn({**ctx, "params": supplied})
                 # a step may return a bare record, or (record, ctx_updates).
                 # updates are what make `produces` DATA rather than a label -
                 # without them a later step cannot read what an earlier one

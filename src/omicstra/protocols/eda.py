@@ -41,6 +41,52 @@ def _load(sample):
     return ad.read_h5ad(sample.counts)
 
 
+class _Undeclared(KeyError):
+    """a cohort has not declared something the check requires. not a crash."""
+
+
+def _panel(ctx: Ctx, which: str) -> dict:
+    """the marker panel this cohort declares. absent is a refusal, not an error.
+
+    the panel is a property of the tissue and disease context, so it is the
+    cohort's to declare. it has never been: the exploratory notebook held it
+    inline and the calibration record points at project.json, where it is not.
+    saying so beats a KeyError that looks like a bug in the step.
+    """
+    v = ctx.get("params", {}).get(which)
+    if not v:
+        raise _Undeclared(
+            f"no {which} marker panel declared for this cohort. the panel names genes "
+            f"expected in this tissue, so it cannot be inherited from another cohort or "
+            f"guessed from the matrix - declare it and re-run.")
+    return v
+
+
+def _attach_coords(a, sample) -> bool:
+    """put the section's own coordinates on the object the measure receives.
+
+    the ingest writes coordinates to a SIDECAR parquet on purpose, so the
+    morphology arm never loads a counts matrix to read two columns. the spatial
+    measure needs both, and reading the sidecar inside the step would put cohort
+    file knowledge back in a protocol - so the canonical adapter supplies it and
+    this only joins the two on the object it is about to hand over.
+    """
+    import numpy as np
+    from omicstra.adapters.canonical import load_spots
+
+    if "spatial" in a.obsm or sample.spots is None:
+        return "spatial" in a.obsm
+    try:
+        df = load_spots(sample).set_index("spot_id")
+    except Exception:
+        return False
+    idx = [i for i in a.obs_names if i in df.index]
+    if len(idx) != a.n_obs:
+        return False
+    a.obsm["spatial"] = np.asarray(df.loc[list(a.obs_names), ["x", "y"]].values, dtype=float)
+    return True
+
+
 def _aggregate(step_id: str, rows: list, rule: str, p: float | None,
                why_none: str) -> DiagnosticRecord:
     """per-section records -> one status, by the rule the CONTRACT declares.
@@ -96,11 +142,18 @@ def _per_section(step_id: str, measure, applicable=None, why_not: str = ""):
         rows = []
         for smp in _samples(ctx):
             a = _load(smp)
+            _attach_coords(a, smp)
             if applicable is not None and not applicable(a, ctx):
                 rows.append({"status": "not_applicable", "scope": smp.sample_id,
                              "result": why_not})
                 continue
-            rec = measure(a, ctx)
+            try:
+                rec = measure(a, ctx)
+            except _Undeclared as e:
+                return DiagnosticRecord(
+                    step_id=step_id, status="not_run", result=str(e),
+                    decision="declare it - a check with no declaration is not a failure "
+                             "of the data")
             d = rec.model_dump() if hasattr(rec, "model_dump") else dict(rec)
             d["scope"] = smp.sample_id
             rows.append(d)
@@ -184,30 +237,58 @@ def _declared_field(field: str, unresolved=("", None)):
     return fn
 
 
-def _pseudobulk(ctx: Ctx):
-    """one row per section - the only "assembled" object in the chain, and the
-    smallest one that answers the question.
+def _guarded(step_id: str, call):
+    """an undeclared prerequisite is not_run with its reason, never a traceback."""
+    try:
+        return call()
+    except _Undeclared as e:
+        return DiagnosticRecord(
+            step_id=step_id, status="not_run", result=str(e),
+            decision="declare it - a check with no declaration is not a failure of the data")
 
-    batch_structure looks like it needs a stacked cohort, but it only ever uses
-    the per-sample MEAN: it pseudobulks each sample and runs PCA plus silhouette
-    over those vectors. so the per-section shape supplies it exactly - a few
-    hundred mean vectors rather than a few hundred thousand spots - and measures/
-    consumes it unchanged. pseudobulking a one-row group is the identity, so the
-    numbers are the same ones it would have computed from a stacked object.
+
+def _pseudobulk(ctx: Ctx):
+    """one row per section - and a refusal when the gene axis is not declared.
+
+    batch_structure looks like it needs a stacked cohort but only ever uses the
+    per-sample MEAN, so a few hundred mean vectors supply it exactly. what it
+    cannot supply itself is the GENE AXIS: sections here span 24,344 to 27,567
+    genes, so stacking requires a decision about how to reconcile them.
+
+    that decision is not this function's. the join declares its own as-built
+    semantics for units, and says explicitly that the gene-universe question
+    lives upstream and is not settled there. no cohort declares it either. so
+    rather than quietly intersecting - which would pick a gene set nobody chose
+    and bury it in a mean - this refuses and says what is missing.
     """
     import anndata as ad
     import numpy as np
     import pandas as pd
 
-    rows, ids = [], []
-    for smp in _samples(ctx):
+    samples = _samples(ctx)
+    if not samples:
+        return None
+
+    axes, rows, ids = [], [], []
+    for smp in samples:
         a = _load(smp)
+        axes.append(tuple(a.var_names))
         rows.append(np.asarray(a.X.mean(axis=0)).ravel())
         ids.append(smp.sample_id)
-    if not rows:
-        return ad.AnnData(np.zeros((0, 0)))
+
+    if len({len(x) for x in axes}) > 1 or len(set(axes)) > 1:
+        raise _Undeclared(
+            f"the gene axis is not declared. {len(samples)} sections span "
+            f"{min(len(x) for x in axes)} to {max(len(x) for x in axes)} genes, so they "
+            f"cannot be stacked without a rule for reconciling them - intersection, union "
+            f"with zeros, or a declared panel. the join declares unit semantics and states "
+            f"that the gene universe is settled upstream, not there; no cohort declaration "
+            f"names it. declare it rather than letting a mean be taken over a gene set "
+            f"nobody chose.")
+
     key = ctx.get("params", {}).get("sample_key", "sample")
-    return ad.AnnData(np.vstack(rows), obs=pd.DataFrame({key: ids}, index=ids))
+    return ad.AnnData(np.vstack(rows), obs=pd.DataFrame({key: ids}, index=ids),
+                      var=pd.DataFrame(index=list(axes[0])))
 
 
 def _cohort_counts(ctx: Ctx) -> DiagnosticRecord:
@@ -306,7 +387,7 @@ EDA_STEPS: list[Step] = [
          authority="cohort_calibrated",
          params_space=("positive", "min_pct_positive"),
          fn=_per_section("positive_markers", lambda a, c: measures.marker_expression(
-             a, positive=c["params"]["positive"], negative={},
+             a, positive=_panel(c, "positive"), negative={},
              min_pct_positive=c["params"].get("min_pct_positive", 1.0)))),
 
     Step(id="negative_markers", requires=frozenset({"counts"}),
@@ -314,15 +395,21 @@ EDA_STEPS: list[Step] = [
          authority="cohort_calibrated",
          params_space=("negative", "max_pct_negative"),
          fn=_per_section("negative_markers", lambda a, c: measures.marker_expression(
-             a, positive={}, negative=c["params"]["negative"],
+             a, positive={}, negative=_panel(c, "negative"),
              max_pct_negative=c["params"].get("max_pct_negative", 10.0)))),
 
     Step(id="spatial_autocorrelation", requires=frozenset({"counts"}),
          produces=frozenset({"spatial_autocorrelation"}),
          authority="cohort_calibrated",
-         params_space=("k", "n_perm", "threshold"),
+         # `markers` was missing from the declared space while the measure
+         # requires it, so the step could never satisfy its own call. the list
+         # names genes expected to be spatially structured in THIS tissue, so
+         # like the marker panels it is the cohort's to declare.
+         params_space=("markers", "k", "n_perm", "threshold"),
          fn=_per_section("spatial_autocorrelation",
-                         lambda a, c: measures.spatial_autocorrelation(a, **c["params"]),
+                         lambda a, c: measures.spatial_autocorrelation(
+                             a, markers=_panel(c, "markers"),
+                             **{k: v for k, v in c["params"].items() if k != "markers"}),
                          applicable=_has_spatial,
                          why_not="no spatial coordinates in obsm - not a spatial assay")),
 
@@ -331,7 +418,8 @@ EDA_STEPS: list[Step] = [
          authority="cohort_calibrated",   # contract: the absolute floor is calibrated
          applicable_when=_multi_sample,
          why_not_applicable="single sample - no batch axis to test",
-         fn=lambda c: measures.batch_structure(_pseudobulk(c), **c["params"])),
+         fn=lambda c: _guarded("batch_structure", lambda:
+             measures.batch_structure(_pseudobulk(c), **c["params"]))),
 
     # declared in the contract, not yet implemented. registered so their absence
     # is a RECORD rather than a silence.
