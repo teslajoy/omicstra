@@ -231,6 +231,7 @@ A cohort with no evidence of its own is not routable, and the server says so rat
 | `list_task_families` | which questions this cohort can be asked |
 | `route` | which method answers one question, or why none does |
 | `describe_data_structure` | what the data is, as declared |
+| `describe_encoder_fit` | whether the declared encoders were built for this kind of data |
 | `check_eda_gate` | is the cohort admissible, and on what grounds |
 | `run_eda_step` | re-run one admissibility check, with its permutation null |
 | `plot_spatial_autocorrelation` | the spatial signal behind that check, as a figure |
@@ -353,7 +354,7 @@ omicstra/
 │   · models/encoders.py             # the encoder registry, resolved by declared name.
 │   │                                #   spec() is metadata; only load() needs torch
 │   · agents/modality.py             # he / st / pathway agents - read recorded evidence
-│   · mcp/server.py                  # 8 tools, 4 resources, stdio + http. zero model calls
+│   · mcp/server.py                  # 11 tools, 2 resources, stdio + http. zero model calls
 │   · records.py  artifacts.py       # the record contract - inventory/eda_summary io
 │   · settings.py  cli.py            # 8 commands. settings imports nothing from omicstra
 │   · routing.py  eda.py  figures.py # resolve + ledger · gate · plots
