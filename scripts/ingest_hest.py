@@ -148,6 +148,11 @@ def main(project_dir: Path, src: str, out: str, limit: int | None, samples: str 
                          "from the object's own scalefactors."),
         "paths_relative_to": "the cohort's project root",
         "conversion": "link the object, write spot_id/x/y beside it. no values are changed.",
+        # the canonical Sample carries an image, and this script never recorded
+        # one - so the morphology arm saw no slide for any sample and silently
+        # had nothing to encode. the WSIs arrive separately from the objects, so
+        # this is re-read on every run rather than assumed from the first.
+        "images": dict(prior.get("images", {})),
         "samples": list(prior.get("samples", [])),
         "sources": dict(prior.get("sources", {})),
         "skipped": [s for s in prior.get("skipped", []) if s["sample"] not in {p.stem for p in found}],
@@ -170,7 +175,11 @@ def main(project_dir: Path, src: str, out: str, limit: int | None, samples: str 
             "h5ad": str(p.relative_to(root)), "sha256_16": _sha(p), "linked_as": how,
             "platform": platform, "n_spots": spots["n_spots"], "extent_px": spots["extent"],
         }
-        click.echo(f"  {sid:<12} {platform:<12} {spots['n_spots']:>6} spots  ({how})")
+        wsi = root / "data" / "inputs" / "wsis" / f"{sid}.tif"
+        if wsi.is_file():
+            record["images"][sid] = str(wsi)
+        click.echo(f"  {sid:<12} {platform:<12} {spots['n_spots']:>6} spots  ({how})"
+                   f"{'' if wsi.is_file() else '  no slide'}")
 
     record["samples"] = sorted(record["samples"])
     rec_path.write_text(json.dumps(record, indent=2) + "\n")

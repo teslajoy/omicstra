@@ -1,15 +1,38 @@
 # 1.2 scope
 
-> **1.2 = a second cohort goes from files to its own evidence pack and report
-> with no package edit.**
+> **a second cohort goes from files to its own pack and report THROUGH THE SAME
+> SURFACE A CLIENT USES. onboarding the cohort touches nothing in `src/` -
+> anything it forces there is recorded as a finding.**
 
 read this before adding anything. the line above ends a scope argument; a
 judgement about whether the work is good does not.
 
-1.1 shipped the chain on the cohort it was written against. that proves the
-chain runs. it does not prove the chain is a package, because a pipeline shaped
-around one dataset passes its own tests every time. the only test that
-discriminates is a cohort whose declarations someone else wrote.
+the second half is the falsifiable half, and it is about the COHORT, not the
+build. steps that expose an agent or add a graph are package work and are the
+product being built. the rule applies at the moment a cohort comes through:
+once the surface exists, a new cohort should be its declarations plus an ingest
+script. when it forces a change in `src/` anyway, one of two things is true -
+
+  the package held cohort knowledge     a seed-cohort assumption. the bug this
+                                        rule exists to catch
+  the package held a path no cohort     a finding, and a legitimate edit. the
+  had taken                             compute arm was hidden by the ask arm
+                                        for a month
+
+both go in "open, found" below with which kind they were.
+
+the first half is the one that changed on 24 sep. the funded proposal puts
+"MCP server implementation; agent orchestration; embedding extraction
+pipelines" on ONE line as ONE deliverable, and lists modality-specialised
+agents with persistent context and client-callable MCP interfaces as items (i)
+and (vi) of one system. extraction is what the agents DO. a script that calls
+the package proves the package; it does not prove the product, and three
+cohort-specific lines make it a notebook.
+
+duration is not the objection it was taken for. the proposal answers it in the
+design - human-in-the-loop escalation at confidence boundaries, persistent
+execution context, traces - which is `interrupt()`, the checkpointer and the
+durable executor. all three are built. none is reachable from a client.
 
 ---
 
@@ -154,3 +177,59 @@ match.
   it refuses rather than choosing.
 
 both are cohort declarations, not package work. neither is a defect in the port.
+
+
+---
+
+## order, and what each step is accepted on
+
+```
+0  scope line       this file                                              <- here
+1  commit           ingest_hest image fix
+2  he agent         he.encode -> run_id, runs.status/resume/record
+3  st agent         graphs/st.py over the novae port, st.encode
+6  eda acceptance   panels + gene axis declared; tnbc-92 four-way table
+4  downstream       align.run / evaluate.run behind the same run handle
+5  hest pack        promote + report
+7  pathway agent    package path for gpath2vec (may slip to 1.3)
+8  tag v1.2.0       0-6 green in a clean clone
+```
+
+6 sits before 4 deliberately. this repo's own first constraint is that no
+alignment or evaluation happens until the EDA gate is satisfied, and the second
+cohort's gate currently returns stop. running the pipeline past it would break
+a rule the project enforces on itself.
+
+2 and 3 still run BEFORE 6, because what they test is the surface. their
+acceptance goes THROUGH the gate rather than around it: the stop verdict fires
+as an interrupt, the client answers "proceed, recorded as dissent", and the
+record carries `actor=human`. that is the mechanism being exercised. a script
+that bypasses the gate and records nothing is what happened on 24 sep and is
+the thing not to repeat.
+
+three acceptance criteria worth stating rather than assuming:
+
+- **step 2 includes kill-and-resume.** `server.json` claims the server is
+  stateless because a run handle is an ordinary parameter rather than a
+  session. that is only true if the run's state is in sqlite, so the test is:
+  start a run, kill the process, restart, `runs.resume` the same run_id. with
+  an in-memory saver it passes in one process and fails on any restart, and the
+  claim is false.
+- **step 3 is "exact if deterministic, otherwise the tolerance is recorded with
+  its cause."** the H&E port needed 3.02e-06 once the encoder was in the loop. a
+  non-zero diff on the molecular side is a finding, not a failure to paper over.
+- **step 6 leaves p untouched.** disagreements with the recorded summary are
+  named with their reason. a threshold moved to make a cohort reproduce is
+  circular, and the summary is the weaker record - it rests on one subarray.
+
+## rejected, with the reason
+
+```
+a generic run_encode with a modality= switch    the gate sets genuinely differ -
+                                                gated_weights and tile geometry
+                                                against platform_floor and edge
+                                                scale. one tool hides the thing
+                                                each agent exists to ask
+new checks or measures                          this is a port and an exposure
+improving a check "while in there"              write it below and continue
+```
