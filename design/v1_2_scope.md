@@ -233,3 +233,39 @@ a generic run_encode with a modality= switch    the gate sets genuinely differ -
 new checks or measures                          this is a port and an exposure
 improving a check "while in there"              write it below and continue
 ```
+
+### step 2 - what landed, and what did not
+
+landed, verified against a real client over stdio:
+
+- `he_encode`, `runs_resume`, `runs_status`, `runs_record` drive
+  `graphs/encode.py`. no tool calls the chain, so the gates stay interrupts
+- gates fire as interrupts and are answered by mapping, with the answers in the
+  record under `actor=human`
+- a durable checkpointer is REQUIRED. with the in-memory saver the tools refuse
+  rather than hand out a handle they cannot honour
+- a handle started in one server process resolves in a second after the first is
+  killed - the "stateless by design" claim, demonstrated
+- submission returns in 0.3 s. the first version blocked for the whole encode and
+  a ~150 s call failed on the client side, which is what a run handle exists to
+  prevent
+- progress is COUNTED from the output files, not remembered, so it stays true
+  across a restart
+- output is BYTE-IDENTICAL to the same three sections encoded by a script
+
+not landed:
+
+- **re-dispatch after a restart.** `runs_resume` on a run with no open gate
+  detects the missing shards and re-enters the graph, but the gates recompute as
+  open - nothing declares them in the cohort - so it stops at the interrupt
+  again instead of dispatching. closing a gate from an answer already recorded on
+  the run is the fix; the first attempt mutated a frozen GateRequest and the
+  second passed `open`, which is a property rather than a field. both reverted.
+  `preflight` has to take the recorded answers, rather than the graph patching
+  its result afterwards.
+- **temporal executor.** `run_shards_durably` submits AND waits, so queueing
+  needs a submit-only variant using start_workflow rather than
+  execute_workflow. not written.
+
+so the surface is real and the laptop path runs; the restart story is honest
+about files and checkpoint surviving but is not yet complete for the thread.

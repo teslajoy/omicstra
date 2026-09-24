@@ -652,3 +652,148 @@ def describe_compute_plan(encoder: str | None = None,
         "note": ("samples without an image cannot enter the morphology arm and are "
                  "excluded from the shard list rather than failing inside it."),
     }
+
+
+# --- the H&E agent, reachable by a client -----------------------------------
+#
+# the graph IS the agent. these tools drive graphs/encode.py; they do not call
+# protocols/encode.py, because a tool that called the chain directly would turn
+# the gates back into a function's arguments and the agent back into a function.
+#
+# a run handle is an ordinary parameter, not a session - which is only true if
+# the run's state outlives the process. so these use the DURABLE checkpointer,
+# and a server started with the in-memory one says so rather than handing out a
+# handle it cannot honour.
+def _runner():
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from omicstra.graph import make_checkpointer
+    saver, spec = make_checkpointer()
+    if isinstance(saver, InMemorySaver):
+        raise ValueError(
+            "run handles need a durable checkpointer. set "
+            "OMICSTRA_CHECKPOINT=sqlite:<path> - with the in-memory saver a run "
+            "cannot be resumed by a later request, which is what a run_id is for.")
+    from omicstra.graphs.encode import build_encode_graph
+    return build_encode_graph(checkpointer=saver), spec
+
+
+def _handle(app, run_id: str, out: dict) -> dict:
+    """what a client gets back: the handle, and either a gate or a result."""
+    gates = [g for g in (out.get("gates") or []) if g.get("open")]
+    interrupts = out.get("__interrupt__") or []
+    if interrupts:
+        v = interrupts[0].value
+        return {"run_id": run_id, "status": "awaiting_answer", "gate": v,
+                "resume_with": "runs_resume(run_id, answers={<gate id>: <option>})"}
+    return {"run_id": run_id, "status": out.get("report", {}).get("status", "unknown"),
+            "report": out.get("report", {}), "open_gates": [g["id"] for g in gates],
+            "halted": bool(out.get("halted"))}
+
+
+@srv.tool(description=(
+    "Run the H&E morphology agent on a cohort. Fires its preflight gates as "
+    "interrupts a client answers, then dispatches one shard per section. "
+    "Returns a run handle. compute=false (the default) resolves the shard list "
+    "and reports what would run without encoding anything."))
+def he_encode(project_id: str | None = None, platform: str | None = None,
+              samples: list[str] | None = None, compute: bool = False,
+              encoder: str = "virchow2", run_id: str | None = None) -> dict:
+    import uuid
+
+    from omicstra.graph import _load_cohort
+
+    app, spec = _runner()
+    rid = run_id or f"he-{uuid.uuid4().hex[:12]}"
+    cfg = {"configurable": {"thread_id": rid}}
+    out = app.invoke({"project_id": project_id, "encoder": encoder,
+                      "cohort": _load_cohort(project_id), "platform": platform,
+                      "samples": samples, "compute": compute}, cfg)
+    return {**_handle(app, rid, out), "checkpointer": spec}
+
+
+@srv.tool(description=(
+    "Answer the open gate on a run and continue it, or - on a run with no open "
+    "gate whose shards are incomplete - re-dispatch the ones still missing. "
+    "The run handle is an ordinary parameter, so a run started by one request "
+    "is resumable by another, including after the server restarts."))
+def runs_resume(run_id: str, answers: dict | None = None,
+                approve: bool = True) -> dict:
+    from langgraph.types import Command
+
+    app, spec = _runner()
+    cfg = {"configurable": {"thread_id": run_id}}
+    snap = app.get_state(cfg)
+
+    # a run past its gates whose thread died has no interrupt to resume. the
+    # shards are idempotent, so re-entering the graph re-dispatches exactly
+    # what is missing - which is what "the files survive, the thread does not"
+    # means in practice, and it is recorded rather than silent.
+    if snap and snap.values and not (snap.next or ()):
+        v = snap.values
+        shards = v.get("shards") or []
+        missing = [d for d in shards
+                   if not (Path(d["output"]).exists()
+                           and Path(d["output"]).stat().st_size > 0)]
+        if missing:
+            out = app.invoke({**v, "compute": True}, cfg)
+            r = _handle(app, run_id, out)
+            r["resumed_by"] = "re-dispatch"
+            r["re_dispatched"] = [d["sample"] for d in missing]
+            return {**r, "checkpointer": spec}
+
+    out = app.invoke(Command(resume=answers if answers else approve), cfg)
+    return {**_handle(app, run_id, out), "resumed_by": "gate_answer",
+            "checkpointer": spec}
+
+
+@srv.tool(description=(
+    "What a run is doing: shards done, still missing, what it answered. "
+    "Progress is counted from the output files rather than held in memory, so "
+    "this is true from any process and after a restart."))
+def runs_status(run_id: str) -> dict:
+    app, spec = _runner()
+    cfg = {"configurable": {"thread_id": run_id}}
+    snap = app.get_state(cfg)
+    if not snap or not snap.values:
+        return {"run_id": run_id, "status": "unknown",
+                "why": "no checkpoint under this handle. a run_id from a server "
+                       "using a different checkpointer is not resolvable here."}
+    v = snap.values
+    rep = v.get("report") or {}
+    # progress is COUNTED, not remembered. the shards are idempotent on their
+    # output file, so the files are the truth - which is what makes this correct
+    # after a restart that lost the thread doing the work.
+    shards = v.get("shards") or []
+    done = [d for d in shards if Path(d["output"]).exists()
+            and Path(d["output"]).stat().st_size > 0]
+    missing = [d["sample"] for d in shards if d not in done]
+    status = rep.get("status", "in_progress")
+    if shards and status == "submitted":
+        status = "complete" if not missing else "running"
+    return {"run_id": run_id, "checkpointer": spec,
+            "executor": rep.get("executor"),
+            "n_shards": len(shards), "n_done": len(done),
+            "missing": missing,
+            "status": status,
+            "next": list(snap.next or []),
+            "answers": v.get("answers") or {},
+            "open_gates": [g["id"] for g in (v.get("gates") or []) if g.get("open")],
+            "seconds": rep.get("seconds"), "skipped": rep.get("skipped"),
+            "out_dir": rep.get("out_dir"), "geometry": rep.get("geometry")}
+
+
+@srv.tool(description=(
+    "The decision record for one run: every gate answered, by whom, and the "
+    "declaration it resolved from. This is the run's half of the ledger."))
+def runs_record(run_id: str) -> dict:
+    app, spec = _runner()
+    snap = app.get_state({"configurable": {"thread_id": run_id}})
+    if not snap or not snap.values:
+        return {"run_id": run_id, "records": [], "why": "no checkpoint under this handle"}
+    v = snap.values
+    return {"run_id": run_id, "checkpointer": spec,
+            "records": v.get("records") or [],
+            "gates": v.get("gates") or [],
+            "answers": v.get("answers") or {},
+            "encoder": v.get("encoder"), "platform": v.get("platform")}

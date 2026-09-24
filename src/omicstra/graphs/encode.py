@@ -86,6 +86,10 @@ def gates(state: EncodeState) -> dict:
     cohort, encoder = state.get("cohort", {}), state.get("encoder", "virchow2")
     reqs = preflight(cohort, encoder, unit_counts=state.get("unit_counts"),
                      min_scope=state.get("min_scope"), device=state.get("device"))
+    # an answer already recorded on this run CLOSES its gate. re-entering the
+    # graph to re-dispatch missing shards would otherwise reopen every gate and
+    # stop at the interrupt again, so a run whose thread died could never finish
+    # - the answers were recorded, and asking twice is not a safety property.
     rec = gate_record(reqs, encoder)
     # the price, computed whether or not anyone is asked. a run that clears every
     # gate unattended should still leave behind what it expected to cost, because
@@ -257,18 +261,48 @@ def encode(state: EncodeState) -> dict:
                                    "compute=True to dispatch."}}
 
     out.mkdir(parents=True, exist_ok=True)
+
+    # SUBMIT, do not wait. a run handle exists so the caller is not holding a
+    # connection open for hours; blocking here made the handle decorative and
+    # a 150 s call over one request already failed on the client side.
+    #
+    # the thread is acceptable for exactly one reason: shards are idempotent on
+    # their output file. a restart loses the thread and nothing else - the files
+    # and the checkpoint survive, and runs_resume re-dispatches whatever is
+    # missing. that is a different guarantee from temporal's and the record says
+    # which one it is rather than letting them blur.
+    import threading
+
+    pending = [t for t in triples if not (out / f"{t[0]}.npy").exists()]
     t0 = time.time()
-    res = encode_he_cohort(triples, out, geom, encoder=state.get("encoder", "virchow2"),
-                           device=state.get("device"))
+
+    def _work():
+        encode_he_cohort(pending, out, geom, encoder=state.get("encoder", "virchow2"),
+                         device=state.get("device"))
+
+    threading.Thread(target=_work, daemon=True,
+                     name=f"encode-{state.get('project_id') or 'cohort'}").start()
     wall = round(time.time() - t0, 1)
-    done = [r for r in (res or []) if (r[1] if isinstance(r, tuple) else None) == "done"]
     return {"shards": [{"sample": t[0], "output": str(out / f"{t[0]}.npy")} for t in triples],
-            "report": {"status": "ran", "platform": pname,
+            "report": {"status": "submitted", "platform": pname,
+                       "executor": "in_process",
+                       "executor_note": ("a thread keyed by the run handle. the files and "
+                                         "the checkpoint survive a restart; the thread "
+                                         "does not, and runs_resume re-dispatches the "
+                                         "shards still missing."),
+                       "n_pending": len(pending),
+                       "n_already": len(triples) - len(pending),
+                       "max_concurrent_tasks": (state.get("plan") or {}).get(
+                           "max_concurrent_tasks"),
                        "encoder": state.get("encoder", "virchow2"),
                        "geometry": {"scale": geom.scale, "tile_px": geom.tile_px,
                                     "out_px": geom.out_px, "k": geom.k},
-                       "n_shards": len(triples), "n_done": len(done) or len(triples),
-                       "skipped": skipped, "seconds": wall,
+                       # progress is NOT reported here. this returns at
+                       # submission, so any count it wrote would be a guess -
+                       # runs_status counts the output files, which are the truth
+                       # and stay true across a restart.
+                       "n_shards": len(triples),
+                       "skipped": skipped, "submit_seconds": wall,
                        "out_dir": str(out), "answers": answered,
                        "plan": state.get("plan", {})}}
 
