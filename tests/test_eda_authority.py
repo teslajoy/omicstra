@@ -207,3 +207,57 @@ def test_graph_escalation_reuses_the_gate_interrupt():
     assert "escalations" in inspect.getsource(eda_graph.escalate)
     # the gate routes caution -> escalate, and escalations are cautions
     assert eda_graph._route({"verdict": "proceed_with_caution"}) == "escalate"
+
+# --- unit and coverage ------------------------------------------------------
+def test_every_check_declares_what_one_answer_covers():
+    """section, platform or cohort - from a closed set, never assumed.
+
+    a cohort may carry several platforms with different answers, so collapsing a
+    platform check to one status throws away the thing it measured.
+    """
+    from omicstra.contracts.eda import load_contract
+    d = load_contract()
+    allowed = set(d["units"]["values"])
+    assert allowed == {"section", "platform", "cohort"}
+    for c in d["checks"]:
+        assert c.get("unit") in allowed, f"{c['id']} declares no unit"
+        assert c.get("unit_basis"), f"{c['id']} declares a unit with no reason"
+
+
+def test_only_section_checks_declare_an_aggregation():
+    """platform and cohort checks produce one answer, so there is nothing to
+    aggregate. a rule on them would be a knob with no meaning."""
+    from omicstra.contracts.eda import load_contract
+    d = load_contract()
+    for c in d["checks"]:
+        if c["unit"] == "section":
+            assert c.get("aggregation"), f"{c['id']} is per section and declares no rule"
+            assert c["aggregation"]["rule"] in set(d["aggregation"]["values"])
+        else:
+            assert "aggregation" not in c, f"{c['id']} is not per section but declares one"
+
+
+def test_a_fraction_rule_carries_p_and_the_reason_for_it():
+    """p is a package decision about sections in general.
+
+    it is NOT fitted to a cohort. choosing p so that a recorded verdict
+    reproduces would put a cohort measurement inside a package contract and make
+    the acceptance circular - the cohort would match by construction.
+    """
+    from omicstra.contracts.eda import load_contract
+    for c in load_contract()["checks"]:
+        agg = c.get("aggregation") or {}
+        if agg.get("rule") != "fraction":
+            continue
+        assert isinstance(agg.get("p"), float) and 0 < agg["p"] <= 1, f"{c['id']}: p unset"
+        assert agg.get("p_basis") and agg.get("p_not_fitted"), f"{c['id']}: p with no warrant"
+
+
+def test_no_cohort_id_appears_in_an_aggregation_warrant():
+    """the lint that keeps p honest. a reason naming a cohort is a fitted p."""
+    import json
+
+    from omicstra.contracts.eda import load_contract
+    blob = json.dumps(load_contract()).lower()
+    for token in ("tnbc", "hest", "wang"):
+        assert token not in blob, f"a cohort name reached the eda contract: {token}"

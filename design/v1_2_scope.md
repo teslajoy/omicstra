@@ -85,3 +85,57 @@ e  the report's second target: stepwise stats, figures, and
 ## out
 
 a third cohort. slurm. oauth. anything that makes the first cohort better.
+
+---
+
+## the eda chain's unit
+
+> **the eda chain profiles a cohort the way the notebooks did - per sample
+> through the canonical adapter, aggregated by a rule the contract declares.
+> no single-object path.**
+
+the seed cohort's `eda_summary.json` records `produced_by: manual`, from two
+notebooks that iterate per sample and read each one's own files. there is no
+concatenated object anywhere in them.
+
+the graph path was written later to replicate that, and encoded a shape the
+notebooks never used - one object, reached through `adata_path`. nothing
+produces `adata_path`; no inventory step declares it; the "inventory A7 step"
+cited in two docstrings does not exist. so the eda chain has never run through
+the graph on any cohort, and the seed cohort hid it by always taking the ask arm.
+
+the package is already split on this, which is the evidence:
+
+| | shape |
+|:--|:--|
+| `protocols/eda.py` | 5 steps read `ctx["adata_path"]` - one object |
+| `measures.spatial_autocorrelation_streamed` | takes `load_sample_fn` + ids, iterates |
+
+cohort-level checks aggregate per-sample results plus declarations - the subject
+column, the clinical table - not a stacked matrix. so nothing needs assembling.
+
+### what changes
+
+- each check declares its `unit`: `section` or `cohort`
+- a `section` check declares its aggregation rule. default: worst status wins,
+  and the per-sample rows stay in the record
+- the five steps take the adapter-injected sample list, not a path
+- `adata_path` and the A7 references go. **no override flag** - a flag for a
+  shape the design rejected is how the shape comes back
+- a lint holds it: no module in `protocols/` may read a single-object path, the
+  same way the AST lint keeps format readers out of the package
+
+### acceptance is the seed cohort, and it is not "reproduce the file"
+
+`eda_summary.json` was assembled by hand, so it is a record rather than an
+oracle. four cases, named before starting so none is discovered mid-port:
+
+| checks | target |
+|:--|:--|
+| positive_markers, negative_markers, spatial_autocorrelation, cross_modal_registration | boolean pass in the summary - must match exactly |
+| encoder_input_decision, model_tissue_fit | prose and a dict - compare content, not status |
+| segmentation_qc, multi_section_alignment | recorded as null. the graph must reach not_run or not_applicable, never invent a pass |
+| cohort_counts, batch_structure | absent from the summary. NOTHING to diff, and cohort_counts is universal authority - a check every cohort must answer that the seed cohort never did. recorded as a finding, not quietly filled in |
+
+a check that disagrees is named with its reason. nothing is adjusted to make it
+match.

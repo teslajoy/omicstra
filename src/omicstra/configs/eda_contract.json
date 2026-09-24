@@ -20,7 +20,9 @@
       "field": "patients",
       "rule": "present_and_positive",
       "description": "cohort counts present and non-zero",
-      "authority_basis": "no threshold. a cohort with no units is not a cohort"
+      "authority_basis": "no threshold. a cohort with no units is not a cohort",
+      "unit": "cohort",
+      "unit_basis": "counts across the cohort. there is no per-section answer"
     },
     {
       "id": "positive_markers",
@@ -30,7 +32,15 @@
       "rule": "is_true",
       "description": "known positive markers detected for the tissue/disease",
       "authority_basis": "both halves are declared per project: which genes are expected, and the detection floor they must clear. neither is a property of the method",
-      "forecloses": "carrying one tissue's marker panel and detection floor onto another, where the panel names the wrong genes and the floor sits in the wrong place"
+      "forecloses": "carrying one tissue's marker panel and detection floor onto another, where the panel names the wrong genes and the floor sits in the wrong place",
+      "unit": "section",
+      "unit_basis": "markers are detected in a sample's own matrix",
+      "aggregation": {
+        "rule": "fraction",
+        "p": 0.9,
+        "p_basis": "a marker panel is a claim about the TISSUE. one section in ten failing is a bad section - thin tissue, low depth, a torn edge - not the cohort lacking the marker. below that the panel is wrong for the tissue and the check should say so.",
+        "p_not_fitted": "a statement about sections in general, not about any cohort. it was NOT chosen to make a recorded verdict reproduce - that would put a cohort measurement inside a package contract and make the acceptance circular."
+      }
     },
     {
       "id": "negative_markers",
@@ -40,7 +50,15 @@
       "rule": "is_true",
       "description": "known negative controls absent or near-zero",
       "authority_basis": "which genes count as absent is a property of the disease context, and the ceiling they must stay under is declared per project",
-      "forecloses": "treating a gene as a control on a cohort where it is expected to be present, which turns a passing check into evidence of nothing"
+      "forecloses": "treating a gene as a control on a cohort where it is expected to be present, which turns a passing check into evidence of nothing",
+      "unit": "section",
+      "unit_basis": "controls are measured in a sample's own matrix",
+      "aggregation": {
+        "rule": "fraction",
+        "p": 0.9,
+        "p_basis": "same shape, same reason. a control present in a third of sections is not a control.",
+        "p_not_fitted": "a statement about sections in general, not about any cohort. it was NOT chosen to make a recorded verdict reproduce - that would put a cohort measurement inside a package contract and make the acceptance circular."
+      }
     },
     {
       "id": "spatial_autocorrelation",
@@ -54,7 +72,15 @@
       "caution_floor": 0.1,
       "routes": "selects the molecular encoder branch (spatial GNN vs non-spatial)",
       "authority_basis": "no external basis. published spatially-variable-gene work selects by FDR-adjusted p or by rank, not by a raw magnitude bar; multi-sample practice aggregates ranks or combines p-values rather than taking a median; and the cohort-level question this check actually asks - is this dataset structured enough to justify a spatial encoder - has no published precedent at all. the magnitude bar and the k-of-n count are this package's conventions, defensible by argument only",
-      "forecloses": "routing a new cohort's molecular encoder on a magnitude bar tuned somewhere else. this is the one check whose result changes the pipeline's shape rather than its parameters"
+      "forecloses": "routing a new cohort's molecular encoder on a magnitude bar tuned somewhere else. this is the one check whose result changes the pipeline's shape rather than its parameters",
+      "unit": "section",
+      "unit_basis": "Moran's I is computed on one section's lattice",
+      "aggregation": {
+        "rule": "fraction",
+        "p": 0.8,
+        "p_basis": "looser on purpose. Moran's I is measured on one section's own lattice, so a section with few informative spots can fail for geometry rather than biology. the check's inner rule is already 'I above threshold for >= k of the top n markers', so this is a second and weaker screen, across sections rather than within one.",
+        "p_not_fitted": "a statement about sections in general, not about any cohort. it was NOT chosen to make a recorded verdict reproduce - that would put a cohort measurement inside a package contract and make the acceptance circular."
+      }
     },
     {
       "id": "batch_structure",
@@ -65,7 +91,9 @@
       "description": "technical silhouette <= biological silhouette, or both <= 0",
       "technical_silhouette_max": 0.1,
       "authority_basis": "split criterion. the comparative half - technical must not exceed biological - holds anywhere. the absolute floor is a magnitude bar with no external source, so the check as a whole is calibrated",
-      "forecloses": "a cohort with weaker biological separation reading its batch structure as acceptable because the inherited floor happens to sit above it"
+      "forecloses": "a cohort with weaker biological separation reading its batch structure as acceptable because the inherited floor happens to sit above it",
+      "unit": "cohort",
+      "unit_basis": "compares technical against biological silhouette BETWEEN samples - undefined for one"
     },
     {
       "id": "encoder_input_decision",
@@ -79,7 +107,9 @@
         null
       ],
       "description": "encoder input format decided; blocking if unresolved",
-      "authority_basis": "resolved-or-not is a property of the field. the measurement behind it - are the values integer counts - is a property of the matrix, not a threshold. a directory named raw is not evidence anywhere"
+      "authority_basis": "resolved-or-not is a property of the field. the measurement behind it - are the values integer counts - is a property of the matrix, not a threshold. a directory named raw is not evidence anywhere",
+      "unit": "cohort",
+      "unit_basis": "which matrix is raw is a fact about the cohort's files"
     },
     {
       "id": "cross_modal_registration",
@@ -89,7 +119,9 @@
       "field": "cross_modal_registration_pass",
       "rule": "is_true",
       "description": "coordinate correspondence verified between modalities",
-      "authority_basis": "was correspondence verified - a boolean with no threshold behind it"
+      "authority_basis": "was correspondence verified - a boolean with no threshold behind it",
+      "unit": "platform",
+      "unit_basis": "same_section_as_image is declared per PLATFORM, and a cohort may carry several with different answers"
     },
     {
       "id": "model_tissue_fit",
@@ -106,7 +138,9 @@
         "uncertain"
       ],
       "description": "encoder-tissue compatibility documented per encoder",
-      "authority_basis": "the categories are a fixed vocabulary (decisions.md A11), not a measured bar. which category an encoder-tissue pair lands in is cohort-specific; that it must land in one is not"
+      "authority_basis": "the categories are a fixed vocabulary (decisions.md A11), not a measured bar. which category an encoder-tissue pair lands in is cohort-specific; that it must land in one is not",
+      "unit": "platform",
+      "unit_basis": "the encoder-vs-declaration relation is per platform - one status would hide a cohort where an encoder is in class for one platform and out for another"
     },
     {
       "id": "segmentation_qc",
@@ -116,7 +150,12 @@
       "field": "segmentation_qc_pass",
       "rule": "is_true",
       "description": "cell segmentation QC, single-cell-resolution platforms only",
-      "authority_basis": "boolean. the platform-specific minima that would make it calibrated are not declared in this contract"
+      "authority_basis": "boolean. the platform-specific minima that would make it calibrated are not declared in this contract",
+      "unit": "section",
+      "unit_basis": "segmentation quality is a property of one image",
+      "aggregation": {
+        "rule": "all"
+      }
     },
     {
       "id": "multi_section_alignment",
@@ -126,7 +165,9 @@
       "field": "multi_section_alignment_pass",
       "rule": "is_true",
       "description": "inter-section registration, serial sections only",
-      "authority_basis": "boolean. no threshold declared here"
+      "authority_basis": "boolean. no threshold declared here",
+      "unit": "cohort",
+      "unit_basis": "registration BETWEEN sections of a block"
     }
   ],
   "verdict_rule": {
@@ -210,5 +251,26 @@
         "threshold_if_promoted": "the area fraction is cohort_calibrated: it depends on the scanner and the staining batch, and a fraction that is ordinary on one cohort is a rejection on another"
       }
     ]
+  },
+  "units": {
+    "note": "what one answer of a check covers. a closed set - a check that declares none is refused rather than assumed to be cohort-level.",
+    "values": [
+      "section",
+      "platform",
+      "cohort"
+    ],
+    "section": "one sample. the chain runs the check per sample and aggregates by the check's declared rule; the per-sample rows stay in the record.",
+    "platform": "one platform. a cohort may carry several, and collapsing them to one status hides the answer - which is the case a second cohort produces immediately.",
+    "cohort": "the whole cohort, from per-sample results plus declarations. never from a stacked matrix: nothing in this design assembles one."
+  },
+  "aggregation": {
+    "note": "how a SECTION check becomes one status. closed set. platform and cohort checks produce one answer and declare none.",
+    "values": [
+      "all",
+      "fraction"
+    ],
+    "all": "every section must pass",
+    "fraction": "at least p of the sections must pass. p is NOT defaulted - a fraction check with p unset is refused, and the value is set by acceptance against a cohort whose verdict is already recorded.",
+    "coverage_is_the_contracts": "the notebooks define the CHECKS, not the COVERAGE. which markers, Moran's I over the top n, what 'present' means - those come from the analysis. how many sections must agree was never answered there, because the exploratory work looked at one section and generalised by hand. so coverage is the contract's to declare, and p is a package decision with a reason rather than a number read off a notebook."
   }
 }
