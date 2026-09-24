@@ -88,6 +88,9 @@ class OmicstraState(TypedDict, total=False):
     device: str | None       # declared, never probed - planning must work where the
                              # encoder cannot run, so nothing here imports a tensor library
     plan: dict               # what the run will cost, or why that is not sayable yet
+    compute: bool            # False resolves and reports what WOULD run
+    platform: str | None     # whose tile geometry - a cohort may carry several
+    samples: list[str] | None  # an explicit subset, or every ingested sample
     gates: list[dict]
     answers: dict
     report: dict

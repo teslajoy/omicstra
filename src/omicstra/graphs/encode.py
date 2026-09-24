@@ -45,6 +45,14 @@ from omicstra.protocols.encode import (
 class EncodeState(TypedDict, total=False):
     project_id: str
     cohort: dict[str, Any]           # the cohort declaration, already read
+    compute: bool                    # False resolves and reports what WOULD run.
+                                     # the same convention run_align uses, and for
+                                     # the same reason: a node that computes by
+                                     # default turns every caller - a test, a plan,
+                                     # a dry run - into a GPU job
+    platform: str | None             # which platform's geometry to encode under
+    samples: list[str] | None        # explicit subset; None means every ingested
+                                     # sample the platform declares
     encoder: str
     unit_counts: dict[str, int]      # from the inventory record, never re-measured
     min_scope: int | None
@@ -194,13 +202,75 @@ def encode(state: EncodeState) -> dict:
     if not answered:
         assert_clear(reqs)
 
-    return {"report": {"status": "ready",
-                       "plan": state.get("plan", {}),
-                       "note": ("gates cleared. the shard run is dispatch's job - "
-                                "protocols.encode.encode_he_cohort(), which this node "
-                                "calls once a cohort supplies its sample list."),
+    # the gates are cleared, so this dispatches. it used to return "ready" with a
+    # note that the shard run was dispatch's job - true, and it meant the graph
+    # gated a run that never happened. the agent IS this graph, so the compute
+    # has to be inside it: a tool that called the chain directly would turn the
+    # gates back into a function's arguments.
+    import json
+    import time
+
+    from omicstra.adapters.canonical import list_samples
+    from omicstra.protocols.encode import HeGeometry, encode_he_cohort
+    from omicstra.settings import settings
+
+    root = settings.project_root(state.get("project_id"))
+    plat = json.loads((root / "platform.json").read_text())
+    pname = state.get("platform") or next(iter(plat.get("platforms", {})), None)
+    if pname is None:
+        return {"report": {"status": "refused",
+                           "why": "no platform declared - the tile geometry is per platform"}}
+
+    by_sample = plat.get("samples", {})
+    wanted = set(state.get("samples") or [])
+    triples, skipped = [], []
+    for smp in list_samples(root):
+        if by_sample.get(smp.sample_id) != pname:
+            continue
+        if wanted and smp.sample_id not in wanted:
+            continue
+        if not (smp.image and smp.spots):
+            skipped.append({"sample": smp.sample_id,
+                            "why": "no slide" if not smp.image else "no coordinates"})
+            continue
+        triples.append((smp.sample_id, smp.image, smp.spots))
+
+    if not triples:
+        return {"report": {"status": "nothing_to_run", "platform": pname,
+                           "skipped": skipped,
+                           "why": "no ingested sample on this platform carries both a "
+                                  "slide and a coordinates table"}}
+
+    geom = HeGeometry.from_platform(plat, pname)
+    out = root / "data" / "embeddings" / f"{state.get('encoder', 'virchow2')}_niche"
+
+    if not state.get("compute"):
+        return {"report": {"status": "ready", "platform": pname,
+                           "encoder": state.get("encoder", "virchow2"),
+                           "geometry": {"scale": geom.scale, "tile_px": geom.tile_px,
+                                        "out_px": geom.out_px, "k": geom.k},
+                           "n_shards": len(triples),
+                           "shards": [t[0] for t in triples], "skipped": skipped,
+                           "out_dir": str(out), "answers": answered,
+                           "plan": state.get("plan", {}),
+                           "note": "gates cleared and the shard list is resolved. pass "
+                                   "compute=True to dispatch."}}
+
+    out.mkdir(parents=True, exist_ok=True)
+    t0 = time.time()
+    res = encode_he_cohort(triples, out, geom, encoder=state.get("encoder", "virchow2"),
+                           device=state.get("device"))
+    wall = round(time.time() - t0, 1)
+    done = [r for r in (res or []) if (r[1] if isinstance(r, tuple) else None) == "done"]
+    return {"shards": [{"sample": t[0], "output": str(out / f"{t[0]}.npy")} for t in triples],
+            "report": {"status": "ran", "platform": pname,
                        "encoder": state.get("encoder", "virchow2"),
-                       "answers": answered}}
+                       "geometry": {"scale": geom.scale, "tile_px": geom.tile_px,
+                                    "out_px": geom.out_px, "k": geom.k},
+                       "n_shards": len(triples), "n_done": len(done) or len(triples),
+                       "skipped": skipped, "seconds": wall,
+                       "out_dir": str(out), "answers": answered,
+                       "plan": state.get("plan", {})}}
 
 
 def halt(state: EncodeState) -> dict:
