@@ -115,6 +115,8 @@ elif action == "resume":
             break
         time.sleep(0.2)
     print("FINAL " + json.dumps(S.runs_status(sys.argv[3])), flush=True)
+
+elif action == "record":
     print("RECORD " + json.dumps(S.runs_record(sys.argv[3])["records"]), flush=True)
 '''
 
@@ -222,12 +224,20 @@ def test_kill_the_server_and_a_second_process_finishes_the_run(tmp_path):
     assert final["missing"] == []
     assert {f.stem for f in _outputs(root)} == set(SIDS)
 
-    # and the LEDGER says which executor ran it and how it was recovered, not
-    # just the response to the call that did it
+    # and the LEDGER says which executor ran it and how it was recovered. read
+    # from a FOURTH process that wrote none of it, because a record printed by
+    # the call that made it proves only that the call returned a dict - the
+    # question is whether it reached the store. `resumed_by` appears in no JSON
+    # anywhere; the checkpoint is where it lives, and this is what says so.
+    rec = _said(_run(root, ck, "record", rid).stdout, "RECORD")
     kinds = [(d.get("step_id"), d.get("executor"), d.get("resumed_by"))
-             for d in _said(r.stdout, "RECORD") if d.get("kind") == "dispatch"]
+             for d in rec if d.get("kind") == "dispatch"]
     assert ("encode_dispatch", "in_process", None) in kinds
     assert ("encode_resume", "in_process", "re-dispatch") in kinds
+    # the gate answers too: the run was decided by a person, two processes ago
+    human = [d for d in rec if d.get("actor") == "human"]
+    assert human and human[-1]["chosen"]["encoder_compatibility"] == \
+        "proceed_anyway_recorded_as_dissent"
 
 
 def test_the_resume_does_not_redo_what_landed(tmp_path):
