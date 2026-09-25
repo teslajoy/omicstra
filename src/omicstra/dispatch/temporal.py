@@ -28,6 +28,7 @@ is serialised into history, so it has to be JSON, not a Path.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -180,18 +181,52 @@ def build_worker(client, task_queue: str | None = None):
                   workflow_runner=workflow_runner())
 
 
-async def _submit(shards, fn_name, address, namespace, task_queue,
-                  max_attempts, heartbeat_s):
+def workflow_id(shards: list[Shard], fn_name: str = "encode_he") -> str:
+    """the run's name, derived from the work rather than from the clock.
+
+    a DIGEST and not `hash()`. python salts the hash of a str per process, so an
+    id built that way differs between the process that submitted and any process
+    that comes looking for it - which is the entire case this id exists for:
+    after a restart, attaching to the run already in flight instead of starting a
+    second one over the same outputs.
+
+    `fn_name` is in it because the same shard set under a different activity body
+    is different work.
+    """
+    key = fn_name + "\n" + "\n".join(s.id for s in shards)
+    return "omicstra-encode-" + hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
+async def _connect(address, namespace):
     from temporalio.client import Client
 
-    client = await Client.connect(address, namespace=namespace)
+    return await Client.connect(address, namespace=namespace)
+
+
+async def _start(shards, fn_name, address, namespace, task_queue,
+                 max_attempts, heartbeat_s):
+    """hand the work to the scheduler and return the handle. does NOT wait."""
+    from temporalio.common import WorkflowIDConflictPolicy
+
+    client = await _connect(address, namespace)
     specs = [ShardSpec.of(s) for s in shards]
-    # the id is derived from the shard set, so re-submitting the same cohort
-    # attaches to the run already in flight rather than starting a second one.
-    wf_id = "omicstra-encode-" + str(abs(hash(tuple(s.id for s in shards))))
-    return await client.execute_workflow(
+    h = await client.start_workflow(
         EncodeWorkflow.run, args=[specs, fn_name, max_attempts, heartbeat_s],
-        id=wf_id, task_queue=task_queue)
+        id=workflow_id(shards, fn_name), task_queue=task_queue,
+        # ATTACH rather than fail. a resume re-submits the same shard set on
+        # purpose, and the shards it re-submits are idempotent, so the only wrong
+        # outcomes here are a second run writing the same files and a refusal
+        # that a caller would have to special-case. neither is what the caller
+        # asked for, which was "make sure this is running".
+        id_conflict_policy=WorkflowIDConflictPolicy.USE_EXISTING)
+    return h
+
+
+async def _submit(shards, fn_name, address, namespace, task_queue,
+                  max_attempts, heartbeat_s):
+    h = await _start(shards, fn_name, address, namespace, task_queue,
+                     max_attempts, heartbeat_s)
+    return await h.result()
 
 
 def run_shards_durably(shards: list[Shard], fn: ShardFn, *, address: str,
@@ -214,3 +249,53 @@ def run_shards_durably(shards: list[Shard], fn: ShardFn, *, address: str,
     # find that out quietly.
     _refuse_total_failure(report)
     return report
+
+
+def submit_shards_durably(shards: list[Shard], *, address: str,
+                          max_attempts: int = 3, heartbeat_s: int = 30,
+                          fn_name: str = "encode_he") -> dict:
+    """hand the shards to the scheduler and RETURN. no fn, no waiting.
+
+    this is the shape the durable backend was for. `run_shards_durably` submits
+    and then blocks on the result, so a two-hour encode is a two-hour call - and
+    a caller that can hold a connection open for two hours did not need a
+    scheduler. here the history is the handle: the submitting process can exit,
+    be killed, or be a different process next time, and the run continues on
+    whatever worker is polling the queue.
+
+    no `fn` argument, and that is the point rather than an omission. the activity
+    body lives in the WORKER's process - a function is not serialisable, and a
+    submitter that registered one would be implying it is the thing that runs it.
+    what crosses is the shard list and the body's NAME.
+
+    returns the handle, not a report. there are no results yet, and a report with
+    every shard 'pending' invites a caller to read it as an outcome.
+    """
+    h = asyncio.run(_start(shards, fn_name, address, settings.temporal_namespace,
+                           settings.temporal_task_queue, max_attempts, heartbeat_s))
+    return {"backend": f"temporal:{address}", "workflow_id": h.id, "run_id": h.result_run_id,
+            "task_queue": settings.temporal_task_queue, "fn_name": fn_name,
+            "n_shards": len(shards),
+            "note": ("submitted. the history outlives this process, so progress is read "
+                     "from the scheduler or from the output files, not from a return "
+                     "value that does not exist yet.")}
+
+
+async def _describe(workflow_id, address, namespace):
+    client = await _connect(address, namespace)
+    d = await client.get_workflow_handle(workflow_id).describe()
+    return {"workflow_id": workflow_id, "run_id": d.run_id,
+            "status": d.status.name if d.status is not None else "UNKNOWN",
+            "task_queue": d.task_queue,
+            "started_at": d.start_time.isoformat() if d.start_time else None,
+            "closed_at": d.close_time.isoformat() if d.close_time else None}
+
+
+def describe_durable_run(workflow_id: str, *, address: str) -> dict:
+    """what the scheduler says about a run, for a process that did not start it.
+
+    RUNNING here and no output file yet is a queued run with no worker polling,
+    which is a different problem from a stalled shard and reads differently in a
+    status response.
+    """
+    return asyncio.run(_describe(workflow_id, address, settings.temporal_namespace))

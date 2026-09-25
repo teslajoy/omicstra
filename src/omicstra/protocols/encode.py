@@ -830,22 +830,95 @@ def encoder_provenance(device) -> dict:
 
 
 # --- the cohort run: N shards of run_one_he ---------------------------------
-def he_shards(samples, out_dir):
+def he_shards(samples, out_dir, geom: HeGeometry | None = None,
+              encoder: str | None = None, device: str | None = None):
     """one shard per subarray, named by the file that proves it finished.
 
     the output is the `.npy` the next stage reads, which is what makes resume
     free: `dispatch` asks the filesystem, not a ledger, so a run killed at
     sample 200 restarts at 200 whether it was killed by a scheduler, a laptop
     lid, or a SIGKILL.
+
+    the geometry and the encoder go IN THE PARAMS rather than being closed over.
+    a shard that carries them is executable by a process that knows nothing about
+    the cohort, which is what the durable path needs once the submitter is no
+    longer the worker - and it puts the numbers that produced the vectors into
+    the workflow history, where a replay can be checked against them.
     """
+    from dataclasses import asdict
     from pathlib import Path
 
     from omicstra.dispatch import Shard
 
     out = Path(out_dir)
+    extra: dict = {}
+    if geom is not None:
+        extra["geometry"] = asdict(geom)
+    if encoder is not None:
+        extra["encoder"] = encoder
+    if device is not None:
+        extra["device"] = device
     return [Shard(id=sid, output=out / f"{sid}.npy",
-                  params={"image": str(image), "coords": str(coords)})
+                  params={"image": str(image), "coords": str(coords), **extra})
             for sid, image, coords in samples]
+
+
+# one model per (encoder, device) per PROCESS. a 631M-parameter load is ~20 s and
+# a worker that did it per shard would spend an hour doing nothing on a 280-sample
+# cohort. keyed rather than a single slot so a worker serving two queues does not
+# reload on every alternation.
+_MODELS: dict[tuple[str, str], object] = {}
+
+
+def he_shard_body(shard, heartbeat) -> None:
+    """ONE shard of the H&E arm, read entirely from the shard.
+
+    this is the activity body a worker registers. it closes over nothing, so the
+    process that runs it needs no cohort, no platform.json and no geometry of its
+    own - everything it needs crossed in `params`. that is the difference between
+    a durable run and a durable-looking one: with a closure, submit-only would
+    hand the scheduler work that only the submitting process could execute.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from omicstra.dispatch import atomic_write
+
+    p = shard.params
+    if "geometry" not in p or "encoder" not in p:
+        raise KeyError(
+            f"shard {shard.id!r} carries no {'geometry' if 'geometry' not in p else 'encoder'}. "
+            "build shards with he_shards(..., geom=, encoder=) - a worker does not "
+            "guess a tile geometry, and a default would silently produce vectors "
+            "that are not the cohort's.")
+
+    geom = HeGeometry(**p["geometry"])
+    encoder, device = p["encoder"], p.get("device")
+    dev = pick_device(device)
+
+    key = (encoder, str(dev))
+    if key not in _MODELS:
+        from omicstra.models.encoders import load
+
+        m = load(encoder)
+        if hasattr(m, "to"):
+            m = m.to(dev)
+        _MODELS[key] = m
+
+    heartbeat(shard.id)
+    coords = pd.read_parquet(p["coords"])[["x", "y"]].to_numpy()
+    vecs, _ = run_one_he(coords, p["image"], geom, encoder=encoder,
+                         device=str(dev), model=_MODELS[key])
+    heartbeat(f"{shard.id} encoded")
+
+    # a HANDLE, not a path. the temp name keeps the .npy suffix so np.save would
+    # leave it alone anyway, but writing through a handle means this does not
+    # silently depend on that.
+    def save(fp):
+        with fp.open("wb") as fh:
+            np.save(fh, vecs)
+
+    atomic_write(shard.output, save)
 
 
 def encode_he_cohort(samples, out_dir, geom: HeGeometry, *, encoder: str = "virchow2",
@@ -853,36 +926,14 @@ def encode_he_cohort(samples, out_dir, geom: HeGeometry, *, encoder: str = "virc
                      max_attempts: int = 3, on_event=None):
     """embed every subarray, durably if an address is configured.
 
-    the model is loaded ONCE per process and closed over, not per shard: a 631M
-    parameter load is ~20 s and doing it 280 times is an hour of nothing. on the
-    durable path the worker process holds it for the same reason, which is why
-    the activity body is registered rather than serialised.
+    the body is `he_shard_body`, the same function a remote worker registers -
+    not a closure built here. the model is still loaded once per PROCESS rather
+    than per shard (a 631M-parameter load is ~20 s, and 280 of them is an hour of
+    nothing), but the cache lives with the body instead of in this frame, so the
+    in-process and the durable path are the same code rather than two.
     """
-    import numpy as np
-    import pandas as pd
+    from omicstra.dispatch import run_shards
 
-    from omicstra.dispatch import atomic_write, run_shards
-    from omicstra.models.encoders import load
-
-    dev = pick_device(device)
-    model = load(encoder)
-    if hasattr(model, "to"):
-        model = model.to(dev)
-
-    def one(shard, heartbeat):
-        heartbeat(shard.id)
-        coords = pd.read_parquet(shard.params["coords"])[["x", "y"]].to_numpy()
-        vecs, _ = run_one_he(coords, shard.params["image"], geom,
-                             encoder=encoder, device=str(dev), model=model)
-        heartbeat(f"{shard.id} encoded")
-        # a HANDLE, not a path. the temp name now keeps the .npy suffix so
-        # np.save would leave it alone anyway, but writing through a handle means
-        # this does not silently depend on that.
-        def save(p):
-            with p.open("wb") as fh:
-                np.save(fh, vecs)
-
-        atomic_write(shard.output, save)
-
-    return run_shards(he_shards(samples, out_dir), one, address=address,
+    return run_shards(he_shards(samples, out_dir, geom, encoder, device),
+                      he_shard_body, address=address,
                       max_attempts=max_attempts, on_event=on_event)
