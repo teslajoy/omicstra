@@ -178,16 +178,32 @@ match.
 
 both are cohort declarations, not package work. neither is a defect in the port.
 
+- **registration is undeclared, and no cohort here needs it.** both cohorts are
+  same-section - H&E and expression off one 16 um section, so ids line up and the
+  registration error is zero by construction. a cohort with serial sections needs
+  a declared `registration` block: the tool from a closed set, and the error in
+  microns read from that tool's own output rather than computed here. PIVOT
+  (Forjaz et al. 2025, JHU/TBEL) is the one built for cross-assay image +
+  coordinate registration and reports an RMSE per stage, which is the number the
+  join would carry; PASTE/PASTE2 for pairwise ST, SPACEL for a multi-slice stack;
+  STalign and STAligner are imaging-resolution and landmark-sensitive
+  respectively and are not for spot data. the tool RUNS in the cohort's ingest
+  step, outside `src/`, like TRIDENT for pen marks - aware, declared, not
+  reimplemented.
+  **not written, and deliberately not:** the first cohort that needs it is PDAC.
+  a contract block for a cohort that does not exist is the thing this file's
+  rejected list is about. one session started it anyway and it was reverted.
+
 
 ---
 
 ## order, and what each step is accepted on
 
 ```
-0  scope line       this file                                              <- here
-1  commit           ingest_hest image fix
-2  he agent         he.encode -> run_id, runs.status/resume/record
-3  st agent         graphs/st.py over the novae port, st.encode
+0  scope line       this file                                              done
+1  commit           ingest_hest image fix                                  done
+2  he agent         he.encode -> run_id, runs.status/resume/record         done
+3  st agent         graphs/st.py over the novae port, st.encode            <- here
 6  eda acceptance   panels + gene axis declared; tnbc-92 four-way table
 4  downstream       align.run / evaluate.run behind the same run handle
 5  hest pack        promote + report
@@ -253,19 +269,54 @@ landed, verified against a real client over stdio:
   across a restart
 - output is BYTE-IDENTICAL to the same three sections encoded by a script
 
-not landed:
+landed on 25 sep, closing the two gaps above:
 
-- **re-dispatch after a restart.** `runs_resume` on a run with no open gate
-  detects the missing shards and re-enters the graph, but the gates recompute as
-  open - nothing declares them in the cohort - so it stops at the interrupt
-  again instead of dispatching. closing a gate from an answer already recorded on
-  the run is the fix; the first attempt mutated a frozen GateRequest and the
-  second passed `open`, which is a property rather than a field. both reverted.
-  `preflight` has to take the recorded answers, rather than the graph patching
-  its result afterwards.
-- **temporal executor.** `run_shards_durably` submits AND waits, so queueing
-  needs a submit-only variant using start_workflow rather than
-  execute_workflow. not written.
+- **re-dispatch after a restart.** `preflight` takes the run's own answers and
+  closes a gate from a decision already recorded, through the SAME closed option
+  set a declaration faces - membership in `options` is the wrong test alone,
+  because a `value` gate's answer is supplied rather than selected. `source`
+  distinguishes "declared for every run" from "answered on this one". the two
+  earlier attempts patched `preflight`'s RESULT in the graph (one mutated a
+  frozen GateRequest, one passed `open`, which is a property) and both were
+  reverted; the argument had to go in, not the patch come out.
+- **temporal executor.** `submit_shards_durably` uses start_workflow and returns
+  the handle. the encode node picks the executor where the report can name it,
+  and both go in the ledger - `executor` on the dispatch, `resumed_by` on the
+  resume.
+- **a finding while writing it.** the workflow id was `abs(hash(tuple(ids)))`.
+  python salts the hash of a str per process, so the id a later process computed
+  was never the id the submitter wrote - the comment promising that a re-submit
+  attaches to the run in flight was false on any restart. a sha256 digest now,
+  with USE_EXISTING so a resume attaches rather than starting a second run over
+  the same outputs. this is the class of bug the kill test exists to catch, found
+  before the test ran.
+- **the H&E body closes over nothing.** geometry, encoder and device travel in
+  the shard params, so a worker process that knows nothing about the cohort can
+  execute a shard. without it, submit-only hands the scheduler work only the
+  submitting process can run, because `register()` was called by the submitter.
+  verified byte-identical to the declared port slices on three subarrays, cpu,
+  delta 0.0.
 
-so the surface is real and the laptop path runs; the restart story is honest
-about files and checkpoint surviving but is not yet complete for the thread.
+### criterion A, both executors
+
+one test per executor, on a synthetic four-section cohort with a registered
+stand-in encoder. what is under test is the HANDLE; Virchow2 is pinned by the
+slice-diff, and putting it in this test would only make it slow.
+
+| executor | what survives | the recovery |
+|:--|:--|:--|
+| `in_process` | the output files and the checkpoint | SIGKILL mid-shard; a second process reads the missing sections off the filesystem, resumes by run_id alone, finishes, and does not rewrite what landed |
+| `temporal` | the history | the submitter exits at submission having encoded nothing; a worker holding the body by NAME, which never spoke to it, runs the whole cohort |
+
+the gate flow is inside both rather than skipped: the stand-in encoder has no
+established fit, so the run stops at the interrupt, is answered, and the
+re-dispatch after the kill has to find those answers already recorded. that is
+the first bullet above being exercised rather than asserted.
+
+**step 2 is done.**
+
+one thing it broke and fixed: the dispatcher's own kill test appended its progress
+log through a handle it never closed, so SIGKILL could drop the last line and the
+log came back shorter than the set of files that landed - which reads as "the
+resume redid a finished shard" when nothing did. it had always been a flake; the
+load of four new subprocess tests made it show.
