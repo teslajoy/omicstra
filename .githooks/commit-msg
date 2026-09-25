@@ -1,0 +1,21 @@
+#!/bin/sh
+# refuse a commit message that carries tooling or session context.
+#
+# the rule is that a message says what changed in the code and why, and nothing
+# about what was used to write it - private repos included. it is in this file
+# rather than only in a person's head because the trailers get appended by
+# default by some tooling, and four commits went in with them before anyone
+# looked.
+#
+# a genuine mention - a commit that changes a model id, say - goes in with
+# `git commit --no-verify`, deliberately.
+msg="$1"
+hits=$(grep -n -i -E 'co-authored-by:.*(claude|anthropic)|claude-session:|claude\.ai/|generated with .*claude|noreply@anthropic\.com' "$msg")
+if [ -n "$hits" ]; then
+    echo "commit-msg: refused. the message carries tooling or session context:" >&2
+    echo "$hits" >&2
+    echo >&2
+    echo "a commit message is about the code. strip these lines and commit again," >&2
+    echo "or use --no-verify if the mention is genuinely about the code itself." >&2
+    exit 1
+fi

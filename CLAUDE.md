@@ -225,6 +225,11 @@ gives ~400–850 full experiments. track burn rate from experiment 1.
 - virtual environment: `venv/`
 - environment config: `.env` (see `.env.example`)
 - `COMPUTE_BACKEND=local|cloud|slurm`
+- hooks, once per clone: `git config core.hooksPath .githooks`. the `commit-msg`
+  hook refuses a message carrying tooling or session provenance - a commit
+  message is about the code, private repos included. `core.hooksPath` is local
+  config, so a clone that skips this line has no gate; `tests/test_commit_hygiene.py`
+  is what catches the history either way
 
 ---
 
