@@ -29,13 +29,12 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+# one builder, shared with test_encode_graph.py. a second would drift, and these
+# two files assert different things about the same shape.
+from conftest import SECTIONS as SIDS
+from conftest import build_synthetic_cohort
 
-# the cohort comes from conftest, which is also what test_encode_graph.py binds.
-# one builder: a second would drift, and these two tests assert different things
-# about the same shape.
-from conftest import SECTIONS as SIDS  # noqa: E402
-from conftest import build_synthetic_cohort  # noqa: E402
+ROOT = Path(__file__).resolve().parents[1]
 
 SCRIPT = r'''
 import json, os, sys, time
