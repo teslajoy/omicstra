@@ -20,10 +20,20 @@ BARE: dict = {}
 COUNTS = {"big": 1000, "small": 8}
 
 
-def _run(cohort, answer=None, encoder="novae", counts=None, tid="t", device=None):
+def _run(cohort, answer=None, encoder="novae", counts=None, tid="t", device=None,
+         platform=None):
+    """drive the graph once, optionally answering the interrupt.
+
+    `platform` is what makes a `ready` assertion honest in a clone. the node
+    resolves its shards from the BOUND cohort, and the seed cohort's slides and
+    coordinates are git-ignored - so a test that asserted `ready` without owning
+    a cohort was asserting "this machine has 151 GB of data", and failed in every
+    clone. the tests that need a real shard list bind `bound_synthetic_cohort`.
+    """
     app = build_encode_graph(checkpointer=InMemorySaver())
     cfg = {"configurable": {"thread_id": tid}}
     out = app.invoke({"cohort": cohort, "encoder": encoder, "device": device,
+                      "platform": platform,
                       "unit_counts": counts if counts is not None else COUNTS}, cfg)
     if answer is not None and "__interrupt__" in out:
         out = app.invoke(Command(resume=answer), cfg)
@@ -36,10 +46,10 @@ DECLARED = {"encoder_token_source": "env:HF_TOKEN", "encoder_fallback": "uni2",
 
 
 # --- the branch ------------------------------------------------------------
-def test_a_fully_declared_cohort_never_pauses():
+def test_a_fully_declared_cohort_never_pauses(bound_synthetic_cohort):
     """the precondition for an end-to-end run. not the gates being bypassed -
     every one is computed and recorded, with its declaration as provenance."""
-    out = _run(DECLARED, tid="declared")
+    out = _run(DECLARED, tid="declared", platform="synthetic")
     assert "__interrupt__" not in out
     assert out["report"]["status"] == "ready"
     assert not any(g["open"] for g in out["gates"])
@@ -63,9 +73,10 @@ def test_the_payload_names_what_would_pre_answer_each_gate():
 
 
 # --- the answer ------------------------------------------------------------
-def test_a_valid_answer_proceeds_and_is_recorded_as_human():
+def test_a_valid_answer_proceeds_and_is_recorded_as_human(bound_synthetic_cohort):
     out = _run(BARE, answer={"encoder_compatibility": "uni2",
-                             "platform_floor": "drop", "capacity": "d"}, tid="ok")
+                             "platform_floor": "drop", "capacity": "d"}, tid="ok",
+               platform="synthetic")
     assert out["report"]["status"] == "ready"
     assert out["answers"]["platform_floor"] == "drop_below_floor", "shorthand must normalise"
     assert any(r.get("actor") == "human" for r in out["records"])
@@ -123,6 +134,12 @@ def test_the_compute_node_refuses_an_open_gate_even_if_routed_there():
 
 # --- the fixture -----------------------------------------------------------
 def test_tnbc92_runs_the_graph_unattended():
+    """the SEED cohort's own declarations, which nothing synthetic can stand in
+    for - the claim is that this cohort as recorded clears every gate.
+
+    skips where the cohort is absent, which is every clone. that is a real gap in
+    what CI covers and is why the four tests above own a cohort instead.
+    """
     root = ROOT / "projects" / "tnbc-92"
     rec = root / "data" / "canonical" / "ingest.json"
     if not rec.is_file():
@@ -144,17 +161,19 @@ def test_the_person_being_asked_is_told_what_the_run_costs():
     assert v["plan"]["hours"] > 0 and v["plan"]["n_units"] == sum(COUNTS.values())
 
 
-def test_a_run_that_pauses_for_nobody_still_records_what_it_expected_to_cost():
+def test_a_run_that_pauses_for_nobody_still_records_what_it_expected_to_cost(
+        bound_synthetic_cohort):
     """an unattended run leaves the number the next plan is checked against."""
-    out = _run(DECLARED, encoder="virchow2", tid="unattended-cost", device="mps")
+    out = _run(DECLARED, encoder="virchow2", tid="unattended-cost", device="mps",
+               platform="synthetic")
     assert out["report"]["status"] == "ready"
     assert out["report"]["plan"]["hours"] > 0
 
 
-def test_an_unplannable_run_proceeds_and_says_it_was_never_priced():
+def test_an_unplannable_run_proceeds_and_says_it_was_never_priced(bound_synthetic_cohort):
     """no device declared is not a reason to stop a cohort - but it must not read
     as a run whose cost was checked and found acceptable."""
-    out = _run(DECLARED, encoder="virchow2", tid="unpriced")
+    out = _run(DECLARED, encoder="virchow2", tid="unpriced", platform="synthetic")
     assert out["report"]["status"] == "ready"
     assert out["report"]["plan"]["verdict"] == "unknown"
     assert "no device" in out["report"]["plan"]["why_not"]

@@ -31,33 +31,12 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# a cohort with four sections, no counts, and a 1-pixel "slide" each. the encoder
-# is registered by the script rather than shipped, which is also the thing the
-# registry exists for - a third party adds one without editing the package.
-COHORT = {
-    "project_id": "kill-test",
-    "platform": "synthetic",
-    "k_neighbors": 6,
-    "seed": 42,
-    "split": "patient",
-    "subject_id_column": "patient_id",
-    "encoders": [],
-    "supervision": [],
-}
-PLATFORM = {
-    "platforms": {
-        "synthetic": {
-            "image_pyramid": {"scale_to_hd": 1.0, "basis": "synthetic"},
-            "he_tile": {"tile_um": 100.0, "tile_px_hd": 8, "resize_to": 8,
-                        "basis": "synthetic"},
-        }
-    },
-    "samples": {},
-}
+# the cohort comes from conftest, which is also what test_encode_graph.py binds.
+# one builder: a second would drift, and these two tests assert different things
+# about the same shape.
+from conftest import SECTIONS as SIDS  # noqa: E402
+from conftest import build_synthetic_cohort  # noqa: E402
 
-SIDS = [f"sec{i}" for i in range(4)]
-
-# the run script. one process = one server's lifetime.
 SCRIPT = r'''
 import json, os, sys, time
 from pathlib import Path
@@ -122,33 +101,7 @@ elif action == "record":
 
 
 def _cohort(tmp_path: Path) -> Path:
-    """a canonical cohort on disk: declarations, coordinates, a slide each."""
-    import numpy as np
-    import pandas as pd
-    from PIL import Image
-
-    root = tmp_path / "kill-test"
-    canon = root / "data" / "canonical"
-    canon.mkdir(parents=True)
-    imgs = root / "images"
-    imgs.mkdir()
-
-    (root / "project.json").write_text(json.dumps(COHORT))
-
-    rng = np.random.default_rng(0)
-    for sid in SIDS:
-        xy = rng.integers(8, 56, size=(12, 2))
-        pd.DataFrame({"spot_id": [f"{sid}_{i}" for i in range(12)],
-                      "x": xy[:, 0].astype(float),
-                      "y": xy[:, 1].astype(float)}).to_parquet(canon / f"{sid}_spots.parquet")
-        Image.fromarray(rng.integers(0, 255, (64, 64, 3), dtype="uint8")).save(imgs / f"{sid}.png")
-
-    plat = json.loads(json.dumps(PLATFORM))
-    plat["samples"] = {sid: "synthetic" for sid in SIDS}
-    (root / "platform.json").write_text(json.dumps(plat))
-    (canon / "ingest.json").write_text(json.dumps(
-        {"samples": SIDS, "images": {sid: str(imgs / f"{sid}.png") for sid in SIDS}}))
-    return root
+    return build_synthetic_cohort(tmp_path)
 
 
 def _env(root: Path, ck: Path, temporal: str = "") -> dict:
