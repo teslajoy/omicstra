@@ -187,7 +187,11 @@ def fn(s, hb):
         time.sleep(0.35)                       # wide enough to be killed inside
         p.write_text(s.id)
     atomic_write(s.output, write)
-    (d / "progress.log").open("a").write(s.id + "\n")
+    # CLOSED, not left to the collector. an unflushed append is lost to SIGKILL,
+    # and then the log is shorter than the set of files that landed - which reads
+    # downstream as "the resume redid a finished shard" when nothing did.
+    with (d / "progress.log").open("a") as fh:
+        fh.write(s.id + "\n")
 
 run_shards_locally(shards, fn)
 (d / "FINISHED").write_text("ok")

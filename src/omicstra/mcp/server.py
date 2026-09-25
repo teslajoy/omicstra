@@ -736,7 +736,20 @@ def runs_resume(run_id: str, answers: dict | None = None,
                    if not (Path(d["output"]).exists()
                            and Path(d["output"]).stat().st_size > 0)]
         if missing:
-            out = app.invoke({**v, "compute": True}, cfg)
+            # the ledger's copy, written as part of the re-entry rather than
+            # beside it. the response says what happened to the caller; the
+            # record says it to whoever reads the checkpoint next, which after
+            # two restarts is the only account of how the run got finished.
+            #
+            # it goes in the INPUT and not through update_state: `records` has no
+            # reducer, so the invoke's own input would overwrite a separate write
+            # and the resume would leave no trace.
+            recs = [*(v.get("records") or []),
+                    {"step_id": "encode_resume", "kind": "dispatch", "status": "pass",
+                     "actor": "system", "resumed_by": "re-dispatch",
+                     "re_dispatched": [d["sample"] for d in missing],
+                     "executor": (v.get("report") or {}).get("executor")}]
+            out = app.invoke({**v, "records": recs, "compute": True}, cfg)
             r = _handle(app, run_id, out)
             r["resumed_by"] = "re-dispatch"
             r["re_dispatched"] = [d["sample"] for d in missing]

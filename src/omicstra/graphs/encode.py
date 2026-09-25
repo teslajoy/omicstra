@@ -280,23 +280,55 @@ def encode(state: EncodeState) -> dict:
     # which one it is rather than letting them blur.
     import threading
 
+    from omicstra.protocols.encode import he_shards
+    from omicstra.settings import settings as _s
+
     pending = [t for t in triples if not (out / f"{t[0]}.npy").exists()]
+    enc, dev = state.get("encoder", "virchow2"), state.get("device")
     t0 = time.time()
 
-    def _work():
-        encode_he_cohort(pending, out, geom, encoder=state.get("encoder", "virchow2"),
-                         device=state.get("device"))
+    # WHICH executor is decided here, not inside the encode, because the report
+    # has to name it and the two make different promises. in-process: the files
+    # and the checkpoint survive a restart, the thread does not. durable: the
+    # history survives, and a worker that never met this process finishes the run.
+    if _s.temporal_address:
+        from omicstra.dispatch import assert_writable
+        from omicstra.dispatch.temporal import submit_shards_durably
 
-    threading.Thread(target=_work, daemon=True,
-                     name=f"encode-{state.get('project_id') or 'cohort'}").start()
+        sh = he_shards(pending, out, geom, enc, dev)
+        assert_writable(sh, state.get("project_id"))
+        handle = submit_shards_durably(sh, address=_s.temporal_address)
+        executor, note = "temporal", (
+            "the scheduler holds the run. this process may exit - the history "
+            "outlives it and any worker polling the queue finishes the shards.")
+    else:
+        def _work():
+            encode_he_cohort(pending, out, geom, encoder=enc, device=dev)
+
+        threading.Thread(target=_work, daemon=True,
+                         name=f"encode-{state.get('project_id') or 'cohort'}").start()
+        handle, executor, note = {}, "in_process", (
+            "a thread keyed by the run handle. the files and the checkpoint "
+            "survive a restart; the thread does not, and runs_resume "
+            "re-dispatches the shards still missing.")
+
     wall = round(time.time() - t0, 1)
     return {"shards": [{"sample": t[0], "output": str(out / f"{t[0]}.npy")} for t in triples],
+            # the ledger's copy. the report is the response to THIS call; the
+            # record is what a later process reads out of the checkpoint, and
+            # which executor ran a shard is the first thing a resume needs to
+            # know - re-dispatching a thread and re-attaching to a workflow are
+            # not the same recovery.
+            "records": [*state.get("records", []),
+                        {"step_id": "encode_dispatch", "kind": "dispatch", "status": "pass",
+                         "actor": "system", "executor": executor,
+                         "n_shards": len(triples), "n_pending": len(pending),
+                         "out_dir": str(out), "encoder": enc,
+                         **({"durable": handle} if handle else {})}],
             "report": {"status": "submitted", "platform": pname,
-                       "executor": "in_process",
-                       "executor_note": ("a thread keyed by the run handle. the files and "
-                                         "the checkpoint survive a restart; the thread "
-                                         "does not, and runs_resume re-dispatches the "
-                                         "shards still missing."),
+                       "executor": executor,
+                       "executor_note": note,
+                       **({"durable": handle} if handle else {}),
                        "n_pending": len(pending),
                        "n_already": len(triples) - len(pending),
                        "max_concurrent_tasks": (state.get("plan") or {}).get(
