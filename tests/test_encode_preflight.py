@@ -302,3 +302,47 @@ def test_the_contract_states_the_rule_a_future_gate_author_needs():
     rule = contract()["gate_schema"]["options_are_closed_on_both_paths"]
     assert {"rule", "why", "shorthand", "value_gates", "for_a_new_gate"} <= set(rule)
     assert "_resolve_option" in rule["enforced_by"]
+
+
+# --- an answer already taken on this run -------------------------------------
+def test_an_answer_recorded_on_this_run_closes_its_gate():
+    """the gate asks whether a decision EXISTS, not whether it was made recently.
+
+    without this, re-entering the graph to finish a run whose worker died
+    reopens every gate and stops at the interrupt again - a run could be
+    answered by a person and still never complete.
+    """
+    reqs = {r.id: r for r in preflight(BARE, "virchow2",
+                                      answers={"encoder_compatibility": "uni2"})}
+    ec = reqs["encoder_compatibility"]
+    assert ec.open is False
+    assert ec.answer == "uni2"
+    assert ec.source == "answered on this run", "declared and answered must not read alike"
+    assert reqs["capacity"].open, "one answer closes one gate"
+
+
+def test_a_declaration_wins_over_an_answer_on_the_run():
+    cohort = dict(BARE, encoder_token_source="env:HF_TOKEN")
+    gw = next(r for r in preflight(cohort, "virchow2",
+                                  answers={"gated_weights": "env:OTHER"})
+              if r.id == "gated_weights")
+    assert gw.answer == "env:HF_TOKEN"
+    assert gw.source == "cohort.json#encoder_token_source"
+
+
+def test_an_answer_off_the_option_set_leaves_its_gate_open():
+    """the run's answers face the SAME closed set a declaration faces. a value
+    nobody was offered is not an answer, and a gate it 'closed' would be a gate
+    compute walked through on a string.
+    """
+    reqs = {r.id: r for r in preflight(BARE, "novae", unit_counts={"tiny": 3},
+                                       answers={"platform_floor": "keep_them"})}
+    pf = reqs["platform_floor"]
+    assert pf.open is True
+    assert pf.answer is None
+
+
+def test_a_shorthand_answer_on_the_run_normalises_like_a_declaration():
+    reqs = {r.id: r for r in preflight(BARE, "novae", unit_counts={"tiny": 3},
+                                       answers={"platform_floor": "drop"})}
+    assert reqs["platform_floor"].answer == "drop_below_floor"

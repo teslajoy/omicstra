@@ -84,12 +84,14 @@ def gates(state: EncodeState) -> dict:
     branch below and the interrupt payload read the same thing.
     """
     cohort, encoder = state.get("cohort", {}), state.get("encoder", "virchow2")
+    # the run's own answers go IN, so a gate answered earlier on this run comes
+    # back closed. re-entering the graph to re-dispatch missing shards would
+    # otherwise reopen every gate and stop at the interrupt again, and a run
+    # whose worker died could never finish - the answers were recorded, and
+    # asking twice is not a safety property.
     reqs = preflight(cohort, encoder, unit_counts=state.get("unit_counts"),
-                     min_scope=state.get("min_scope"), device=state.get("device"))
-    # an answer already recorded on this run CLOSES its gate. re-entering the
-    # graph to re-dispatch missing shards would otherwise reopen every gate and
-    # stop at the interrupt again, so a run whose thread died could never finish
-    # - the answers were recorded, and asking twice is not a safety property.
+                     min_scope=state.get("min_scope"), device=state.get("device"),
+                     answers=state.get("answers"))
     rec = gate_record(reqs, encoder)
     # the price, computed whether or not anyone is asked. a run that clears every
     # gate unattended should still leave behind what it expected to cost, because
@@ -198,9 +200,14 @@ def encode(state: EncodeState) -> dict:
     """
     reqs = preflight(state.get("cohort", {}), state.get("encoder", "virchow2"),
                      unit_counts=state.get("unit_counts"),
-                     min_scope=state.get("min_scope"))
+                     min_scope=state.get("min_scope"),
+                     answers=state.get("answers"))
     answered = state.get("answers", {})
-    still_open = [r for r in reqs if r.open and r.id not in answered]
+    # preflight has already closed what the answers cover, so `open` is the whole
+    # test. checking `id not in answered` as well would let a value that is not
+    # one of the gate's options read as an answer, which is the one case this
+    # refusal exists for.
+    still_open = [r for r in reqs if r.open]
     if still_open:
         raise ComputeRefused(f"reached compute with {[r.id for r in still_open]} open")
     if not answered:

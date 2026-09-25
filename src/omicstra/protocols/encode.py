@@ -130,12 +130,23 @@ def _resolve_option(value, options: tuple[str, ...], gate_id: str,
 
 
 def preflight(cohort: dict, encoder: str, *, unit_counts: dict[str, int] | None = None,
-              min_scope: int | None = None, device: str | None = None) -> list[GateRequest]:
+              min_scope: int | None = None, device: str | None = None,
+              answers: dict[str, str] | None = None) -> list[GateRequest]:
     """every preflight gate, resolved as far as the declarations allow.
 
     deterministic and side-effect free: same cohort and same counts give the same
     list. it reads the inventory's counts rather than re-measuring them - the
     platform_floor gate's own contract entry says it re-asks nothing.
+
+    `answers` are decisions already taken ON THIS RUN - a person answered the
+    interrupt, and the answer is in the record. they resolve a gate the same way
+    a declaration does, and for the same reason: the gate asks whether a decision
+    exists, not whether it was made recently. without this, re-entering the graph
+    to finish a run whose worker died reopens every gate and stops at the
+    interrupt again, so a run could be answered and still never complete.
+
+    a declaration wins where both exist. `source` says which resolved it, so
+    "declared for every run" and "answered on this one" never read alike.
 
     `device` is what turns capacity from a declared value into a checked one. it
     is a parameter rather than a probe because probing it needs a tensor library,
@@ -215,12 +226,25 @@ def preflight(cohort: dict, encoder: str, *, unit_counts: dict[str, int] | None 
                             f"the plan says {plan['verdict']}, so this is re-asked")}
                 answer = None
 
+        source = g.get("pre_answerable_by") if answer is not None else None
+        if answer is None and g["id"] in (answers or {}):
+            # the run's own answer faces the SAME resolver a declaration faces.
+            # membership in `options` is the wrong test on its own: a `value`
+            # gate's answer is supplied rather than selected, so a token source
+            # or an output path is never in the list.
+            try:
+                answer = _resolve_option(answers[g["id"]], tuple(g["options"]),
+                                         g["id"], g.get("answer_kind", "choice"))
+            except ValueError:
+                answer = None  # not one of the options, so not an answer
+            else:
+                source = "answered on this run" if answer is not None else None
+
         out.append(GateRequest(
             id=g["id"], when=g["when"], question=g["question"],
             options=tuple(g["options"]), forecloses=g["forecloses"],
             pre_answerable_by=g.get("pre_answerable_by"),
-            answer=answer,
-            source=g.get("pre_answerable_by") if answer is not None else None,
+            answer=answer, source=source,
             observed=observed or None))
     return out
 
