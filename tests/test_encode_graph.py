@@ -139,11 +139,17 @@ def test_tnbc92_runs_the_graph_unattended():
 
     skips where the cohort is absent, which is every clone. that is a real gap in
     what CI covers and is why the four tests above own a cohort instead.
+
+    the guard asks for a COORDINATES TABLE, not for ingest.json. ingest.json is
+    committed - it is the record - while the parquet and the slides beside it are
+    git-ignored, so guarding on the record let this run in a clone with no data
+    under it and assert `ready` against a shard list that was correctly empty.
+    guard on what the assertion needs, not on what happens to be tracked.
     """
     root = ROOT / "projects" / "tnbc-92"
     rec = root / "data" / "canonical" / "ingest.json"
-    if not rec.is_file():
-        pytest.skip("no canonical ingest on this machine")
+    if not (rec.is_file() and any((root / "data" / "canonical").glob("*_spots.parquet"))):
+        pytest.skip("no canonical coordinates on this machine")
     counts = {s: v["n_spots"] for s, v in json.loads(rec.read_text())["sources"].items()}
     cohort = json.loads((root / "cohort.json").read_text())
     for enc in ("virchow2", "novae"):
