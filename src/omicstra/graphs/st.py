@@ -1,30 +1,15 @@
 """LEVEL 1: the ST gate. its own graph, not a switch on the H&E one.
 
-a generic `run_encode(modality=...)` was rejected for a reason that is visible
-here: the two arms ask genuinely different questions. the H&E arm asks about
-gated weights and a tile geometry; this one asks whether a section clears the
-encoder's prototype floor, and refuses outright when the edge scale or the gene
-axis is undeclared. one tool would hide the thing each agent exists to ask.
+the arms ask different questions - gated weights and a tile geometry against a
+prototype floor and an edge scale - so one tool would hide what each agent
+exists to ask. shared: `gates`/`ask`/`halt` (generic; preflight decides
+applicability from the contract) and `submit.dispatch` (both arms make the same
+recovery promises). not shared: this compute node.
 
-what is SHARED is the shape, and only where sharing hides nothing:
-
-  gates / ask / halt   from `graphs.encode`. the node is generic - it calls
-                       preflight with this arm's encoder, and preflight decides
-                       applicability from the contract. the gate SET differs
-                       because the encoder differs, not because the node does
-  submit.dispatch      the executor choice, the handover and the ledger record.
-                       both arms make the same two promises about recovery, and a
-                       fix to one executor must not miss the other arm
-
-what is NOT shared is this module's compute node, which resolves an edge scale
-and a gene axis - neither of which exists on the H&E side.
-
-two REFUSALS rather than gates, and the distinction is deliberate. a gate is a
-question with a closed set of answers and a person to ask. an undeclared
-`scale_to_microns` and an undeclared `gene_axis` are not questions: there is no
-option list, only a value nobody has stated, and the only defaults available are
-Novae's 1.0 (pixels read as microns) and "guess the identifier space". Both would
-produce vectors that look fine and are not the cohort's.
+the edge scale and the gene axis are REFUSALS, not gates. a gate has a closed
+option set and someone to ask; an unstated value has neither, and its only
+defaults are novae's scale_to_microns=1.0 (pixels read as microns) and a guessed
+identifier space. both embed noise that looks like signal.
 """
 from __future__ import annotations
 
@@ -44,9 +29,8 @@ from omicstra.protocols.encode import ComputeRefused, assert_clear, preflight
 def st(state: EncodeState) -> dict:
     """the ST compute. refuses if anything upstream left a gate open.
 
-    the refusal is belt and braces on purpose: the routing should make it
-    unreachable, and a compute path that trusts its own routing is one edit away
-    from embedding a cohort at the wrong edge scale.
+    belt and braces: the routing makes it unreachable, and a compute path that
+    trusts its own routing is one edit from the wrong edge scale.
     """
     import json
 
@@ -102,11 +86,10 @@ def st(state: EncodeState) -> dict:
             skipped.append({"sample": sid,
                             "why": "no counts" if not smp.counts else "no coordinates"})
             continue
-        # BOTH are resolved per sample, and for the same reason. the edge scale is
-        # measured per section on one cohort; the gene axis is a per-section FACT
-        # the ingest observed, and a cohort that pools studies carries more than
-        # one - so a section the declarations cannot reach is skipped with its
-        # reason rather than failing the run or borrowing another section's.
+        # both per sample: the edge scale is measured per section on one cohort,
+        # the gene axis is observed per section on a pooled one. a section the
+        # declarations cannot reach is skipped naming what is missing - never
+        # borrowing another section's value.
         try:
             graphs[sid] = StGraph.from_platform(plat, pname, sid)
         except ValueError as e:
@@ -138,8 +121,8 @@ def st(state: EncodeState) -> dict:
     one = graphs[first]
     declared = {"platform": pname, "st_graph": one.method,
                 "radius_cap_px": one.radius_cap_px,
-                # SETS, because a per-sample cohort has no single value and a
-                # report naming one would be naming an arbitrary section's.
+                # sets: a per-sample cohort has no single value, and naming one
+                # would name an arbitrary section's.
                 "scale_to_microns": scales[0] if len(scales) == 1 else scales,
                 "scale_is_per_sample": len(scales) > 1,
                 "gene_axis_route": routes[0] if len(routes) == 1 else routes,

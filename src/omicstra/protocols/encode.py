@@ -855,32 +855,22 @@ def encoder_provenance(device) -> dict:
 # --- ST: the gene axis, then one subarray ------------------------------------
 @dataclass(frozen=True)
 class GeneAxis:
-    """how one section's counts reach the gene axis its encoder was built on.
+    """route from a section's gene identifiers to the encoder's.
 
-    THREE facts, and each lives in exactly one place. an earlier version of this
-    class asked the cohort to declare all three, which got `have` wrong for 68 of
-    108 sections of the second cohort - a fact was being asserted where it should
-    have been read.
+    ids are not stable labels: HGNC renames a few percent of symbols a year and
+    an ENSG version increments when the gene's structure changes, so the field
+    stores Ensembl and displays symbols. novae inverts that - zero-shot resolves
+    var_names against a symbol vocabulary - so the mapping release sets how much
+    transcriptome the model sees (85% of tnbc-92 at the declared release).
 
-        have   which identifier space THIS SECTION is indexed by.
-               OBSERVED. `scripts/ingest_*.py` sees the native file and writes it
-               to ingest.json#counts.<id>.gene_id. it is per SAMPLE, not per
-               cohort: a cohort that pools studies can be mixed, and the second
-               one is - 68 Ensembl, 40 symbols, in one platform.
-        want   which space the ENCODER needs. `EncoderSpec.gene_axis`, a fact
-               about the weights. novae-human-0 matches var_names against a
-               symbol vocabulary and asserts "Too few genes (0) are known" on an
-               Ensembl index, which is how the mixed cohort surfaced.
-        map    WHICH ANNOTATION RELEASE gets from one to the other, and what to
-               do with duplicates and misses. genuinely DECLARED, because the
-               release is a choice - `ingest_wang.py` refuses to map at ingest
-               for exactly this reason: "mapping here would bake one annotation
-               release into the artifact".
+    three facts, one home each:
+      have   OBSERVED per section, ingest.json#counts.<id>.gene_id
+      want   EncoderSpec.gene_axis
+      map    cohort.json#gene_mapping - the release, a choice
 
-    `strip_version` is DERIVED, not declared. the ingest already distinguishes
-    `ensembl_versioned` from `ensembl`, so whether to cut at the dot follows from
-    the record and the table's key space. a declaration for it would be a third
-    chance to disagree with two facts.
+    declaring `have` cost 68 of hest's 108 sections: it pools three studies, 40
+    on symbols and 68 on Ensembl, and the cohort-level claim was wrong for the
+    majority. strip_version is derived from `have`, not declared.
     """
     have: str
     want: str
@@ -888,6 +878,7 @@ class GeneAxis:
     duplicates: str
     strip_version: bool
     unmapped: str
+    map_sha256_16: str | None = None
 
     _DUPLICATES = ("sum", "mean", "first")
     _UNMAPPED = ("drop", "keep")
@@ -895,26 +886,20 @@ class GeneAxis:
     @classmethod
     def resolve(cls, cohort: dict, *, want: str, observed: str | None,
                 root: Path | None = None) -> GeneAxis:
-        """the declared mapping, resolved against what this section actually has.
+        """resolve the declared mapping against what this section has.
 
-        `observed` comes from the ingest record - see
-        `adapters.canonical.observed_gene_id`. None is refused rather than
-        assumed: "the ingest did not record it" is not "it is on symbols".
+        None is refused: "not recorded" is not "on symbols".
         """
         if observed is None:
             raise ValueError(
-                "the ingest did not record which gene identifier space this "
-                "section's counts are indexed by, so the mapping onto the "
-                f"encoder's {want!r} axis cannot be resolved. "
-                "scripts/ingest_<cohort>.py writes this per sample as "
-                "ingest.json#counts.<id>.gene_id - re-run it for this cohort. it "
-                "is not assumed here: a cohort that pools studies can carry both "
-                "spaces at once, and guessing would embed noise silently.")
+                f"no recorded gene identifier space for this section, so the route "
+                f"to the encoder's {want!r} axis is unresolvable. "
+                "scripts/ingest_<cohort>.py writes ingest.json#counts.<id>.gene_id "
+                "per sample - re-run it. not assumed: a pooled cohort carries both "
+                "spaces, and a wrong guess embeds noise silently.")
 
         if observed == want:
-            # already on the encoder's axis. nothing is mapped, collapsed or
-            # dropped, so there is no policy to declare and requiring one would
-            # be a question with a single answer.
+            # nothing mapped, so no policy to declare
             return cls(have=observed, want=want, map_path=None, duplicates="n/a",
                        strip_version=False, unmapped="n/a")
 
@@ -922,32 +907,28 @@ class GeneAxis:
         d = d if isinstance(d, dict) else {}
         if not d:
             raise ValueError(
-                f"this section is indexed by {observed!r} and the encoder needs "
-                f"{want!r}, and the cohort declares no gene_mapping. declare "
-                'gene_mapping: {map, map_key, map_value, duplicates, unmapped} in '
-                "cohort.json. the annotation release is a CHOICE, which is why the "
-                "ingest deliberately does not bake one in.")
+                f"section is {observed!r}, encoder needs {want!r}, cohort declares no "
+                'gene_mapping. declare {map, map_key, map_value, duplicates, unmapped} '
+                "in cohort.json - the release is a choice, which is why the ingest "
+                "does not bake one in.")
 
         key, value = str(d.get("map_key") or ""), str(d.get("map_value") or "")
         if value != want:
             raise ValueError(
-                f"gene_mapping.map_value={value!r} but the encoder needs {want!r}. "
-                "the table does not lead where this encoder has to go.")
+                f"gene_mapping.map_value={value!r}, encoder needs {want!r}: the table "
+                "does not lead where this encoder goes.")
         if observed not in (key, f"{key}_versioned"):
             raise ValueError(
-                f"this section is indexed by {observed!r} and gene_mapping is keyed "
-                f"on {key!r}, so the declared table cannot map it. a cohort with "
-                "sections in more than one space needs a table per space, and the "
-                "sections it does not cover are skipped with this reason.")
+                f"section is {observed!r}, gene_mapping is keyed on {key!r}: this table "
+                "cannot map it. a cohort spanning two spaces needs a table per space; "
+                "uncovered sections are skipped naming this.")
 
         dup, un = str(d.get("duplicates") or ""), str(d.get("unmapped") or "")
         if dup not in cls._DUPLICATES:
             raise ValueError(
                 f"gene_mapping.duplicates must be one of {list(cls._DUPLICATES)}, got "
-                f"{dup!r}. mapping {observed} onto {want} collapses several ids onto "
-                "one name, and sum, mean and first are three different matrices. the "
-                "cached embeddings were built by summing; declare it rather than "
-                "inheriting it.")
+                f"{dup!r}. {observed}->{want} collapses ids onto one name; sum, mean and "
+                "first are three different matrices and the cache holds one of them.")
         if un not in cls._UNMAPPED:
             raise ValueError(
                 f"gene_mapping.unmapped must be one of {list(cls._UNMAPPED)}, got {un!r}.")
@@ -960,38 +941,36 @@ class GeneAxis:
             path = (root / path).resolve()
 
         return cls(have=observed, want=want, map_path=path, duplicates=dup,
-                   # derived: the record says versioned, the table is keyed plain
-                   strip_version=observed.endswith("_versioned"), unmapped=un)
+                   strip_version=observed.endswith("_versioned"), unmapped=un,
+                   map_sha256_16=d.get("map_sha256_16"))
 
     def params(self) -> dict:
-        """what the record carries. two sections on different axes must not read
-        alike, and a run that changed `duplicates` is a different run."""
+        """the record's copy: two sections on different axes must not read alike."""
         return {"gene_axis_have": self.have, "gene_axis_want": self.want,
                 "gene_axis_observed_from": "ingest.json#counts.<id>.gene_id",
                 "gene_axis_duplicates": self.duplicates,
                 "gene_axis_strip_version": self.strip_version,
                 "gene_axis_unmapped": self.unmapped,
-                "gene_axis_map": None if self.map_path is None else self.map_path.name}
+                "gene_axis_map": None if self.map_path is None else self.map_path.name,
+                # the table's identity, because its release is unrecorded: 3,369
+                # symbols in it are reached by >1 id, and which ids collapse moves
+                # with the release, so a different table is a different matrix
+                # under duplicates=sum.
+                "gene_axis_map_sha256_16": self.map_sha256_16}
 
     def is_identity(self) -> bool:
         return self.have == self.want
 
 
 def apply_gene_axis(adata, axis: GeneAxis):
-    """move the counts matrix onto the encoder's gene axis. declared, in order.
+    """counts onto the encoder's gene axis.
 
-    the order is the published one and is not an implementation detail: strip the
-    version, map, drop what did not map, THEN combine duplicates. combining before
-    mapping would sum genes that are not synonyms.
+    ORDER is the published one: strip version, map, drop misses, THEN combine.
+    combining first would sum genes that are not synonyms.
 
-    the combine is a SPARSE MATRIX PRODUCT, not a groupby. `X @ M` with a 0/1
-    indicator M is the same arithmetic on integer counts and it is not close in
-    cost - the first version used
-    `DataFrame.sparse.from_spmatrix(...).T.groupby(level=0).sum().T`, which is the
-    literal shape of the oracle's line and took minutes per section. at 280
-    sections that is a day of wall clock to rearrange columns. the column order is
-    the sorted unique target names, which is what a groupby produces, so the two
-    agree element for element.
+    the combine is `X @ M` with a 0/1 indicator, not a groupby. same arithmetic,
+    same sorted column order, 0.07 s against minutes per section - the oracle's
+    literal `.T.groupby(level=0).sum().T` is a day of wall clock over 280.
     """
     import numpy as np
     import pandas as pd
@@ -1004,6 +983,15 @@ def apply_gene_axis(adata, axis: GeneAxis):
     import anndata as ad
     from scipy.sparse import coo_matrix
 
+    if axis.map_sha256_16:
+        import hashlib
+
+        got = hashlib.sha256(axis.map_path.read_bytes()).hexdigest()[:16]
+        if got != axis.map_sha256_16:
+            raise ValueError(
+                f"{axis.map_path.name} hashes {got}, declared {axis.map_sha256_16}. "
+                "the table's release is unrecorded, so the SHA is its identity - a "
+                "different table collapses a different set of ids onto each symbol.")
     tbl = pd.read_csv(axis.map_path, sep="\t")
     m = dict(zip(tbl.iloc[:, 0].astype(str), tbl.iloc[:, 1].astype(str)))
 
@@ -1030,12 +1018,10 @@ def apply_gene_axis(adata, axis: GeneAxis):
                 firsts[tgt] = src
         Y = X[:, firsts]
     else:
-        # the indicator carries the COUNTS' OWN DTYPE, and that is not cosmetic.
-        # float64 ones upcast an int32 matrix, and the encoder's own
-        # normalize_total/log1p then run at a different precision - which reached
-        # the embeddings as a 4.8e-07 disagreement with the cache. a sum of small
-        # integers is exact in float64, so the arithmetic was right and the TYPE
-        # was the defect. sum in the type the counts arrived in.
+        # sum in the counts' own dtype. float64 ones upcast int32, and novae's
+        # normalize_total/log1p then run at a different precision - 4.8e-07 off
+        # the cache, with the arithmetic exact throughout. a type defect that
+        # reads as float noise.
         dt = X.dtype if axis.duplicates == "sum" else np.float64
         ind = coo_matrix((np.ones(len(inverse), dtype=dt), (np.arange(len(inverse)), inverse)),
                          shape=(len(inverse), len(targets)), dtype=dt).tocsr()
@@ -1056,21 +1042,15 @@ def apply_gene_axis(adata, axis: GeneAxis):
 
 def run_one_st(counts_path, coords, graph: StGraph, axis: GeneAxis,
                encoder: str = "novae", model=None):
-    """one subarray of counts + coordinates -> (n, dim) spot vectors, plus a record.
+    """one section -> (n, dim) spot vectors + a record. no cohort in it.
 
-    the whole ST arm for one section, and nothing cohort-specific in it: the
-    caller supplies a counts file, coordinates, a declared graph and a declared
-    gene axis. the ORDER is the published one -
+    published order: gene axis -> spatial -> neighbours -> zero-shot.
 
-        gene axis -> spatial -> neighbours -> zero-shot representations
-
-    `spatial_neighbors` runs BEFORE the scale is applied, and that is not an
-    accident of sequencing. novae reads `scale_to_microns` in exactly two places
-    (`utils/_validate.py` for a plausibility check and `data/dataset.py` for the
-    edge feature), both inside `compute_representations` - the Delaunay topology
-    is scale-invariant and the edge features are not. so the graph is built once
-    and the scale belongs to the embed call, which is where the encoder wrapper
-    sets and restores it.
+    neighbours are built BEFORE the scale is applied. novae reads
+    scale_to_microns only in utils/_validate.py and data/dataset.py, both inside
+    compute_representations, so Delaunay topology is scale-invariant and the edge
+    features are not - the scale belongs to the embed call, which sets and
+    restores it.
     """
     import time
 
@@ -1239,10 +1219,8 @@ def st_shards(samples, out_dir, graph: StGraph | dict, axis: GeneAxis | dict,
               encoder: str = "novae"):
     """one shard per section, named by the file that proves it finished.
 
-    `samples` are (sample_id, counts_path, coords_path) triples. the graph and the
-    gene axis go in the PARAMS for the same reason the H&E geometry does: a worker
-    process that knows nothing about the cohort has to be able to run one, and the
-    numbers that produced the vectors belong in the workflow history.
+    graph and axis travel in PARAMS so a worker needs no cohort, and so the
+    numbers that produced the vectors are in the workflow history.
     """
     from pathlib import Path as _P
 
@@ -1251,10 +1229,8 @@ def st_shards(samples, out_dir, graph: StGraph | dict, axis: GeneAxis | dict,
     out = _P(out_dir)
 
     def _one(d, sid):
-        # a mapping where the value is per section, one object where it is not.
-        # the shard carries the RESOLVED value either way, so the record says what
-        # each section was embedded with rather than which table it came from -
-        # which is what makes a workflow history checkable on replay.
+        # per-section mapping, or one object for all. either way the shard carries
+        # the RESOLVED value, so a replay is checkable against it.
         return d[sid] if isinstance(d, dict) else d
 
     def graph_of(sid):
@@ -1277,12 +1253,9 @@ def st_shards(samples, out_dir, graph: StGraph | dict, axis: GeneAxis | dict,
 
 
 def st_shard_body(shard, heartbeat) -> None:
-    """ONE shard of the ST arm, read entirely from the shard.
+    """one ST shard, read entirely from the shard. closes over nothing.
 
-    the activity body a worker registers. it closes over nothing - no cohort, no
-    platform.json, no gene map of its own. the model cache is shared with the H&E
-    body because it is keyed by encoder and device, and a worker serving both arms
-    should not hold two copies of anything.
+    the model cache is shared with the H&E body, keyed by (encoder, device).
     """
     import anndata as ad
     import numpy as np
@@ -1335,9 +1308,8 @@ def encode_st_cohort(samples, out_dir, graph: StGraph | dict,
                      max_attempts: int = 3, on_event=None):
     """embed every section, durably if an address is configured.
 
-    the ST twin of `encode_he_cohort`, and deliberately the same shape: the body
-    is `st_shard_body`, the same function a remote worker registers, so the
-    in-process and durable paths are one code path rather than two.
+    body is `st_shard_body`, the same function a remote worker registers, so the
+    in-process and durable paths are one code path.
     """
     from omicstra.dispatch import run_shards
 

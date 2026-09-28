@@ -101,34 +101,15 @@ def _spots(h5ad: Path, dest: Path) -> dict:
 
 
 def _gene_id(var_names) -> str:
-    """which identifier space this object's counts are indexed by.
+    """which identifier space this object is indexed by, via the package's measure.
 
-    the ingest is the one process that sees the native file, so it is the one
-    place this can be OBSERVED rather than declared - `ingest_wang.py` records the
-    same field for the same reason, and neither script maps, because "mapping
-    here would bake one annotation release into the artifact".
-
-    it is recorded PER SAMPLE and not once for the cohort, which is not caution:
-    this cohort pools three studies and they disagree. 68 of its 108 original-ST
-    sections are indexed by Ensembl and 40 by symbols, and a cohort-level claim
-    was wrong for the majority of them. the ST arm skips a section whose space
-    the declarations cannot map, and cannot do that without this field.
-
-    `unknown` rather than a guess. the consumer refuses on it; the alternative is
-    handing novae an index it matches nothing in, which raises "Too few genes (0)
-    are known/used by the model" - and only if you are lucky enough to pick such
-    a section.
+    observed here because the ingest is the only step that sees the native file;
+    `ingest_wang.py` records the same field. neither maps: the annotation release
+    is a cohort's choice, not a converter's.
     """
-    names = [str(g) for g in list(var_names[:64])]
-    if not names:
-        return "unknown"
-    if sum(g.startswith("ENSG") for g in names) > len(names) / 2:
-        # versioned ids carry a dot suffix: ENSG00000000003.14
-        versioned = sum("." in g for g in names if g.startswith("ENSG"))
-        return "ensembl_versioned" if versioned > len(names) / 2 else "ensembl"
-    if all(g.isupper() or any(c.isdigit() or c in "-._" for c in g) for g in names):
-        return "symbol"
-    return "unknown"
+    from omicstra.measures.gene_reference import identifier_space
+
+    return identifier_space(list(var_names[:512]))
 
 
 @click.command()

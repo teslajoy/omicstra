@@ -37,7 +37,14 @@
     "duplicates": "sum",
     "unmapped": "drop",
     "basis": "the annotation release the cached novae embeddings were built against: notebooks/embeddings/novae_st_embeddings.ipynb maps Ensembl ids to HGNC symbols, drops the unmapped, and SUMS ids that collapse onto one symbol. duplicates is declared because sum, mean and first are three different matrices and only one of them is in the cache.",
-    "why_declared_and_not_observed": "which space each section is indexed by is OBSERVED - scripts/ingest_wang.py records it per sample as ingest.json#counts.<id>.gene_id, 'ensembl_versioned' for all 280. the RELEASE is a choice, which is why that script deliberately does not map: 'mapping here would bake one annotation release into the artifact'. so the space is read and the release is declared.",
-    "strip_version_is_derived": "not a field. the record says ensembl_versioned and the table is keyed on plain ensembl, so cutting at the dot follows from two facts rather than a third declaration that could disagree with them."
+    "map_sha256_16": "3d6e353cc58391fa",
+    "map_rows": 48698,
+    "release": null,
+    "release_note": "UNRECORDED and not recoverable from the artifact. no script in this repo builds the table and nothing states which Ensembl/HGNC release it came from, so the release is pinned by SHA rather than named. it matters: 3,369 symbols in this table are reached by more than one Ensembl id, and which ids collapse together moves with the release, so a different table is a different matrix under the declared duplicates=sum. naming it would take diffing the 48,698 keys against candidate GENCODE gene sets. until then the SHA is the identity.",
+    "measured_coverage": {
+      "tnbc-92": "84-86% of var_names per section (describe_gene_reference, 2026-09-28)",
+      "why_it_matters": "novae zero-shot resolves var_names against a symbol vocabulary, so unreached ids are genes the model never sees. the shortfall is a property of this table, not of the tissue."
+    },
+    "observed_vs_declared": "the identifier SPACE is observed per section at ingest.json#counts.<id>.gene_id; strip_version is derived from it. only the release and its policy are declared here."
   }
 }

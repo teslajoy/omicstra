@@ -1,17 +1,14 @@
 """the shared tail of a compute node: choose an executor, hand over, record it.
 
-NOT a gate, and not a level of its own. `graphs/` holds one module per gate and
-this is neither - it is the part of two compute nodes that must not drift, because
-both arms make the same two promises about recovery and a fix applied to one of
-them would silently miss the other. the H&E node and the ST node differ in what
-they resolve and what they shard; they do not differ in how a run is handed over.
+not a gate. it is the part of two compute nodes that must not drift - the arms
+differ in what they resolve and shard, not in how a run is handed over, so a fix
+to one executor must reach both.
 
-what each executor promises, since the record has to say which one ran:
-
-  in_process   the OUTPUT FILES and the checkpoint survive a restart. the thread
-               does not, and runs_resume re-dispatches whatever is missing.
-  temporal     the HISTORY survives. a worker that never met the submitting
-               process finishes the run, and the submitter may exit.
+the record says which executor ran because they promise different things:
+  in_process   files + checkpoint survive a restart; the thread does not, and
+               runs_resume re-dispatches what is missing
+  temporal     the history survives; a worker that never met the submitter
+               finishes the run
 """
 from __future__ import annotations
 
@@ -27,19 +24,16 @@ def dispatch(state: dict, shards: list, out: Path, body: Callable,
              report_extra: dict | None = None) -> dict:
     """submit the pending shards and RETURN. never waits for the work.
 
-    `fn_name` is the activity's name on the queue. it is an ARGUMENT and not
-    `body.__name__`: the name is the contract between a submitter and a worker in
-    another process, and deriving it from a python identifier means renaming a
-    function silently orphans every run already in flight.
+    `fn_name` is the queue's contract between submitter and worker, so it is an
+    argument rather than `body.__name__` - renaming a function would orphan every
+    run in flight.
 
-    `cohort_run` is the in-process path - the protocol's own `encode_*_cohort`,
-    which loads the model once and runs the shards in this process. `body` is the
-    same work as a named activity, for the durable path, where the shard list is
-    all that crosses and a worker holds the body.
+    `cohort_run` runs the shards here, loading the model once; `body` is the same
+    work as a named activity for a worker elsewhere.
 
-    submission returning is the whole point of a run handle. the first version of
-    the H&E node blocked for the entire encode and a ~150 s call failed on the
-    client side while the server finished it.
+    returning at submission is the point of a run handle: the first version
+    blocked for the whole encode and a ~150 s call failed client-side while the
+    server finished it.
     """
     out.mkdir(parents=True, exist_ok=True)
     pending = [s for s in shards if not s.is_done()]
@@ -48,8 +42,7 @@ def dispatch(state: dict, shards: list, out: Path, body: Callable,
     from omicstra.dispatch import assert_writable
     from omicstra.settings import settings
 
-    # before either backend is chosen. a refusal that arrives after the first
-    # shard has written is a refusal that came too late.
+    # before either backend: a refusal after the first write came too late.
     assert_writable(shards, state.get("project_id"))
 
     if settings.temporal_address:
@@ -64,13 +57,11 @@ def dispatch(state: dict, shards: list, out: Path, body: Callable,
             "the scheduler holds the run. this process may exit - the history "
             "outlives it and any worker polling the queue finishes the shards.")
     else:
-        # the thread's ShardReport used to be DROPPED, and a shard that failed all
-        # its attempts then looked exactly like one still working: runs_status
-        # counts output files, so "absent" meant "not yet" whatever had happened.
-        # one hest section failed on an unmappable gene axis and read as `running`
-        # for ten minutes. the report is written next to the outputs so a later
-        # process - the one that has to answer for the run - can tell a failure
-        # from a wait.
+        # the ShardReport was dropped, so a failed shard read as a slow one:
+        # runs_status counts files, and "absent" means "not yet" or "never". one
+        # hest section failed on an unmappable gene axis and said `running` for
+        # ten minutes. writing it beside the outputs is what lets a later process
+        # tell the two apart.
         failures = out / "_failed.json"
 
         def _work():
@@ -79,8 +70,8 @@ def dispatch(state: dict, shards: list, out: Path, body: Callable,
             try:
                 rep = cohort_run(pending)
             except Exception as e:                        # noqa: BLE001
-                # the whole dispatch died, not one shard. that is a different
-                # thing from a failed shard and must not read as one.
+                # the dispatch died, not a shard - a different thing, recorded
+                # differently.
                 failures.write_text(_j.dumps(
                     {"dispatch_error": f"{type(e).__name__}: {e}",
                      "shards": [s.id for s in pending]}, indent=1))

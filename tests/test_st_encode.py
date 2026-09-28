@@ -36,7 +36,7 @@ def test_an_unrecorded_gene_axis_is_refused_not_assumed():
     sections of the second cohort - which pools three studies that disagree. the
     space is a per-section fact the ingest observes; only the release is declared.
     """
-    with pytest.raises(ValueError, match="ingest did not record"):
+    with pytest.raises(ValueError, match="no recorded gene identifier space"):
         GeneAxis.resolve({"gene_mapping": DECLARED}, want="symbol", observed=None)
 
 
@@ -274,3 +274,22 @@ def test_the_ported_st_encoder_reproduces_the_cache_exactly(sid):
         f"{sid}: max_abs {float(np.abs(got - ref).max()):.3e}. the acceptance is "
         "exact - report the cause rather than widening this.")
     assert rec.params["scale_to_microns"] == graph.scale_to_microns
+
+
+def test_a_swapped_map_table_is_refused_by_its_hash(tmp_path):
+    """the table's release is unrecorded, so its SHA is its identity.
+
+    3,369 symbols in the declared table are reached by more than one Ensembl id,
+    and which ids collapse together moves with the release - so a different table
+    is a different matrix under duplicates=sum, silently.
+    """
+    a, tbl = _tiny(tmp_path)
+    axis = _axis(tbl, map_sha256_16="0000000000000000")
+    with pytest.raises(ValueError, match="declared 0000000000000000"):
+        apply_gene_axis(a, axis)
+
+
+def test_the_map_hash_reaches_the_record():
+    axis = GeneAxis.resolve({"gene_mapping": dict(DECLARED, map_sha256_16="abc123")},
+                            want="symbol", observed=OBSERVED)
+    assert axis.params()["gene_axis_map_sha256_16"] == "abc123"
