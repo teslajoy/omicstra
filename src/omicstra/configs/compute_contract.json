@@ -39,7 +39,15 @@
       "mid_run": "a signal on the durable workflow. the run is a long scheduled job, so a pause must not hold a compute allocation - the workflow waits, the allocation does not.",
       "why_it_matters": "a scheduled job paused for a person is burning walltime, and if it hits its limit while waiting the answer is lost with it. that - not the number of human pauses - is what a durable workflow buys on a scheduler."
     },
-    "declared_answers_do_not_fire": "a gate whose `pre_answerable_by` field is present in the cohort declaration resolves from it and does not interrupt. a fully declared cohort runs unattended until a mid_run gate fires. this lowers the number of pauses, never the bar - the answer is still recorded, with actor=human and the declaration as its source."
+    "declared_answers_do_not_fire": "a gate whose `pre_answerable_by` field is present in the cohort declaration resolves from it and does not interrupt. a fully declared cohort runs unattended until a mid_run gate fires. this lowers the number of pauses, never the bar - the answer is still recorded, with actor=human and the declaration as its source - human because a person wrote that file and version control attests it. an answer arriving through the interrupt is recorded actor=client with confirmed_by null: the server observes a tool call, not a person, and the pack cites gate answers.",
+    "actor_vocabulary": {
+      "deterministic": "resolved by rule from declarations and recorded counts; no choice was made",
+      "human": "a person wrote the answer into the cohort declaration, and version control attests the file",
+      "client": "an answer arrived through the surface at an interrupt. the server observes a tool call, not a person, so this does NOT assert that a person chose it",
+      "system": "the server acted on its own account - dispatched, re-dispatched, recorded",
+      "closed_set": true,
+      "why_client_is_not_human": "the pack cites gate answers, so 'a person decided this' must not appear on no evidence. a human confirmation of a client answer is a later and separate act, recorded where it can be attested - a commit, or a declaration carrying actor=human."
+    }
   },
   "gates": [
     {

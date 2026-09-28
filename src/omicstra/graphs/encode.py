@@ -142,10 +142,15 @@ def _accept(state: EncodeState, answer: Any) -> dict:
 
     this is the symmetry that makes the contract's rule true. the option set was
     closed on the interrupt path and open on the declaration path until
-    `_resolve_option` landed; closing only one of them is not closing it. a
-    person picking a value that is not an option is refused here for the reason a
-    cohort file is refused there - the ledger must not record a choice nobody was
-    offered.
+    `_resolve_option` landed; closing only one of them is not closing it - the
+    ledger must not record a choice nobody was offered.
+
+    the actor here is `client`, not `human`. all this function observes is that an
+    answer arrived through a tool call; whether a person chose it is not
+    observable from inside the server. a DECLARED answer is `human` because a
+    person wrote the file and version control attests it. conflating the two puts
+    "a person decided this" in the ledger on no evidence, in the one place the
+    design rests on - and the pack cites gate answers.
     """
     from omicstra.protocols.encode import _resolve_option
 
@@ -162,7 +167,7 @@ def _accept(state: EncodeState, answer: Any) -> dict:
         return {"approved": False, "halted": True,
                 "records": [*state.get("records", []),
                             {"step_id": "preflight_encode", "kind": "gate", "status": "not_run",
-                             "actor": "human", "verdict": "halt",
+                             "actor": "client", "verdict": "halt",
                              "reason": f"unanswered: {missing}"}]}
 
     resolved: dict[str, str] = {}
@@ -172,7 +177,7 @@ def _accept(state: EncodeState, answer: Any) -> dict:
             return {"approved": False, "halted": True,
                     "records": [*state.get("records", []),
                                 {"step_id": "preflight_encode", "kind": "gate",
-                                 "status": "error", "actor": "human",
+                                 "status": "error", "actor": "client",
                                  "reason": f"{gid} is not a gate in the contract"}]}
         try:
             resolved[gid] = _resolve_option(val, tuple(g["options"]), gid,
@@ -181,7 +186,7 @@ def _accept(state: EncodeState, answer: Any) -> dict:
             return {"approved": False, "halted": True,
                     "records": [*state.get("records", []),
                                 {"step_id": "preflight_encode", "kind": "gate",
-                                 "status": "error", "actor": "human", "reason": str(e)}]}
+                                 "status": "error", "actor": "client", "reason": str(e)}]}
 
     if any(v == "halt" for v in resolved.values()):
         return {"approved": False, "halted": True, "answers": resolved}
@@ -193,8 +198,11 @@ def _accept(state: EncodeState, answer: Any) -> dict:
     return {"approved": True, "halted": False, "answers": resolved, "gates": gates_now,
             "records": [*state.get("records", []),
                         {"step_id": "preflight_encode", "kind": "selection", "status": "pass",
-                         "actor": "human", "chosen": resolved,
-                         "note": "answered at the encode gate; recorded, not defaulted"}]}
+                         "actor": "client", "confirmed_by": None, "chosen": resolved,
+                         "note": "answered through the surface at the encode gate; "
+                                 "recorded, not defaulted. `client` because the server "
+                                 "sees a tool call, not a person - a human confirmation "
+                                 "is a later, separate act"}]}
 
 
 def encode(state: EncodeState) -> dict:

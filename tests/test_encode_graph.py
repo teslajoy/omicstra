@@ -73,13 +73,25 @@ def test_the_payload_names_what_would_pre_answer_each_gate():
 
 
 # --- the answer ------------------------------------------------------------
-def test_a_valid_answer_proceeds_and_is_recorded_as_human(bound_synthetic_cohort):
+def test_a_valid_answer_proceeds_and_is_recorded_as_a_client_answer(bound_synthetic_cohort):
+    """`client`, not `human`.
+
+    the server observes a tool call, not a person. recording an interrupt answer
+    as human puts "a person decided this" in the ledger on no evidence, and the
+    evidence pack cites gate answers. a DECLARED answer is human, because a
+    person wrote the file and version control attests it - see
+    test_a_declaration_answers_its_gate_and_says_where_from next door.
+    """
     out = _run(BARE, answer={"encoder_compatibility": "uni2",
                              "platform_floor": "drop", "capacity": "d"}, tid="ok",
                platform="synthetic")
     assert out["report"]["status"] == "ready"
     assert out["answers"]["platform_floor"] == "drop_below_floor", "shorthand must normalise"
-    assert any(r.get("actor") == "human" for r in out["records"])
+    sel = [r for r in out["records"] if r.get("kind") == "selection"]
+    assert sel and sel[-1]["actor"] == "client"
+    assert sel[-1]["confirmed_by"] is None
+    assert not any(r.get("actor") == "human" for r in out["records"]), \
+        "nothing on the interrupt path may claim a person"
 
 
 def test_a_human_answer_faces_the_same_closed_set_as_a_declaration():

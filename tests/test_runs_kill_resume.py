@@ -186,10 +186,12 @@ def test_kill_the_server_and_a_second_process_finishes_the_run(tmp_path):
              for d in rec if d.get("kind") == "dispatch"]
     assert ("encode_dispatch", "in_process", None) in kinds
     assert ("encode_resume", "in_process", "re-dispatch") in kinds
-    # the gate answers too: the run was decided by a person, two processes ago
-    human = [d for d in rec if d.get("actor") == "human"]
-    assert human and human[-1]["chosen"]["encoder_compatibility"] == \
-        "proceed_anyway_recorded_as_dissent"
+    # the gate answers too, carried across two processes - and attributed to the
+    # CLIENT, because that is all the server saw. a human confirmation would be a
+    # separate act, recorded where it can be attested.
+    sel = [d for d in rec if d.get("kind") == "selection"]
+    assert sel and sel[-1]["actor"] == "client" and sel[-1]["confirmed_by"] is None
+    assert sel[-1]["chosen"]["encoder_compatibility"] == "proceed_anyway_recorded_as_dissent"
 
 
 def test_the_resume_does_not_redo_what_landed(tmp_path):
