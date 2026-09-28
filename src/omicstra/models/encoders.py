@@ -95,6 +95,16 @@ class EncoderSpec:
     # fixed unit, which is itself an answer and is reported rather than guessed.
     expects: UnitExpectation | None = None
 
+    # the gene identifier space the weights were built against, for a molecular
+    # encoder. None for an image encoder, which has no gene axis at all.
+    #
+    # it is HERE and not in the cohort because it is a fact about the model: a
+    # cohort declares what it HAS, the encoder declares what it NEEDS, and the
+    # conversion between them is refused when either is unstated. putting only
+    # the cohort's side in a declaration would let a cohort assert it supplies
+    # what the encoder wants and be believed.
+    gene_axis: str | None = None
+
     def cost_on(self, device: str) -> EncoderCost | None:
         return next((c for c in self.cost if c.device == device), None)
 
@@ -274,6 +284,11 @@ class _Novae:
 register(
     EncoderSpec(
         name="novae", dim=64, role="st", modality="molecular", unit="spot",
+        # HGNC symbols. novae-human-0 was trained on image-based panels, whose
+        # features are symbols; its zero-shot path matches a cohort's var names
+        # against that vocabulary, so an Ensembl-indexed matrix does not fail - it
+        # matches almost nothing and embeds noise.
+        gene_axis="symbol",
         trained_on="image-based ST only - MERSCOPE, Xenium, CosMx, ~30M cells at "
                    "subcellular resolution (Blampey et al. 2025, Nat. Methods, MICS-Lab)",
         min_units=512,

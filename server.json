@@ -70,6 +70,7 @@
         "check_compute_gates",
         "describe_compute_plan",
         "he_encode",
+        "st_encode",
         "runs_resume",
         "runs_status",
         "runs_record"

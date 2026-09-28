@@ -829,6 +829,256 @@ def encoder_provenance(device) -> dict:
             "model_revision": "hf-hub:paige-ai/Virchow2", "dtype": "float32"}
 
 
+# --- ST: the gene axis, then one subarray ------------------------------------
+@dataclass(frozen=True)
+class GeneAxis:
+    """the cohort's gene identifier space and the route to the encoder's.
+
+    the ST counterpart of `HeGeometry`: read from a declaration, never inferred.
+    inference is available and wrong - an index of ENSG strings is obviously
+    Ensembl, and guessing it would mean a cohort whose h5ad someone re-exported
+    silently changes what reaches the GAT.
+
+    every field is load-bearing:
+
+    `duplicates`    two Ensembl ids mapping to one symbol have to be combined,
+                    and sum, mean and first give three different matrices. the
+                    cached embeddings were built by SUMMING. no default.
+    `strip_version` `ENSG00000000003.14` is not a key in a table of
+                    `ENSG00000000003`. whether to cut at the dot is a property
+                    of the cohort's export, not of the mapping table.
+    `unmapped`      what happens to a gene the table does not name. dropping is
+                    what the cache did; keeping it under its original id would
+                    put Ensembl strings into a symbol axis.
+    """
+    have: str
+    want: str
+    map_path: Path | None
+    duplicates: str
+    strip_version: bool
+    unmapped: str
+
+    _DUPLICATES = ("sum", "mean", "first")
+    _UNMAPPED = ("drop", "keep")
+
+    @classmethod
+    def from_cohort(cls, cohort: dict, *, want: str, root: Path | None = None) -> GeneAxis:
+        """resolve the declared axis against what an encoder needs.
+
+        `want` comes from `EncoderSpec.gene_axis`, so the two halves of the
+        question are declared in the two places that own them.
+        """
+        d = cohort.get("gene_axis")
+        if not isinstance(d, dict) or not d.get("have"):
+            raise ValueError(
+                "this cohort declares no gene_axis. the ST encoder needs "
+                f"{want!r} and the counts matrix is indexed by something; which, "
+                "and how to get from one to the other, is a cohort fact. declare "
+                'gene_axis: {have, want, map, duplicates, strip_version, unmapped} '
+                "in cohort.json, beside the other declarations the gates read. it "
+                "cannot be inferred: the same h5ad re-exported "
+                "with different var names would silently change what the GAT sees.")
+
+        have, declared_want = str(d["have"]), str(d.get("want") or have_default(d))
+        if declared_want != want:
+            raise ValueError(
+                f"the cohort declares gene_axis.want={declared_want!r} and the "
+                f"encoder needs {want!r}. the package does not reconcile these - a "
+                "cohort asserting it supplies what the encoder wants, and being "
+                "believed, is the failure this pair of declarations exists to stop.")
+
+        dup = str(d.get("duplicates") or "")
+        if have != want and dup not in cls._DUPLICATES:
+            raise ValueError(
+                f"gene_axis.duplicates must be one of {list(cls._DUPLICATES)}, got "
+                f"{dup!r}. mapping {have} onto {want} collapses several ids onto one "
+                "name, and sum, mean and first are three different matrices. the "
+                "cached embeddings were built by summing; declare it rather than "
+                "inheriting it.")
+        un = str(d.get("unmapped") or "")
+        if have != want and un not in cls._UNMAPPED:
+            raise ValueError(
+                f"gene_axis.unmapped must be one of {list(cls._UNMAPPED)}, got {un!r}.")
+
+        mp = d.get("map")
+        path = None
+        if mp:
+            path = Path(mp)
+            if not path.is_absolute() and root is not None:
+                path = (root / path).resolve()
+        if have != want and path is None:
+            raise ValueError(
+                f"gene_axis maps {have} onto {want} but declares no map table.")
+        return cls(have=have, want=want, map_path=path,
+                   duplicates=dup or "n/a", strip_version=bool(d.get("strip_version")),
+                   unmapped=un or "n/a")
+
+    def params(self) -> dict:
+        """what the record carries. two cohorts on different axes must not read
+        alike, and a run that changed `duplicates` is a different run."""
+        return {"gene_axis_have": self.have, "gene_axis_want": self.want,
+                "gene_axis_duplicates": self.duplicates,
+                "gene_axis_strip_version": self.strip_version,
+                "gene_axis_unmapped": self.unmapped,
+                "gene_axis_map": None if self.map_path is None else self.map_path.name}
+
+    def is_identity(self) -> bool:
+        return self.have == self.want
+
+
+def have_default(d: dict) -> str:
+    """`want` defaults to `have` only when the declaration says nothing, which is
+    the identity case - a cohort already on the encoder's axis."""
+    return str(d["have"])
+
+
+def apply_gene_axis(adata, axis: GeneAxis):
+    """move the counts matrix onto the encoder's gene axis. declared, in order.
+
+    the order is the published one and is not an implementation detail: strip the
+    version, map, drop what did not map, THEN combine duplicates. combining before
+    mapping would sum genes that are not synonyms.
+
+    the combine is a SPARSE MATRIX PRODUCT, not a groupby. `X @ M` with a 0/1
+    indicator M is the same arithmetic on integer counts and it is not close in
+    cost - the first version used
+    `DataFrame.sparse.from_spmatrix(...).T.groupby(level=0).sum().T`, which is the
+    literal shape of the oracle's line and took minutes per section. at 280
+    sections that is a day of wall clock to rearrange columns. the column order is
+    the sorted unique target names, which is what a groupby produces, so the two
+    agree element for element.
+    """
+    import numpy as np
+    import pandas as pd
+    from scipy.sparse import csr_matrix
+
+    if axis.is_identity():
+        return adata, {"n_genes_in": int(adata.n_vars), "n_genes_out": int(adata.n_vars),
+                       "n_unmapped": 0, "n_collapsed": 0, "route": "identity"}
+
+    import anndata as ad
+    from scipy.sparse import coo_matrix
+
+    tbl = pd.read_csv(axis.map_path, sep="\t")
+    m = dict(zip(tbl.iloc[:, 0].astype(str), tbl.iloc[:, 1].astype(str)))
+
+    keys = np.asarray([g.split(".")[0] if axis.strip_version else g
+                       for g in adata.var_names.astype(str)])
+    hit = np.asarray([k in m for k in keys])
+    n_unmapped = int((~hit).sum())
+    if axis.unmapped == "drop":
+        take = np.flatnonzero(hit)
+        names = np.asarray([m[k] for k in keys[take]])
+    else:
+        take = np.arange(len(keys))
+        names = np.asarray([m.get(k, k) for k in keys])
+
+    # sorted unique targets, which is the column order a groupby would give
+    targets, inverse = np.unique(names, return_inverse=True)
+    X = csr_matrix(adata.X)[:, take]
+
+    if axis.duplicates == "first":
+        # the first source column for each target, in the source's own order
+        firsts = np.full(len(targets), -1)
+        for src, tgt in enumerate(inverse):
+            if firsts[tgt] < 0:
+                firsts[tgt] = src
+        Y = X[:, firsts]
+    else:
+        # the indicator carries the COUNTS' OWN DTYPE, and that is not cosmetic.
+        # float64 ones upcast an int32 matrix, and the encoder's own
+        # normalize_total/log1p then run at a different precision - which reached
+        # the embeddings as a 4.8e-07 disagreement with the cache. a sum of small
+        # integers is exact in float64, so the arithmetic was right and the TYPE
+        # was the defect. sum in the type the counts arrived in.
+        dt = X.dtype if axis.duplicates == "sum" else np.float64
+        ind = coo_matrix((np.ones(len(inverse), dtype=dt), (np.arange(len(inverse)), inverse)),
+                         shape=(len(inverse), len(targets)), dtype=dt).tocsr()
+        Y = (X if X.dtype == dt else X.astype(dt)) @ ind
+        if axis.duplicates == "mean":
+            sizes = np.bincount(inverse, minlength=len(targets))
+            Y = Y @ csr_matrix((1.0 / sizes, (np.arange(len(targets)),
+                                              np.arange(len(targets)))),
+                               shape=(len(targets), len(targets)))
+
+    out = ad.AnnData(X=csr_matrix(Y),
+                     obs=pd.DataFrame(index=adata.obs_names),
+                     var=pd.DataFrame(index=pd.Index(targets)))
+    return out, {"n_genes_in": int(adata.n_vars), "n_genes_out": int(out.n_vars),
+                 "n_unmapped": n_unmapped, "n_collapsed": int(len(names) - len(targets)),
+                 "route": f"{axis.have}->{axis.want} ({axis.duplicates})"}
+
+
+def run_one_st(counts_path, coords, graph: StGraph, axis: GeneAxis,
+               encoder: str = "novae", model=None):
+    """one subarray of counts + coordinates -> (n, dim) spot vectors, plus a record.
+
+    the whole ST arm for one section, and nothing cohort-specific in it: the
+    caller supplies a counts file, coordinates, a declared graph and a declared
+    gene axis. the ORDER is the published one -
+
+        gene axis -> spatial -> neighbours -> zero-shot representations
+
+    `spatial_neighbors` runs BEFORE the scale is applied, and that is not an
+    accident of sequencing. novae reads `scale_to_microns` in exactly two places
+    (`utils/_validate.py` for a plausibility check and `data/dataset.py` for the
+    edge feature), both inside `compute_representations` - the Delaunay topology
+    is scale-invariant and the edge features are not. so the graph is built once
+    and the scale belongs to the embed call, which is where the encoder wrapper
+    sets and restores it.
+    """
+    import time
+
+    import anndata as ad
+    import numpy as np
+
+    from omicstra.models.encoders import load, spec
+
+    t0 = time.time()
+    es = spec(encoder)
+    if es.gene_axis is None:
+        raise ValueError(
+            f"{encoder} declares no gene axis, so it is not an ST encoder. "
+            "run_one_st needs a molecular encoder; see EncoderSpec.gene_axis.")
+
+    a = counts_path if isinstance(counts_path, ad.AnnData) else ad.read_h5ad(counts_path)
+    a, axis_rec = apply_gene_axis(a, axis)
+
+    xy = np.asarray(coords, dtype=float).reshape(-1, 2)
+    if xy.shape[0] != a.n_obs:
+        raise ValueError(
+            f"{xy.shape[0]} coordinates against {a.n_obs} spots. the coordinates "
+            "table and the counts matrix must be the same spots in the same order - "
+            "the adapter joins them by spot_id, so a mismatch here means the join "
+            "was skipped, not that a spot is missing.")
+    a.obsm["spatial"] = xy
+
+    if model is None:
+        model = load(encoder)
+
+    if graph.method != "delaunay":
+        raise ValueError(
+            f"st_graph.method={graph.method!r} is declared but only 'delaunay' is "
+            "implemented. a radius cap is a declared ALTERNATIVE arm with its own "
+            "run id, not a variant of this one - see platform.json's st_graph note.")
+
+    import novae
+
+    novae.spatial_neighbors(a)
+    vecs = np.asarray(model.embed(a, scale_to_microns=graph.scale_to_microns),
+                      dtype=np.float32)
+
+    rec = TransformRecord(
+        step_id="encode_st",
+        params={"encoder": encoder, "dim": es.dim, "n_spots": int(a.n_obs),
+                **graph.params(), **axis_rec, **axis.params()},
+        produced=[Produced(path=str(counts_path), shape=list(vecs.shape),
+                           dtype=str(vecs.dtype))],
+        duration_s=round(time.time() - t0, 2),
+    )
+    return vecs, rec
+
+
 # --- the cohort run: N shards of run_one_he ---------------------------------
 def he_shards(samples, out_dir, geom: HeGeometry | None = None,
               encoder: str | None = None, device: str | None = None):
@@ -937,3 +1187,101 @@ def encode_he_cohort(samples, out_dir, geom: HeGeometry, *, encoder: str = "virc
     return run_shards(he_shards(samples, out_dir, geom, encoder, device),
                       he_shard_body, address=address,
                       max_attempts=max_attempts, on_event=on_event)
+
+
+# --- the cohort run: N shards of run_one_st ----------------------------------
+def st_shards(samples, out_dir, graph: StGraph, axis: GeneAxis,
+              encoder: str = "novae"):
+    """one shard per section, named by the file that proves it finished.
+
+    `samples` are (sample_id, counts_path, coords_path) triples. the graph and the
+    gene axis go in the PARAMS for the same reason the H&E geometry does: a worker
+    process that knows nothing about the cohort has to be able to run one, and the
+    numbers that produced the vectors belong in the workflow history.
+    """
+    from pathlib import Path as _P
+
+    from omicstra.dispatch import Shard
+
+    out = _P(out_dir)
+    declared = {"graph": {"method": graph.method, "radius_cap_px": graph.radius_cap_px,
+                          "scale_to_microns": graph.scale_to_microns},
+                "axis": {"have": axis.have, "want": axis.want,
+                         "map": None if axis.map_path is None else str(axis.map_path),
+                         "duplicates": axis.duplicates,
+                         "strip_version": axis.strip_version,
+                         "unmapped": axis.unmapped},
+                "encoder": encoder}
+    return [Shard(id=sid, output=out / f"{sid}.npy",
+                  params={"counts": str(counts), "coords": str(coords), **declared})
+            for sid, counts, coords in samples]
+
+
+def st_shard_body(shard, heartbeat) -> None:
+    """ONE shard of the ST arm, read entirely from the shard.
+
+    the activity body a worker registers. it closes over nothing - no cohort, no
+    platform.json, no gene map of its own. the model cache is shared with the H&E
+    body because it is keyed by encoder and device, and a worker serving both arms
+    should not hold two copies of anything.
+    """
+    import anndata as ad
+    import numpy as np
+    import pandas as pd
+
+    from omicstra.dispatch import atomic_write
+
+    p = shard.params
+    for need in ("graph", "axis", "encoder"):
+        if need not in p:
+            raise KeyError(
+                f"shard {shard.id!r} carries no {need}. build shards with "
+                "st_shards(..., graph=, axis=) - a worker does not guess an edge "
+                "scale or a gene axis, and a default would silently produce "
+                "vectors that are not the cohort's.")
+
+    graph = StGraph(method=p["graph"]["method"],
+                    radius_cap_px=p["graph"]["radius_cap_px"],
+                    scale_to_microns=float(p["graph"]["scale_to_microns"]))
+    a_ = p["axis"]
+    axis = GeneAxis(have=a_["have"], want=a_["want"],
+                    map_path=None if a_["map"] is None else Path(a_["map"]),
+                    duplicates=a_["duplicates"], strip_version=bool(a_["strip_version"]),
+                    unmapped=a_["unmapped"])
+    encoder = p["encoder"]
+
+    key = (encoder, "cpu")          # novae is cpu here; the wrapper holds no device
+    if key not in _MODELS:
+        from omicstra.models.encoders import load
+
+        _MODELS[key] = load(encoder)
+
+    heartbeat(shard.id)
+    adata = ad.read_h5ad(p["counts"])
+    spots = pd.read_parquet(p["coords"])
+    xy = spots.set_index("spot_id").loc[adata.obs_names.astype(str), ["x", "y"]].to_numpy()
+    vecs, _ = run_one_st(adata, xy, graph, axis, encoder=encoder, model=_MODELS[key])
+    heartbeat(f"{shard.id} encoded")
+
+    def save(fp):
+        with fp.open("wb") as fh:
+            np.save(fh, vecs)
+
+    atomic_write(shard.output, save)
+
+
+def encode_st_cohort(samples, out_dir, graph: StGraph, axis: GeneAxis, *,
+                     encoder: str = "novae", address: str | None = None,
+                     max_attempts: int = 3, on_event=None):
+    """embed every section, durably if an address is configured.
+
+    the ST twin of `encode_he_cohort`, and deliberately the same shape: the body
+    is `st_shard_body`, the same function a remote worker registers, so the
+    in-process and durable paths are one code path rather than two.
+    """
+    from omicstra.dispatch import run_shards
+
+    return run_shards(st_shards(samples, out_dir, graph, axis, encoder),
+                      st_shard_body, address=address,
+                      max_attempts=max_attempts, on_event=on_event)
+

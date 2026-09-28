@@ -664,7 +664,7 @@ def describe_compute_plan(encoder: str | None = None,
 # the run's state outlives the process. so these use the DURABLE checkpointer,
 # and a server started with the in-memory one says so rather than handing out a
 # handle it cannot honour.
-def _runner():
+def _runner(arm: str = "he"):
     from langgraph.checkpoint.memory import InMemorySaver
 
     from omicstra.graph import make_checkpointer
@@ -674,8 +674,44 @@ def _runner():
             "run handles need a durable checkpointer. set "
             "OMICSTRA_CHECKPOINT=sqlite:<path> - with the in-memory saver a run "
             "cannot be resumed by a later request, which is what a run_id is for.")
-    from omicstra.graphs.encode import build_encode_graph
-    return build_encode_graph(checkpointer=saver), spec
+    return _app_for(ARMS[arm], saver), spec
+
+
+# the two arms, by the name a run records. one tool per arm was a deliberate
+# choice - the gate sets genuinely differ - so the resume path has to know which
+# one a handle belongs to, and it reads that from the checkpoint rather than from
+# the shape of the run_id.
+ARMS = {"he": "omicstra.graphs.encode:build_encode_graph",
+        "st": "omicstra.graphs.st:build_st_graph"}
+
+
+def _app_for(target: str, saver):
+    import importlib
+
+    mod, fn = target.split(":")
+    return getattr(importlib.import_module(mod), fn)(checkpointer=saver)
+
+
+def _runner_for(run_id: str):
+    """the graph a handle actually belongs to, plus its state.
+
+    both arms share `EncodeState`, so either compiled graph can READ the
+    checkpoint; only the compute node differs. so: read with a default, find the
+    arm the run recorded, and rebuild if it is the other one. resuming an ST run
+    into the H&E node would re-enter a node that resolves a tile geometry for a
+    cohort that was never asked for one.
+    """
+    app, spec = _runner()
+    snap = app.get_state({"configurable": {"thread_id": run_id}})
+    values = (snap.values if snap else None) or {}
+    arm = values.get("arm", "he")
+    if arm != "he":
+        from omicstra.graph import make_checkpointer
+
+        saver, spec = make_checkpointer()
+        app = _app_for(ARMS.get(arm, ARMS["he"]), saver)
+        snap = app.get_state({"configurable": {"thread_id": run_id}})
+    return app, spec, snap, arm
 
 
 def _handle(app, run_id: str, out: dict) -> dict:
@@ -703,10 +739,37 @@ def he_encode(project_id: str | None = None, platform: str | None = None,
 
     from omicstra.graph import _load_cohort
 
-    app, spec = _runner()
+    app, spec = _runner("he")
     rid = run_id or f"he-{uuid.uuid4().hex[:12]}"
     cfg = {"configurable": {"thread_id": rid}}
-    out = app.invoke({"project_id": project_id, "encoder": encoder,
+    out = app.invoke({"project_id": project_id, "encoder": encoder, "arm": "he",
+                      "cohort": _load_cohort(project_id), "platform": platform,
+                      "samples": samples, "compute": compute}, cfg)
+    return {**_handle(app, rid, out), "checkpointer": spec}
+
+
+@srv.tool(description=(
+    "Run the spatial-transcriptomics agent on a cohort. Its own agent, not a "
+    "mode of the H&E one: it asks whether each section clears the encoder's "
+    "prototype floor, and it REFUSES rather than asking when the platform's edge "
+    "scale or the cohort's gene axis is undeclared - neither is a question with "
+    "options, and both have defaults that would silently produce vectors that "
+    "are not this cohort's. Fires its preflight gates as interrupts a client "
+    "answers, then dispatches one shard per section. Returns a run handle. "
+    "compute=false (the default) resolves the shard list and reports what would "
+    "run, including the edge scale and the gene-axis route, without embedding "
+    "anything."))
+def st_encode(project_id: str | None = None, platform: str | None = None,
+              samples: list[str] | None = None, compute: bool = False,
+              encoder: str = "novae", run_id: str | None = None) -> dict:
+    import uuid
+
+    from omicstra.graph import _load_cohort
+
+    app, spec = _runner("st")
+    rid = run_id or f"st-{uuid.uuid4().hex[:12]}"
+    cfg = {"configurable": {"thread_id": rid}}
+    out = app.invoke({"project_id": project_id, "encoder": encoder, "arm": "st",
                       "cohort": _load_cohort(project_id), "platform": platform,
                       "samples": samples, "compute": compute}, cfg)
     return {**_handle(app, rid, out), "checkpointer": spec}
@@ -721,9 +784,8 @@ def runs_resume(run_id: str, answers: dict | None = None,
                 approve: bool = True) -> dict:
     from langgraph.types import Command
 
-    app, spec = _runner()
+    app, spec, snap, arm = _runner_for(run_id)
     cfg = {"configurable": {"thread_id": run_id}}
-    snap = app.get_state(cfg)
 
     # a run past its gates whose thread died has no interrupt to resume. the
     # shards are idempotent, so re-entering the graph re-dispatches exactly
@@ -753,11 +815,11 @@ def runs_resume(run_id: str, answers: dict | None = None,
             r = _handle(app, run_id, out)
             r["resumed_by"] = "re-dispatch"
             r["re_dispatched"] = [d["sample"] for d in missing]
-            return {**r, "checkpointer": spec}
+            return {**r, "checkpointer": spec, "arm": arm}
 
     out = app.invoke(Command(resume=answers if answers else approve), cfg)
     return {**_handle(app, run_id, out), "resumed_by": "gate_answer",
-            "checkpointer": spec}
+            "checkpointer": spec, "arm": arm}
 
 
 @srv.tool(description=(
@@ -765,11 +827,10 @@ def runs_resume(run_id: str, answers: dict | None = None,
     "Progress is counted from the output files rather than held in memory, so "
     "this is true from any process and after a restart."))
 def runs_status(run_id: str) -> dict:
-    app, spec = _runner()
-    cfg = {"configurable": {"thread_id": run_id}}
-    snap = app.get_state(cfg)
+    app, spec, snap, arm = _runner_for(run_id)
+    cfg = {"configurable": {"thread_id": run_id}}      # noqa: F841 - kept for symmetry
     if not snap or not snap.values:
-        return {"run_id": run_id, "status": "unknown",
+        return {"run_id": run_id, "status": "unknown", "arm": None,
                 "why": "no checkpoint under this handle. a run_id from a server "
                        "using a different checkpointer is not resolvable here."}
     v = snap.values
@@ -784,7 +845,7 @@ def runs_status(run_id: str) -> dict:
     status = rep.get("status", "in_progress")
     if shards and status == "submitted":
         status = "complete" if not missing else "running"
-    return {"run_id": run_id, "checkpointer": spec,
+    return {"run_id": run_id, "checkpointer": spec, "arm": arm,
             "executor": rep.get("executor"),
             "n_shards": len(shards), "n_done": len(done),
             "missing": missing,
@@ -800,12 +861,12 @@ def runs_status(run_id: str) -> dict:
     "The decision record for one run: every gate answered, by whom, and the "
     "declaration it resolved from. This is the run's half of the ledger."))
 def runs_record(run_id: str) -> dict:
-    app, spec = _runner()
-    snap = app.get_state({"configurable": {"thread_id": run_id}})
+    app, spec, snap, arm = _runner_for(run_id)
     if not snap or not snap.values:
-        return {"run_id": run_id, "records": [], "why": "no checkpoint under this handle"}
+        return {"run_id": run_id, "records": [], "arm": None,
+                "why": "no checkpoint under this handle"}
     v = snap.values
-    return {"run_id": run_id, "checkpointer": spec,
+    return {"run_id": run_id, "checkpointer": spec, "arm": arm,
             "records": v.get("records") or [],
             "gates": v.get("gates") or [],
             "answers": v.get("answers") or {},

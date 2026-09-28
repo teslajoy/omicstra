@@ -44,6 +44,12 @@ from omicstra.protocols.encode import (
 # and only when a conditional edge is present, so it surfaces late.
 class EncodeState(TypedDict, total=False):
     project_id: str
+    arm: str                         # "he" | "st". which graph a run belongs to.
+                                     # it is STATE and not a run_id convention
+                                     # because runs_resume has to rebuild the
+                                     # right compute node from the checkpoint
+                                     # alone, and a caller may pass any run_id
+                                     # it likes
     cohort: dict[str, Any]           # the cohort declaration, already read
     compute: bool                    # False resolves and reports what WOULD run.
                                      # the same convention run_align uses, and for
@@ -219,7 +225,6 @@ def encode(state: EncodeState) -> dict:
     # has to be inside it: a tool that called the chain directly would turn the
     # gates back into a function's arguments.
     import json
-    import time
 
     from omicstra.adapters.canonical import list_samples
     from omicstra.protocols.encode import HeGeometry, encode_he_cohort
@@ -267,83 +272,19 @@ def encode(state: EncodeState) -> dict:
                            "note": "gates cleared and the shard list is resolved. pass "
                                    "compute=True to dispatch."}}
 
-    out.mkdir(parents=True, exist_ok=True)
+    from omicstra.graphs.submit import dispatch
+    from omicstra.protocols.encode import he_shard_body, he_shards
 
-    # SUBMIT, do not wait. a run handle exists so the caller is not holding a
-    # connection open for hours; blocking here made the handle decorative and
-    # a 150 s call over one request already failed on the client side.
-    #
-    # the thread is acceptable for exactly one reason: shards are idempotent on
-    # their output file. a restart loses the thread and nothing else - the files
-    # and the checkpoint survive, and runs_resume re-dispatches whatever is
-    # missing. that is a different guarantee from temporal's and the record says
-    # which one it is rather than letting them blur.
-    import threading
-
-    from omicstra.protocols.encode import he_shards
-    from omicstra.settings import settings as _s
-
-    pending = [t for t in triples if not (out / f"{t[0]}.npy").exists()]
-    enc, dev = state.get("encoder", "virchow2"), state.get("device")
-    t0 = time.time()
-
-    # WHICH executor is decided here, not inside the encode, because the report
-    # has to name it and the two make different promises. in-process: the files
-    # and the checkpoint survive a restart, the thread does not. durable: the
-    # history survives, and a worker that never met this process finishes the run.
-    if _s.temporal_address:
-        from omicstra.dispatch import assert_writable
-        from omicstra.dispatch.temporal import submit_shards_durably
-
-        sh = he_shards(pending, out, geom, enc, dev)
-        assert_writable(sh, state.get("project_id"))
-        handle = submit_shards_durably(sh, address=_s.temporal_address)
-        executor, note = "temporal", (
-            "the scheduler holds the run. this process may exit - the history "
-            "outlives it and any worker polling the queue finishes the shards.")
-    else:
-        def _work():
-            encode_he_cohort(pending, out, geom, encoder=enc, device=dev)
-
-        threading.Thread(target=_work, daemon=True,
-                         name=f"encode-{state.get('project_id') or 'cohort'}").start()
-        handle, executor, note = {}, "in_process", (
-            "a thread keyed by the run handle. the files and the checkpoint "
-            "survive a restart; the thread does not, and runs_resume "
-            "re-dispatches the shards still missing.")
-
-    wall = round(time.time() - t0, 1)
-    return {"shards": [{"sample": t[0], "output": str(out / f"{t[0]}.npy")} for t in triples],
-            # the ledger's copy. the report is the response to THIS call; the
-            # record is what a later process reads out of the checkpoint, and
-            # which executor ran a shard is the first thing a resume needs to
-            # know - re-dispatching a thread and re-attaching to a workflow are
-            # not the same recovery.
-            "records": [*state.get("records", []),
-                        {"step_id": "encode_dispatch", "kind": "dispatch", "status": "pass",
-                         "actor": "system", "executor": executor,
-                         "n_shards": len(triples), "n_pending": len(pending),
-                         "out_dir": str(out), "encoder": enc,
-                         **({"durable": handle} if handle else {})}],
-            "report": {"status": "submitted", "platform": pname,
-                       "executor": executor,
-                       "executor_note": note,
-                       **({"durable": handle} if handle else {}),
-                       "n_pending": len(pending),
-                       "n_already": len(triples) - len(pending),
-                       "max_concurrent_tasks": (state.get("plan") or {}).get(
-                           "max_concurrent_tasks"),
-                       "encoder": state.get("encoder", "virchow2"),
-                       "geometry": {"scale": geom.scale, "tile_px": geom.tile_px,
-                                    "out_px": geom.out_px, "k": geom.k},
-                       # progress is NOT reported here. this returns at
-                       # submission, so any count it wrote would be a guess -
-                       # runs_status counts the output files, which are the truth
-                       # and stay true across a restart.
-                       "n_shards": len(triples),
-                       "skipped": skipped, "submit_seconds": wall,
-                       "out_dir": str(out), "answers": answered,
-                       "plan": state.get("plan", {})}}
+    shards = he_shards(triples, out, geom, state.get("encoder", "virchow2"),
+                       state.get("device"))
+    return dispatch(state, shards, out, he_shard_body, fn_name="encode_he",
+                    cohort_run=lambda pending: encode_he_cohort(
+                        [(s.id, s.params["image"], s.params["coords"]) for s in pending],
+                        out, geom, encoder=state.get("encoder", "virchow2"),
+                        device=state.get("device")),
+                    report_extra={"platform": pname, "skipped": skipped,
+                                  "geometry": {"scale": geom.scale, "tile_px": geom.tile_px,
+                                               "out_px": geom.out_px, "k": geom.k}})
 
 
 def halt(state: EncodeState) -> dict:
