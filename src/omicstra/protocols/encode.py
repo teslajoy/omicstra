@@ -333,19 +333,42 @@ class StGraph:
     scale_to_microns: float
 
     @classmethod
-    def from_platform(cls, platform: dict, name: str) -> StGraph:
+    def from_platform(cls, platform: dict, name: str,
+                      sample: str | None = None) -> StGraph:
+        """the declared graph, per platform or per SAMPLE.
+
+        `scale_to_microns_per_sample` exists because one cohort measured it per
+        section and the other did not. the seed cohort is 262 subarrays of one
+        physical array design, so one number is the truth for all of them; the
+        second cohort pools three studies and derives microns-per-pixel from each
+        slide's own resolution tag, where the three recorded values span 0.6894 to
+        0.6971. a platform-level number would be wrong for every sample but one.
+
+        a per-sample table does NOT imply a default for the samples it omits. the
+        scale is an input to the edge features, so a section with no declared
+        value is refused - and that is the honest outcome for the 105 of 108
+        sections this cohort has not measured.
+        """
         g = platform["platforms"][name].get("st_graph") or {}
-        missing = [f for f in ("method", "scale_to_microns") if g.get(f) is None]
+        per = g.get("scale_to_microns_per_sample") or {}
+        scale = per.get(sample) if sample is not None else None
+        if scale is None:
+            scale = g.get("scale_to_microns")
+        missing = [f for f in ("method",) if g.get(f) is None]
+        if scale is None:
+            missing.append("scale_to_microns" if not per else
+                           f"scale_to_microns for sample {sample!r}")
         if missing:
             raise ValueError(
                 f"platform {name!r} st_graph declares no {', '.join(missing)}. "
                 "scale_to_microns is an input to the ST encoder's edge features, so it "
-                "cannot default: declare the value the cache was built with, or the "
-                "one this run intends as its own arm.")
+                "cannot default: declare the value the cache was built with, the one "
+                "this run intends as its own arm, or a per-sample value where the "
+                "cohort measured it per section.")
         cap = g.get("radius_cap_px")
         return cls(method=str(g["method"]),
                    radius_cap_px=None if cap is None else float(cap),
-                   scale_to_microns=float(g["scale_to_microns"]))
+                   scale_to_microns=float(scale))
 
     def params(self) -> dict:
         """the fields a record carries, so two runs at different scales differ."""
@@ -832,24 +855,32 @@ def encoder_provenance(device) -> dict:
 # --- ST: the gene axis, then one subarray ------------------------------------
 @dataclass(frozen=True)
 class GeneAxis:
-    """the cohort's gene identifier space and the route to the encoder's.
+    """how one section's counts reach the gene axis its encoder was built on.
 
-    the ST counterpart of `HeGeometry`: read from a declaration, never inferred.
-    inference is available and wrong - an index of ENSG strings is obviously
-    Ensembl, and guessing it would mean a cohort whose h5ad someone re-exported
-    silently changes what reaches the GAT.
+    THREE facts, and each lives in exactly one place. an earlier version of this
+    class asked the cohort to declare all three, which got `have` wrong for 68 of
+    108 sections of the second cohort - a fact was being asserted where it should
+    have been read.
 
-    every field is load-bearing:
+        have   which identifier space THIS SECTION is indexed by.
+               OBSERVED. `scripts/ingest_*.py` sees the native file and writes it
+               to ingest.json#counts.<id>.gene_id. it is per SAMPLE, not per
+               cohort: a cohort that pools studies can be mixed, and the second
+               one is - 68 Ensembl, 40 symbols, in one platform.
+        want   which space the ENCODER needs. `EncoderSpec.gene_axis`, a fact
+               about the weights. novae-human-0 matches var_names against a
+               symbol vocabulary and asserts "Too few genes (0) are known" on an
+               Ensembl index, which is how the mixed cohort surfaced.
+        map    WHICH ANNOTATION RELEASE gets from one to the other, and what to
+               do with duplicates and misses. genuinely DECLARED, because the
+               release is a choice - `ingest_wang.py` refuses to map at ingest
+               for exactly this reason: "mapping here would bake one annotation
+               release into the artifact".
 
-    `duplicates`    two Ensembl ids mapping to one symbol have to be combined,
-                    and sum, mean and first give three different matrices. the
-                    cached embeddings were built by SUMMING. no default.
-    `strip_version` `ENSG00000000003.14` is not a key in a table of
-                    `ENSG00000000003`. whether to cut at the dot is a property
-                    of the cohort's export, not of the mapping table.
-    `unmapped`      what happens to a gene the table does not name. dropping is
-                    what the cache did; keeping it under its original id would
-                    put Ensembl strings into a symbol axis.
+    `strip_version` is DERIVED, not declared. the ingest already distinguishes
+    `ensembl_versioned` from `ensembl`, so whether to cut at the dot follows from
+    the record and the table's key space. a declaration for it would be a third
+    chance to disagree with two facts.
     """
     have: str
     want: str
@@ -862,61 +893,81 @@ class GeneAxis:
     _UNMAPPED = ("drop", "keep")
 
     @classmethod
-    def from_cohort(cls, cohort: dict, *, want: str, root: Path | None = None) -> GeneAxis:
-        """resolve the declared axis against what an encoder needs.
+    def resolve(cls, cohort: dict, *, want: str, observed: str | None,
+                root: Path | None = None) -> GeneAxis:
+        """the declared mapping, resolved against what this section actually has.
 
-        `want` comes from `EncoderSpec.gene_axis`, so the two halves of the
-        question are declared in the two places that own them.
+        `observed` comes from the ingest record - see
+        `adapters.canonical.observed_gene_id`. None is refused rather than
+        assumed: "the ingest did not record it" is not "it is on symbols".
         """
-        d = cohort.get("gene_axis")
-        if not isinstance(d, dict) or not d.get("have"):
+        if observed is None:
             raise ValueError(
-                "this cohort declares no gene_axis. the ST encoder needs "
-                f"{want!r} and the counts matrix is indexed by something; which, "
-                "and how to get from one to the other, is a cohort fact. declare "
-                'gene_axis: {have, want, map, duplicates, strip_version, unmapped} '
-                "in cohort.json, beside the other declarations the gates read. it "
-                "cannot be inferred: the same h5ad re-exported "
-                "with different var names would silently change what the GAT sees.")
+                "the ingest did not record which gene identifier space this "
+                "section's counts are indexed by, so the mapping onto the "
+                f"encoder's {want!r} axis cannot be resolved. "
+                "scripts/ingest_<cohort>.py writes this per sample as "
+                "ingest.json#counts.<id>.gene_id - re-run it for this cohort. it "
+                "is not assumed here: a cohort that pools studies can carry both "
+                "spaces at once, and guessing would embed noise silently.")
 
-        have, declared_want = str(d["have"]), str(d.get("want") or have_default(d))
-        if declared_want != want:
-            raise ValueError(
-                f"the cohort declares gene_axis.want={declared_want!r} and the "
-                f"encoder needs {want!r}. the package does not reconcile these - a "
-                "cohort asserting it supplies what the encoder wants, and being "
-                "believed, is the failure this pair of declarations exists to stop.")
+        if observed == want:
+            # already on the encoder's axis. nothing is mapped, collapsed or
+            # dropped, so there is no policy to declare and requiring one would
+            # be a question with a single answer.
+            return cls(have=observed, want=want, map_path=None, duplicates="n/a",
+                       strip_version=False, unmapped="n/a")
 
-        dup = str(d.get("duplicates") or "")
-        if have != want and dup not in cls._DUPLICATES:
+        d = cohort.get("gene_mapping")
+        d = d if isinstance(d, dict) else {}
+        if not d:
             raise ValueError(
-                f"gene_axis.duplicates must be one of {list(cls._DUPLICATES)}, got "
-                f"{dup!r}. mapping {have} onto {want} collapses several ids onto one "
-                "name, and sum, mean and first are three different matrices. the "
+                f"this section is indexed by {observed!r} and the encoder needs "
+                f"{want!r}, and the cohort declares no gene_mapping. declare "
+                'gene_mapping: {map, map_key, map_value, duplicates, unmapped} in '
+                "cohort.json. the annotation release is a CHOICE, which is why the "
+                "ingest deliberately does not bake one in.")
+
+        key, value = str(d.get("map_key") or ""), str(d.get("map_value") or "")
+        if value != want:
+            raise ValueError(
+                f"gene_mapping.map_value={value!r} but the encoder needs {want!r}. "
+                "the table does not lead where this encoder has to go.")
+        if observed not in (key, f"{key}_versioned"):
+            raise ValueError(
+                f"this section is indexed by {observed!r} and gene_mapping is keyed "
+                f"on {key!r}, so the declared table cannot map it. a cohort with "
+                "sections in more than one space needs a table per space, and the "
+                "sections it does not cover are skipped with this reason.")
+
+        dup, un = str(d.get("duplicates") or ""), str(d.get("unmapped") or "")
+        if dup not in cls._DUPLICATES:
+            raise ValueError(
+                f"gene_mapping.duplicates must be one of {list(cls._DUPLICATES)}, got "
+                f"{dup!r}. mapping {observed} onto {want} collapses several ids onto "
+                "one name, and sum, mean and first are three different matrices. the "
                 "cached embeddings were built by summing; declare it rather than "
                 "inheriting it.")
-        un = str(d.get("unmapped") or "")
-        if have != want and un not in cls._UNMAPPED:
+        if un not in cls._UNMAPPED:
             raise ValueError(
-                f"gene_axis.unmapped must be one of {list(cls._UNMAPPED)}, got {un!r}.")
+                f"gene_mapping.unmapped must be one of {list(cls._UNMAPPED)}, got {un!r}.")
 
         mp = d.get("map")
-        path = None
-        if mp:
-            path = Path(mp)
-            if not path.is_absolute() and root is not None:
-                path = (root / path).resolve()
-        if have != want and path is None:
-            raise ValueError(
-                f"gene_axis maps {have} onto {want} but declares no map table.")
-        return cls(have=have, want=want, map_path=path,
-                   duplicates=dup or "n/a", strip_version=bool(d.get("strip_version")),
-                   unmapped=un or "n/a")
+        if not mp:
+            raise ValueError("gene_mapping declares no map table.")
+        path = Path(mp)
+        if not path.is_absolute() and root is not None:
+            path = (root / path).resolve()
+
+        return cls(have=observed, want=want, map_path=path, duplicates=dup,
+                   # derived: the record says versioned, the table is keyed plain
+                   strip_version=observed.endswith("_versioned"), unmapped=un)
 
     def params(self) -> dict:
-        """what the record carries. two cohorts on different axes must not read
+        """what the record carries. two sections on different axes must not read
         alike, and a run that changed `duplicates` is a different run."""
         return {"gene_axis_have": self.have, "gene_axis_want": self.want,
+                "gene_axis_observed_from": "ingest.json#counts.<id>.gene_id",
                 "gene_axis_duplicates": self.duplicates,
                 "gene_axis_strip_version": self.strip_version,
                 "gene_axis_unmapped": self.unmapped,
@@ -924,12 +975,6 @@ class GeneAxis:
 
     def is_identity(self) -> bool:
         return self.have == self.want
-
-
-def have_default(d: dict) -> str:
-    """`want` defaults to `have` only when the declaration says nothing, which is
-    the identity case - a cohort already on the encoder's axis."""
-    return str(d["have"])
 
 
 def apply_gene_axis(adata, axis: GeneAxis):
@@ -1190,7 +1235,7 @@ def encode_he_cohort(samples, out_dir, geom: HeGeometry, *, encoder: str = "virc
 
 
 # --- the cohort run: N shards of run_one_st ----------------------------------
-def st_shards(samples, out_dir, graph: StGraph, axis: GeneAxis,
+def st_shards(samples, out_dir, graph: StGraph | dict, axis: GeneAxis | dict,
               encoder: str = "novae"):
     """one shard per section, named by the file that proves it finished.
 
@@ -1204,16 +1249,30 @@ def st_shards(samples, out_dir, graph: StGraph, axis: GeneAxis,
     from omicstra.dispatch import Shard
 
     out = _P(out_dir)
-    declared = {"graph": {"method": graph.method, "radius_cap_px": graph.radius_cap_px,
-                          "scale_to_microns": graph.scale_to_microns},
-                "axis": {"have": axis.have, "want": axis.want,
-                         "map": None if axis.map_path is None else str(axis.map_path),
-                         "duplicates": axis.duplicates,
-                         "strip_version": axis.strip_version,
-                         "unmapped": axis.unmapped},
-                "encoder": encoder}
+
+    def _one(d, sid):
+        # a mapping where the value is per section, one object where it is not.
+        # the shard carries the RESOLVED value either way, so the record says what
+        # each section was embedded with rather than which table it came from -
+        # which is what makes a workflow history checkable on replay.
+        return d[sid] if isinstance(d, dict) else d
+
+    def graph_of(sid):
+        g = _one(graph, sid)
+        return {"method": g.method, "radius_cap_px": g.radius_cap_px,
+                "scale_to_microns": g.scale_to_microns}
+
+    def axis_of(sid):
+        a = _one(axis, sid)
+        return {"have": a.have, "want": a.want,
+                "map": None if a.map_path is None else str(a.map_path),
+                "duplicates": a.duplicates, "strip_version": a.strip_version,
+                "unmapped": a.unmapped}
+
     return [Shard(id=sid, output=out / f"{sid}.npy",
-                  params={"counts": str(counts), "coords": str(coords), **declared})
+                  params={"counts": str(counts), "coords": str(coords),
+                          "graph": graph_of(sid), "axis": axis_of(sid),
+                          "encoder": encoder})
             for sid, counts, coords in samples]
 
 
@@ -1270,7 +1329,8 @@ def st_shard_body(shard, heartbeat) -> None:
     atomic_write(shard.output, save)
 
 
-def encode_st_cohort(samples, out_dir, graph: StGraph, axis: GeneAxis, *,
+def encode_st_cohort(samples, out_dir, graph: StGraph | dict,
+                     axis: GeneAxis | dict, *,
                      encoder: str = "novae", address: str | None = None,
                      max_attempts: int = 3, on_event=None):
     """embed every section, durably if an address is configured.

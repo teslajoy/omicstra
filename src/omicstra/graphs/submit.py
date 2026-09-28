@@ -64,12 +64,42 @@ def dispatch(state: dict, shards: list, out: Path, body: Callable,
             "the scheduler holds the run. this process may exit - the history "
             "outlives it and any worker polling the queue finishes the shards.")
     else:
-        threading.Thread(target=lambda: cohort_run(pending), daemon=True,
+        # the thread's ShardReport used to be DROPPED, and a shard that failed all
+        # its attempts then looked exactly like one still working: runs_status
+        # counts output files, so "absent" meant "not yet" whatever had happened.
+        # one hest section failed on an unmappable gene axis and read as `running`
+        # for ten minutes. the report is written next to the outputs so a later
+        # process - the one that has to answer for the run - can tell a failure
+        # from a wait.
+        failures = out / "_failed.json"
+
+        def _work():
+            import json as _j
+
+            try:
+                rep = cohort_run(pending)
+            except Exception as e:                        # noqa: BLE001
+                # the whole dispatch died, not one shard. that is a different
+                # thing from a failed shard and must not read as one.
+                failures.write_text(_j.dumps(
+                    {"dispatch_error": f"{type(e).__name__}: {e}",
+                     "shards": [s.id for s in pending]}, indent=1))
+                return
+            bad = [{"sample": r.id, "error": r.error, "attempts": r.attempts}
+                   for r in rep.results if r.status == "failed"]
+            if bad:
+                failures.write_text(_j.dumps({"failed": bad}, indent=1))
+            elif failures.exists():
+                failures.unlink()          # a resume that succeeded clears it
+
+        threading.Thread(target=_work, daemon=True,
                          name=f"encode-{state.get('project_id') or 'cohort'}").start()
         handle, executor, note = {}, "in_process", (
-            "a thread keyed by the run handle. the files and the checkpoint "
-            "survive a restart; the thread does not, and runs_resume "
-            "re-dispatches the shards still missing.")
+            "a thread keeps the run. the files and the checkpoint survive a "
+            "restart; the thread does not, and runs_resume re-dispatches the "
+            "shards still missing. a shard that fails every attempt is written to "
+            "_failed.json beside the outputs, because an absent file alone cannot "
+            "tell a failure from a wait.")
 
     wall = round(time.time() - t0, 1)
     return {

@@ -95,7 +95,40 @@ def _spots(h5ad: Path, dest: Path) -> dict:
                        "y": [float(v) for v in xy[:, 1]]})
     df.to_parquet(dest, index=False)
     return {"ok": True, "n_spots": len(df),
-            "extent": [float(df.x.max() - df.x.min()), float(df.y.max() - df.y.min())]}
+            "extent": [float(df.x.max() - df.x.min()), float(df.y.max() - df.y.min())],
+            "counts": {"n_genes": int(a.n_vars), "n_obs": int(a.n_obs),
+                       "gene_id": _gene_id(a.var_names)}}
+
+
+def _gene_id(var_names) -> str:
+    """which identifier space this object's counts are indexed by.
+
+    the ingest is the one process that sees the native file, so it is the one
+    place this can be OBSERVED rather than declared - `ingest_wang.py` records the
+    same field for the same reason, and neither script maps, because "mapping
+    here would bake one annotation release into the artifact".
+
+    it is recorded PER SAMPLE and not once for the cohort, which is not caution:
+    this cohort pools three studies and they disagree. 68 of its 108 original-ST
+    sections are indexed by Ensembl and 40 by symbols, and a cohort-level claim
+    was wrong for the majority of them. the ST arm skips a section whose space
+    the declarations cannot map, and cannot do that without this field.
+
+    `unknown` rather than a guess. the consumer refuses on it; the alternative is
+    handing novae an index it matches nothing in, which raises "Too few genes (0)
+    are known/used by the model" - and only if you are lucky enough to pick such
+    a section.
+    """
+    names = [str(g) for g in list(var_names[:64])]
+    if not names:
+        return "unknown"
+    if sum(g.startswith("ENSG") for g in names) > len(names) / 2:
+        # versioned ids carry a dot suffix: ENSG00000000003.14
+        versioned = sum("." in g for g in names if g.startswith("ENSG"))
+        return "ensembl_versioned" if versioned > len(names) / 2 else "ensembl"
+    if all(g.isupper() or any(c.isdigit() or c in "-._" for c in g) for g in names):
+        return "symbol"
+    return "unknown"
 
 
 @click.command()
@@ -153,6 +186,10 @@ def main(project_dir: Path, src: str, out: str, limit: int | None, samples: str 
         # had nothing to encode. the WSIs arrive separately from the objects, so
         # this is re-read on every run rather than assumed from the first.
         "images": dict(prior.get("images", {})),
+        # per-sample counts facts, including which gene identifier space each
+        # section is indexed by. carried forward so a --limit run does not erase
+        # what a fuller one recorded.
+        "counts": dict(prior.get("counts", {})),
         "samples": list(prior.get("samples", [])),
         "sources": dict(prior.get("sources", {})),
         "skipped": [s for s in prior.get("skipped", []) if s["sample"] not in {p.stem for p in found}],
@@ -175,6 +212,10 @@ def main(project_dir: Path, src: str, out: str, limit: int | None, samples: str 
             "h5ad": str(p.relative_to(root)), "sha256_16": _sha(p), "linked_as": how,
             "platform": platform, "n_spots": spots["n_spots"], "extent_px": spots["extent"],
         }
+        # the same block `ingest_wang.py` writes, and read by the same reader
+        # (adapters.canonical.observed_gene_id). the gene axis is a per-sample
+        # fact, so it lives beside the shape rather than in a declaration.
+        record["counts"][sid] = spots["counts"]
         wsi = root / "data" / "inputs" / "wsis" / f"{sid}.tif"
         if wsi.is_file():
             record["images"][sid] = str(wsi)

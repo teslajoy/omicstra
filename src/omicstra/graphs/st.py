@@ -87,41 +87,64 @@ def st(state: EncodeState) -> dict:
         return {"report": {"status": "refused",
                            "why": "no platform declared - the spatial graph is per platform"}}
 
-    # the two refusals. they are reported rather than raised because a caller
-    # asking "can this cohort run the ST arm" deserves the reason, not a traceback.
-    try:
-        graph = StGraph.from_platform(plat, pname)
-    except ValueError as e:
-        return {"report": {"status": "refused", "platform": pname, "why": str(e),
-                           "undeclared": f"platforms.{pname}.st_graph"}}
-    try:
-        axis = GeneAxis.from_cohort(state.get("cohort", {}), want=es.gene_axis, root=root)
-    except ValueError as e:
-        return {"report": {"status": "refused", "platform": pname, "why": str(e),
-                           "undeclared": "gene_axis"}}
+    from omicstra.adapters.canonical import observed_gene_id
 
     by_sample = plat.get("samples", {})
     wanted = set(state.get("samples") or [])
-    triples, skipped = [], []
+    triples, skipped, graphs, axes = [], [], {}, {}
     for smp in list_samples(root):
-        if by_sample and by_sample.get(smp.sample_id) != pname:
+        sid = smp.sample_id
+        if by_sample and by_sample.get(sid) != pname:
             continue
-        if wanted and smp.sample_id not in wanted:
+        if wanted and sid not in wanted:
             continue
         if not (smp.counts and smp.spots):
-            skipped.append({"sample": smp.sample_id,
+            skipped.append({"sample": sid,
                             "why": "no counts" if not smp.counts else "no coordinates"})
             continue
-        triples.append((smp.sample_id, smp.counts, smp.spots))
+        # BOTH are resolved per sample, and for the same reason. the edge scale is
+        # measured per section on one cohort; the gene axis is a per-section FACT
+        # the ingest observed, and a cohort that pools studies carries more than
+        # one - so a section the declarations cannot reach is skipped with its
+        # reason rather than failing the run or borrowing another section's.
+        try:
+            graphs[sid] = StGraph.from_platform(plat, pname, sid)
+        except ValueError as e:
+            skipped.append({"sample": sid, "why": str(e),
+                            "undeclared": f"platforms.{pname}.st_graph"})
+            continue
+        try:
+            axes[sid] = GeneAxis.resolve(state.get("cohort", {}), want=es.gene_axis,
+                                         observed=observed_gene_id(root, sid), root=root)
+        except ValueError as e:
+            graphs.pop(sid, None)
+            skipped.append({"sample": sid, "why": str(e), "undeclared": "gene_mapping"})
+            continue
+        triples.append((sid, smp.counts, smp.spots))
 
     if not triples:
-        return {"report": {"status": "nothing_to_run", "platform": pname,
-                           "skipped": skipped,
-                           "why": "no ingested sample on this platform carries both a "
-                                  "counts matrix and a coordinates table"}}
+        why = ("no ingested sample on this platform carries both a counts matrix and "
+               "a coordinates table, a declared edge scale, and a gene axis this "
+               "cohort's declarations can map onto the encoder's")
+        undeclared = sorted({d["undeclared"] for d in skipped if d.get("undeclared")})
+        return {"report": {"status": "refused" if undeclared else "nothing_to_run",
+                           "platform": pname, "skipped": skipped, "why": why,
+                           **({"undeclared": undeclared} if undeclared else {})}}
 
     out = root / "data" / "embeddings" / f"{encoder}_spot"
-    declared = {"platform": pname, **graph.params(), **axis.params(),
+    first = triples[0][0]
+    scales = sorted({g.scale_to_microns for g in graphs.values()})
+    routes = sorted({f"{a.have}->{a.want}" for a in axes.values()})
+    one = graphs[first]
+    declared = {"platform": pname, "st_graph": one.method,
+                "radius_cap_px": one.radius_cap_px,
+                # SETS, because a per-sample cohort has no single value and a
+                # report naming one would be naming an arbitrary section's.
+                "scale_to_microns": scales[0] if len(scales) == 1 else scales,
+                "scale_is_per_sample": len(scales) > 1,
+                "gene_axis_route": routes[0] if len(routes) == 1 else routes,
+                "gene_axis_is_per_sample": len(routes) > 1,
+                **axes[first].params(),
                 "n_shards": len(triples), "skipped": skipped}
 
     if not state.get("compute"):
@@ -133,11 +156,11 @@ def st(state: EncodeState) -> dict:
                            "note": "gates cleared and the shard list is resolved. pass "
                                    "compute=True to dispatch."}}
 
-    shards = st_shards(triples, out, graph, axis, encoder)
+    shards = st_shards(triples, out, graphs, axes, encoder)
     return dispatch(state, shards, out, st_shard_body, fn_name="encode_st",
                     cohort_run=lambda pending: encode_st_cohort(
                         [(s.id, s.params["counts"], s.params["coords"]) for s in pending],
-                        out, graph, axis, encoder=encoder),
+                        out, graphs, axes, encoder=encoder),
                     report_extra=declared)
 
 

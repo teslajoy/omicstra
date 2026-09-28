@@ -239,10 +239,18 @@ register(
 
 
 # --- Novae ------------------------------------------------------------------
+# the weights, PINNED. `MICS-Lab/novae-human-0` now 307-redirects to
+# `prism-oncology/novae-human-0` - the repo changed owner - and a redirect is not
+# a provenance record: whatever it resolves to today is not necessarily what the
+# cache was built against. the revision is the commit the reproduction ran on.
+NOVAE_REPO = "MICS-Lab/novae-human-0"
+NOVAE_REVISION = "b8c0a5d7612bac6bc719ab57ed3cd16ad814728c"
+
+
 def _load_novae():
     import novae
 
-    return _Novae(novae.Novae.from_pretrained("MICS-Lab/novae-human-0"))
+    return _Novae(novae.Novae.from_pretrained(NOVAE_REPO, revision=NOVAE_REVISION))
 
 
 class _Novae:
@@ -290,7 +298,10 @@ register(
         # matches almost nothing and embeds noise.
         gene_axis="symbol",
         trained_on="image-based ST only - MERSCOPE, Xenium, CosMx, ~30M cells at "
-                   "subcellular resolution (Blampey et al. 2025, Nat. Methods, MICS-Lab)",
+                   "subcellular resolution (Blampey et al. 2025, Nat. Methods, MICS-Lab). "
+                   "weights MICS-Lab/novae-human-0 @ b8c0a5d7612bac6bc719ab57ed3cd16ad814728c "
+                   "- pinned, because that repo now redirects to prism-oncology and a "
+                   "redirect does not say what the cache was built against",
         min_units=512,
         expects=UnitExpectation(
             resolution_class=("subcellular", "single_cell"),

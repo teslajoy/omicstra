@@ -330,3 +330,47 @@ def test_the_durable_run_is_finished_by_a_worker_that_never_met_the_submitter(tm
     assert {f.stem for f in out_dir.glob("*.npy")} == set(SIDS)
     assert st["executor"] == "temporal"
     assert st["status"] == "complete" and st["missing"] == []
+
+
+# --- a failure is not a wait -------------------------------------------------
+def test_a_failed_shard_does_not_read_as_still_running(tmp_path):
+    """runs_status counts OUTPUT FILES, so an absent file means "not yet" or
+    "never" and cannot tell them apart on its own.
+
+    one hest section failed on an unmappable gene axis and the status said
+    `running` for ten minutes, because the in-process thread's ShardReport was
+    dropped. the report is now written beside the outputs, and this is the
+    assertion that a dead run stops reading as a slow one.
+    """
+    pytest.importorskip("PIL")
+    root = _cohort(tmp_path)
+    ck = tmp_path / "ck.sqlite"
+    rid = "kill-failed"
+
+    script = root / "srv.py"
+    script.write_text(SCRIPT)
+    p = subprocess.Popen([sys.executable, str(script), str(root), "start", rid],
+                         env=_env(root, ck), stdout=subprocess.PIPE, text=True)
+    deadline = time.time() + 90
+    while time.time() < deadline and not (0 < len(_outputs(root)) < len(SIDS)):
+        time.sleep(0.1)
+    p.send_signal(signal.SIGKILL)
+    p.wait(timeout=10)
+    landed = {f.stem for f in _outputs(root)}
+    assert 0 < len(landed) < len(SIDS)
+
+    # before: a killed run with shards outstanding and no failure record
+    st = _said(_run(root, ck, "status", rid).stdout, "STATUS")
+    assert st["status"] == "running" and st["failed"] is None
+
+    # a shard that exhausted its attempts, recorded where the run's outputs are
+    out = root / "data" / "embeddings" / "slowfake_niche"
+    missing = sorted(set(SIDS) - landed)
+    (out / "_failed.json").write_text(json.dumps(
+        {"failed": [{"sample": s, "error": "RuntimeError: nope", "attempts": 3}
+                    for s in missing]}))
+
+    after = _said(_run(root, ck, "status", rid).stdout, "STATUS")
+    assert after["status"] == "failed", after["status"]
+    assert {d["sample"] for d in after["failed"]["failed"]} == set(missing)
+    assert after["missing"] == missing, "the shards are still named, not swallowed"

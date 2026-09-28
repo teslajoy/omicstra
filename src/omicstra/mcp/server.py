@@ -742,10 +742,17 @@ def he_encode(project_id: str | None = None, platform: str | None = None,
     app, spec = _runner("he")
     rid = run_id or f"he-{uuid.uuid4().hex[:12]}"
     cfg = {"configurable": {"thread_id": rid}}
+    # the counts the INVENTORY recorded. without them the floor gate sees no
+    # samples and stays silent, which reads as a pass - the failure
+    # check_compute_gates already warns about in its own comment. the seed cohort
+    # hid it by declaring an answer, so the gate never needed to measure.
+    counts, coverage = _unit_counts(project_id)
     out = app.invoke({"project_id": project_id, "encoder": encoder, "arm": "he",
                       "cohort": _load_cohort(project_id), "platform": platform,
+                      "unit_counts": counts or None,
                       "samples": samples, "compute": compute}, cfg)
-    return {**_handle(app, rid, out), "checkpointer": spec}
+    return {**_handle(app, rid, out), "checkpointer": spec,
+            "unit_counts_cover": coverage}
 
 
 @srv.tool(description=(
@@ -769,10 +776,17 @@ def st_encode(project_id: str | None = None, platform: str | None = None,
     app, spec = _runner("st")
     rid = run_id or f"st-{uuid.uuid4().hex[:12]}"
     cfg = {"configurable": {"thread_id": rid}}
+    # the counts the INVENTORY recorded. without them the floor gate sees no
+    # samples and stays silent, which reads as a pass - the failure
+    # check_compute_gates already warns about in its own comment. the seed cohort
+    # hid it by declaring an answer, so the gate never needed to measure.
+    counts, coverage = _unit_counts(project_id)
     out = app.invoke({"project_id": project_id, "encoder": encoder, "arm": "st",
                       "cohort": _load_cohort(project_id), "platform": platform,
+                      "unit_counts": counts or None,
                       "samples": samples, "compute": compute}, cfg)
-    return {**_handle(app, rid, out), "checkpointer": spec}
+    return {**_handle(app, rid, out), "checkpointer": spec,
+            "unit_counts_cover": coverage}
 
 
 @srv.tool(description=(
@@ -827,8 +841,7 @@ def runs_resume(run_id: str, answers: dict | None = None,
     "Progress is counted from the output files rather than held in memory, so "
     "this is true from any process and after a restart."))
 def runs_status(run_id: str) -> dict:
-    app, spec, snap, arm = _runner_for(run_id)
-    cfg = {"configurable": {"thread_id": run_id}}      # noqa: F841 - kept for symmetry
+    _, spec, snap, arm = _runner_for(run_id)
     if not snap or not snap.values:
         return {"run_id": run_id, "status": "unknown", "arm": None,
                 "why": "no checkpoint under this handle. a run_id from a server "
@@ -843,10 +856,22 @@ def runs_status(run_id: str) -> dict:
             and Path(d["output"]).stat().st_size > 0]
     missing = [d["sample"] for d in shards if d not in done]
     status = rep.get("status", "in_progress")
+    failed = {}
+    if rep.get("out_dir"):
+        fp = Path(rep["out_dir"]) / "_failed.json"
+        if fp.is_file():
+            try:
+                failed = json.loads(fp.read_text())
+            except ValueError:
+                failed = {"unreadable": str(fp)}
     if shards and status == "submitted":
-        status = "complete" if not missing else "running"
+        # an absent output file means "not yet" OR "never" and cannot tell them
+        # apart on its own. a recorded failure is what makes the difference
+        # reportable - without it a dead run reads as a slow one indefinitely.
+        status = ("complete" if not missing
+                  else "failed" if failed else "running")
     return {"run_id": run_id, "checkpointer": spec, "arm": arm,
-            "executor": rep.get("executor"),
+            "executor": rep.get("executor"), "failed": failed or None,
             "n_shards": len(shards), "n_done": len(done),
             "missing": missing,
             "status": status,
@@ -861,7 +886,7 @@ def runs_status(run_id: str) -> dict:
     "The decision record for one run: every gate answered, by whom, and the "
     "declaration it resolved from. This is the run's half of the ledger."))
 def runs_record(run_id: str) -> dict:
-    app, spec, snap, arm = _runner_for(run_id)
+    _, spec, snap, arm = _runner_for(run_id)
     if not snap or not snap.values:
         return {"run_id": run_id, "records": [], "arm": None,
                 "why": "no checkpoint under this handle"}

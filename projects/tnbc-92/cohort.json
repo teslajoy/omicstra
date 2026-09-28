@@ -30,13 +30,14 @@
   },
   "compute_backend_note": "the executor, which is what dispatch reads. `pool` names where it runs; the two were one field until 2026-09-18 and a machine name could not land on a set of backend kinds.",
   "pool": "mac",
-  "gene_axis": {
-    "have": "ensembl_id",
-    "want": "symbol",
+  "gene_mapping": {
     "map": "../../data/inputs/ensembl_to_symbol.tsv",
+    "map_key": "ensembl",
+    "map_value": "symbol",
     "duplicates": "sum",
-    "strip_version": true,
     "unmapped": "drop",
-    "basis": "the axis the cached novae embeddings were built on: notebooks/embeddings/novae_st_embeddings.ipynb maps versioned Ensembl ids to HGNC symbols, drops the unmapped, and SUMS ids that collapse onto one symbol. duplicates is declared because sum, mean and first are three different matrices and only one of them is in the cache."
+    "basis": "the annotation release the cached novae embeddings were built against: notebooks/embeddings/novae_st_embeddings.ipynb maps Ensembl ids to HGNC symbols, drops the unmapped, and SUMS ids that collapse onto one symbol. duplicates is declared because sum, mean and first are three different matrices and only one of them is in the cache.",
+    "why_declared_and_not_observed": "which space each section is indexed by is OBSERVED - scripts/ingest_wang.py records it per sample as ingest.json#counts.<id>.gene_id, 'ensembl_versioned' for all 280. the RELEASE is a choice, which is why that script deliberately does not map: 'mapping here would bake one annotation release into the artifact'. so the space is read and the release is declared.",
+    "strip_version_is_derived": "not a field. the record says ensembl_versioned and the table is keyed on plain ensembl, so cutting at the dot follows from two facts rather than a third declaration that could disagree with them."
   }
 }

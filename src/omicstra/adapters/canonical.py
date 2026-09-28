@@ -58,6 +58,27 @@ def canonical_dir(project_root: str | Path) -> Path:
     return Path(project_root) / "data" / "canonical"
 
 
+def observed_gene_id(project_root: str | Path, sample_id: str) -> str | None:
+    """which identifier space a section's counts matrix is actually indexed by.
+
+    OBSERVED, not declared, and that distinction is the whole point. the ingest
+    writes it down per sample (`ingest.json#counts.<id>.gene_id`) because it is
+    the one process that sees the native file, and `scripts/ingest_wang.py` says
+    in its own docstring why it does not go further: "symbols are for display, and
+    mapping here would bake one annotation release into the artifact". so the
+    ingest records the space and the consumer maps.
+
+    None means the ingest did not record it, which is not the same as "symbols".
+    a cohort that pools studies can be mixed - the second cohort has 68 sections
+    on Ensembl and 40 on symbols - so a missing record is refused rather than
+    assumed, the same rule as a missing edge scale.
+    """
+    rec = read_ingest(project_root)
+    got = (rec.get("counts") or {}).get(str(sample_id)) or {}
+    v = got.get("gene_id")
+    return None if v is None else str(v)
+
+
 def read_ingest(project_root: str | Path) -> dict:
     """the ingest record: what was converted, from what, with which shas.
 

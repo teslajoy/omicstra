@@ -15,55 +15,87 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from omicstra.adapters.canonical import observed_gene_id
 from omicstra.protocols.encode import GeneAxis, StGraph, apply_gene_axis, run_one_st
 
 ROOT = Path(__file__).resolve().parents[1]
-DECLARED = {"have": "ensembl_id", "want": "symbol", "map": "m.tsv",
-            "duplicates": "sum", "strip_version": True, "unmapped": "drop"}
+# the DECLARATION, which is the annotation release and its policy - and nothing
+# else. `have` is observed from the ingest record and `strip_version` is derived
+# from it, so neither appears here.
+DECLARED = {"map": "m.tsv", "map_key": "ensembl", "map_value": "symbol",
+            "duplicates": "sum", "unmapped": "drop"}
+OBSERVED = "ensembl_versioned"        # what the ingest recorded for a section
 
 
 # --- the declaration -------------------------------------------------------
-def test_a_cohort_with_no_gene_axis_is_refused_not_guessed():
-    """an index of ENSG strings is obviously Ensembl, and guessing it is exactly
-    the failure: the same h5ad re-exported with different var names would
-    silently change what reaches the GAT."""
-    with pytest.raises(ValueError, match="declares no gene_axis"):
-        GeneAxis.from_cohort({}, want="symbol")
+def test_an_unrecorded_gene_axis_is_refused_not_assumed():
+    """"the ingest did not record it" is not "it is on symbols".
+
+    THE correction. an earlier version asked the cohort to DECLARE which space
+    its sections were indexed by, and that declaration was wrong for 68 of 108
+    sections of the second cohort - which pools three studies that disagree. the
+    space is a per-section fact the ingest observes; only the release is declared.
+    """
+    with pytest.raises(ValueError, match="ingest did not record"):
+        GeneAxis.resolve({"gene_mapping": DECLARED}, want="symbol", observed=None)
+
+
+def test_a_section_already_on_the_encoders_axis_needs_no_declaration():
+    """40 of that cohort's sections are already on symbols. they map nothing, so
+    there is no release to choose and requiring one would be a question with a
+    single answer."""
+    axis = GeneAxis.resolve({}, want="symbol", observed="symbol")
+    assert axis.is_identity() and axis.map_path is None
+
+
+def test_a_section_needing_a_map_with_none_declared_is_refused():
+    with pytest.raises(ValueError, match="declares no gene_mapping"):
+        GeneAxis.resolve({}, want="symbol", observed=OBSERVED)
+
+
+def test_a_table_keyed_on_the_wrong_space_cannot_map_a_section():
+    """a cohort with sections in more than one space needs a table per space, and
+    the sections it does not cover are skipped naming this."""
+    with pytest.raises(ValueError, match="cannot map it"):
+        GeneAxis.resolve({"gene_mapping": dict(DECLARED, map_key="entrez")},
+                         want="symbol", observed=OBSERVED)
+
+
+def test_strip_version_is_derived_from_the_record_not_declared():
+    """the ingest already distinguishes ensembl_versioned from ensembl, so cutting
+    at the dot follows from two facts. a third declaration could disagree."""
+    assert GeneAxis.resolve({"gene_mapping": DECLARED}, want="symbol",
+                            observed="ensembl_versioned").strip_version is True
+    assert GeneAxis.resolve({"gene_mapping": DECLARED}, want="symbol",
+                            observed="ensembl").strip_version is False
 
 
 def test_the_cohort_and_the_encoder_must_agree_on_the_target():
     """the two halves are declared in the two places that own them. a cohort
     asserting it supplies what the encoder wants, and being believed, is what
     this pair exists to stop."""
-    with pytest.raises(ValueError, match="encoder needs 'symbol'"):
-        GeneAxis.from_cohort({"gene_axis": dict(DECLARED, want="entrez")}, want="symbol")
+    with pytest.raises(ValueError, match="the table does not lead"):
+        GeneAxis.resolve({"gene_mapping": dict(DECLARED, map_value="entrez")},
+                         want="symbol", observed=OBSERVED)
 
 
 @pytest.mark.parametrize("field,bad", [("duplicates", "concat"), ("unmapped", "invent")])
 def test_the_closed_sets_are_closed(field, bad):
     with pytest.raises(ValueError, match=field):
-        GeneAxis.from_cohort({"gene_axis": dict(DECLARED, **{field: bad})}, want="symbol")
+        GeneAxis.resolve({"gene_mapping": dict(DECLARED, **{field: bad})},
+                         want="symbol", observed=OBSERVED)
 
 
 def test_a_mapping_with_no_table_is_refused():
     d = {k: v for k, v in DECLARED.items() if k != "map"}
     with pytest.raises(ValueError, match="no map table"):
-        GeneAxis.from_cohort({"gene_axis": d}, want="symbol")
-
-
-def test_duplicates_is_required_only_where_a_mapping_happens():
-    """a cohort already on the encoder's axis collapses nothing, so there is no
-    policy to declare. requiring one anyway would be a question with one answer."""
-    axis = GeneAxis.from_cohort({"gene_axis": {"have": "symbol", "want": "symbol"}},
-                                want="symbol")
-    assert axis.is_identity()
-    assert axis.map_path is None
+        GeneAxis.resolve({"gene_mapping": d}, want="symbol", observed=OBSERVED)
 
 
 def test_the_declaration_reaches_the_record():
-    """two cohorts on different axes must not read alike, and a run that changed
+    """two sections on different axes must not read alike, and a run that changed
     `duplicates` is a different run."""
-    axis = GeneAxis.from_cohort({"gene_axis": DECLARED}, want="symbol")
+    axis = GeneAxis.resolve({"gene_mapping": DECLARED}, want="symbol", observed=OBSERVED)
     p = axis.params()
     assert p["gene_axis_duplicates"] == "sum" and p["gene_axis_map"] == "m.tsv"
     assert p["gene_axis_strip_version"] is True
@@ -84,9 +116,9 @@ def _tiny(tmp_path, dtype="int32"):
     return a, tbl
 
 
-def _axis(tbl, **over):
-    return GeneAxis.from_cohort(
-        {"gene_axis": dict(DECLARED, map=str(tbl), **over)}, want="symbol")
+def _axis(tbl, observed=OBSERVED, **over):
+    return GeneAxis.resolve({"gene_mapping": dict(DECLARED, map=str(tbl), **over)},
+                            want="symbol", observed=observed)
 
 
 def test_duplicates_are_summed_and_the_unmapped_dropped(tmp_path):
@@ -127,18 +159,18 @@ def test_keeping_the_unmapped_keeps_them_under_their_own_id(tmp_path):
     assert rec["n_unmapped"] == 1
 
 
-def test_not_stripping_the_version_maps_nothing(tmp_path):
-    """`ENSG1.9` is not a key in a table of `ENSG1`. whether to cut at the dot is
-    a property of the cohort's export, not of the table."""
+def test_a_section_recorded_as_unversioned_maps_nothing_here(tmp_path):
+    """`ENSG1.9` is not a key in a table of `ENSG1`, so a section the ingest
+    recorded as plain `ensembl` while its ids carry versions maps nothing. the
+    record and the data have to agree; this is what disagreement looks like."""
     a, tbl = _tiny(tmp_path)
-    _, rec = apply_gene_axis(a, _axis(tbl, strip_version=False))
+    _, rec = apply_gene_axis(a, _axis(tbl, observed="ensembl"))
     assert rec["n_unmapped"] == 4
 
 
 def test_an_identity_axis_returns_the_matrix_untouched(tmp_path):
     a, _ = _tiny(tmp_path)
-    axis = GeneAxis.from_cohort({"gene_axis": {"have": "symbol", "want": "symbol"}},
-                                want="symbol")
+    axis = GeneAxis.resolve({}, want="symbol", observed="symbol")
     out, rec = apply_gene_axis(a, axis)
     assert out is a and rec["route"] == "identity"
 
@@ -223,7 +255,8 @@ def test_the_ported_st_encoder_reproduces_the_cache_exactly(sid):
 
     root = ROOT / "projects" / "tnbc-92"
     cohort = json.loads((root / "cohort.json").read_text())
-    axis = GeneAxis.from_cohort(cohort, want="symbol", root=root)
+    axis = GeneAxis.resolve(cohort, want="symbol",
+                            observed=observed_gene_id(root, sid), root=root)
     graph = StGraph.from_platform(
         json.loads((root / "platform.json").read_text()), "original_st")
 
