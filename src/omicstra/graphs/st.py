@@ -115,19 +115,28 @@ def st(state: EncodeState) -> dict:
                            **({"undeclared": undeclared} if undeclared else {})}}
 
     out = root / "data" / "embeddings" / f"{encoder}_spot"
-    first = triples[0][0]
+    one = graphs[triples[0][0]]
+
+    def _set(f):
+        # the DISTINCT values across sections. reporting one section's would name
+        # an arbitrary section: with a mixed cohort the first is as likely to be
+        # the identity route, whose map is None, as the mapped one.
+        vs = sorted({v for v in (f(a) for a in axes.values()) if v is not None})
+        return vs[0] if len(vs) == 1 else vs
+
     scales = sorted({g.scale_to_microns for g in graphs.values()})
     routes = sorted({f"{a.have}->{a.want}" for a in axes.values()})
-    one = graphs[first]
     declared = {"platform": pname, "st_graph": one.method,
                 "radius_cap_px": one.radius_cap_px,
-                # sets: a per-sample cohort has no single value, and naming one
-                # would name an arbitrary section's.
                 "scale_to_microns": scales[0] if len(scales) == 1 else scales,
                 "scale_is_per_sample": len(scales) > 1,
                 "gene_axis_route": routes[0] if len(routes) == 1 else routes,
                 "gene_axis_is_per_sample": len(routes) > 1,
-                **axes[first].params(),
+                "gene_axis_map": _set(lambda a: None if a.map_path is None
+                                      else a.map_path.name),
+                "gene_axis_map_sha256_16": _set(lambda a: a.map_sha256_16),
+                "gene_axis_duplicates": _set(lambda a: a.duplicates),
+                "gene_axis_unmapped": _set(lambda a: a.unmapped),
                 "n_shards": len(triples), "skipped": skipped}
 
     if not state.get("compute"):
