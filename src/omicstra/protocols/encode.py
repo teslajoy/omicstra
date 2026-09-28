@@ -861,16 +861,17 @@ class GeneAxis:
     an ENSG version increments when the gene's structure changes, so the field
     stores Ensembl and displays symbols. novae inverts that - zero-shot resolves
     var_names against a symbol vocabulary - so the mapping release sets how much
-    transcriptome the model sees (85% of tnbc-92 at the declared release).
+    transcriptome the model sees.
 
     three facts, one home each:
       have   OBSERVED per section, ingest.json#counts.<id>.gene_id
       want   EncoderSpec.gene_axis
       map    cohort.json#gene_mapping - the release, a choice
 
-    declaring `have` cost 68 of hest's 108 sections: it pools three studies, 40
-    on symbols and 68 on Ensembl, and the cohort-level claim was wrong for the
-    majority. strip_version is derived from `have`, not declared.
+    `have` is per SECTION and read, not declared: a cohort that pools studies
+    carries more than one space, so a cohort-level claim is wrong for whichever
+    part disagrees. strip_version is derived from it. see design/v1_2_scope.md
+    for the counts that established this.
     """
     have: str
     want: str

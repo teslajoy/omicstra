@@ -60,7 +60,6 @@
       "tools": [
         "check_eda_gate",
         "describe_encoder_fit",
-        "describe_gene_reference",
         "describe_data_structure",
         "list_task_families",
         "route",

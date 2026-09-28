@@ -58,9 +58,8 @@ def dispatch(state: dict, shards: list, out: Path, body: Callable,
             "outlives it and any worker polling the queue finishes the shards.")
     else:
         # the ShardReport was dropped, so a failed shard read as a slow one:
-        # runs_status counts files, and "absent" means "not yet" or "never". one
-        # hest section failed on an unmappable gene axis and said `running` for
-        # ten minutes. writing it beside the outputs is what lets a later process
+        # runs_status counts files, and "absent" means "not yet" or "never".
+        # writing the failure beside the outputs is what lets a later process
         # tell the two apart.
         failures = out / "_failed.json"
 

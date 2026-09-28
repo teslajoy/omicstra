@@ -44,6 +44,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 
 import click
@@ -100,16 +101,33 @@ def _spots(h5ad: Path, dest: Path) -> dict:
                        "gene_id": _gene_id(a.var_names)}}
 
 
+_ENSG = re.compile(r"^ENSG\d{11}(\.\d+)?$")
+_SYMBOL = re.compile(r"^[A-Z0-9][A-Z0-9._@-]*$")
+
+
 def _gene_id(var_names) -> str:
-    """which identifier space this object is indexed by, via the package's measure.
+    """`ensembl_versioned` | `ensembl` | `symbol` | `unknown`, for the record.
 
-    observed here because the ingest is the only step that sees the native file;
-    `ingest_wang.py` records the same field. neither maps: the annotation release
-    is a cohort's choice, not a converter's.
+    the ingest is the only step that sees the native file, so this is the one
+    place the identifier space can be observed rather than declared;
+    `ingest_wang.py` records the same field. neither maps - the annotation release
+    is the cohort's choice, not a converter's.
+
+    it lives HERE and not in the package because the sniffing is format knowledge:
+    these objects carry clone-based names (FO538757.1) beside symbols, so the vote
+    is a majority rather than a rule, and that is a fact about this cohort's export
+    rather than about gene identifiers.
     """
-    from omicstra.measures.gene_reference import identifier_space
-
-    return identifier_space(list(var_names[:512]))
+    names = [str(g) for g in list(var_names[:512])]
+    if not names:
+        return "unknown"
+    ensg = [n for n in names if _ENSG.match(n)]
+    half = len(names) / 2
+    if len(ensg) > half:
+        return "ensembl_versioned" if sum("." in n for n in ensg) > len(ensg) / 2 else "ensembl"
+    if sum(bool(_SYMBOL.match(n)) for n in names) > half:
+        return "symbol"
+    return "unknown"
 
 
 @click.command()

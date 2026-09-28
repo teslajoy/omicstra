@@ -178,6 +178,16 @@ match.
 
 both are cohort declarations, not package work. neither is a defect in the port.
 
+### step 3, measured
+
+- the second cohort is not one gene axis. 68 of its 108 original-ST sections are
+  indexed by Ensembl and 40 by symbols. `data/canonical/ingest.json#counts.<id>.gene_id`
+- the declared map table reaches 84-86% of each seed-cohort section's var_names.
+  the run record's `n_unmapped` / `n_genes_out` per section, e.g. 3549 / 20824 on
+  TNBC6_CN3_E1
+- 83 of 125 sections fall below novae's 512-spot floor on the second cohort, 19 of
+  281 on the seed. the `platform_floor` gate's `observed` block in the run record
+
 - **registration is undeclared, and no cohort here needs it.** both cohorts are
   same-section - H&E and expression off one 16 um section, so ids line up and the
   registration error is zero by construction. a cohort with serial sections needs
