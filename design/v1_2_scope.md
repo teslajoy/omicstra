@@ -155,9 +155,9 @@ oracle. four cases, named before starting so none is discovered mid-port:
 
 | checks | target |
 |:--|:--|
-| positive_markers, negative_markers, spatial_autocorrelation, cross_modal_registration | boolean pass in the summary - must match exactly |
+| positive_markers, negative_markers, spatial_autocorrelation | boolean pass in the summary - must match exactly |
 | encoder_input_decision, model_tissue_fit | prose and a dict - compare content, not status |
-| segmentation_qc, multi_section_alignment | recorded as null. the graph must reach not_run or not_applicable, never invent a pass |
+| segmentation_qc, multi_section_alignment, cross_modal_registration | recorded as null. the graph must reach not_run or not_applicable, never invent a pass. cross_modal_registration was listed in the row above until the acceptance run read the file: its value is null, not a boolean |
 | cohort_counts, batch_structure | absent from the summary. NOTHING to diff, and cohort_counts is universal authority - a check every cohort must answer that the seed cohort never did. recorded as a finding, not quietly filled in |
 
 a check that disagrees is named with its reason. nothing is adjusted to make it
@@ -177,6 +177,53 @@ match.
   it refuses rather than choosing.
 
 both are cohort declarations, not package work. neither is a defect in the port.
+
+### step 6, measured - the four-way table
+
+run through `build_protocol(EDA_STEPS, "eda")` on the seed cohort, 2026-09-28.
+params are keyed per step; an absent key is the skip signal, so `params={}` skips
+everything and reads like a clean run.
+
+| group | check | graph | against the summary |
+|:--|:--|:--|:--|
+| A | positive_markers | not_run | no panel declared |
+| A | negative_markers | not_run | no panel declared |
+| A | spatial_autocorrelation | not_run | no panel declared |
+| B | encoder_input_decision | **fail** | the summary carries prose; the graph resolves null and blocks |
+| B | model_tissue_fit | not_run | **no implementation registered.** the summary carries three per-encoder verdicts with reasons |
+| C | segmentation_qc | not_applicable | null. reasoned inapplicability - no masks on a spot platform |
+| C | multi_section_alignment | not_run | null. no implementation registered |
+| C | cross_modal_registration | not_run | null. no implementation registered |
+| D | cohort_counts | **pass** | absent from the summary. 280/280 sections carry units, 286,250 total |
+| D | batch_structure | not_run | absent. gene axis undeclared |
+
+groups C and D meet their targets. four checks are blocked on a cohort
+declaration and three have no implementation, which is 7 of 10 unanswerable and
+is what the gate reports rather than reaching a verdict on silence.
+
+#### findings
+
+- **three checks are declared in the contract with no implementation registered**
+  - `cross_modal_registration`, `model_tissue_fit`, `multi_section_alignment`. the
+  graph reaches not_run with that reason, so nothing invents a pass. the seed
+  cohort hid it: every value in `eda_summary.json` is hand-assembled, and it says
+  so (`produced_by: manual`). a second cohort has nobody to hand-write them, so
+  these three are permanently unanswerable there. `src/omicstra/protocols/eda.py`
+  registers 10 steps; `src/omicstra/configs/eda_contract.json` declares them.
+- **`encoder_input_decision` fails where the summary has content.** criterion
+  "resolved to a non-empty value"; observed null; decision "decide it and declare
+  it - blocking while unresolved". the summary's paragraph about selection.RData
+  vs rawCountsMatrices has no declared counterpart the graph can read.
+- **`cohort_counts` passes, and the summary never answered it.** 280 sections,
+  286,250 units, max 33,047 genes. universal authority, so every cohort owes it.
+  `data/canonical/ingest.json` plus the step's own `observed.per_section`.
+- **the gene universe is much wider than five sections suggested.** across 280:
+  per-section 10,571-33,047 (median 25,041), intersection **7,288**, union 54,714
+  - the intersection is 22% of the largest section and discards ~71% of the
+  median one. on the second cohort's 25 above-floor original-ST sections the raw
+  intersection is **0**, because 17 are on Ensembl and 8 on symbols; after mapping
+  to the encoder's axis it is 11,284 of a 17,627 median. so a universe rule has to
+  be stated over the encoder's axis, not over the sections' own var_names.
 
 ### step 3, measured
 

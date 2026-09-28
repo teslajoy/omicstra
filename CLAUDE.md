@@ -164,7 +164,9 @@ to do:
   name. `spec()` is metadata only and needs no tensor library; only `load()` does
 - `src/omicstra/adapters/canonical.py` — the package's input contract: .h5ad plus
   a coordinates table. no format-specific reader lives in the package
-- `src/omicstra/mcp/server.py` — 8 tools, 4 resources, stdio + http, zero model calls
+- `src/omicstra/mcp/server.py` — 16 tools, 2 resources, stdio + http, zero model
+  calls. two compute agents (`he_encode`, `st_encode`), each with its own gate set,
+  plus `runs_status`/`runs_resume`/`runs_record` for the handle
 - `scripts/` — the chain behind the published results, plus `ingest_<cohort>.py`.
   a cohort's native format is converted here, ONCE, and never inside the package
 - `configs/v3/` — R1_v3..R6_v3 run configs. these are cohort runs, not contracts;

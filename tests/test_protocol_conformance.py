@@ -840,6 +840,13 @@ def test_every_file_that_states_a_version_states_the_same_one():
     are newer and were not covered. a mismatch there is not cosmetic - the DOI
     record and the citation would claim a version that was never released, and
     nothing else in the suite would notice.
+
+    which is also why the two groups are only required to agree AT a release.
+    `pyproject`/`server.json` say what the package is NOW; `CITATION.cff` and
+    `.zenodo.json` describe what was last published and archived, and carry that
+    release's date and DOI. between releases the working tree moves ahead and
+    they correctly do not. forcing them level on a `.devN` would put a release
+    date on a version nobody released - the very claim this test forbids.
     """
     import tomllib
 
@@ -851,17 +858,25 @@ def test_every_file_that_states_a_version_states_the_same_one():
 
     declared = tomllib.loads((root / "pyproject.toml").read_text())["project"]["version"]
     sj = json.loads((root / "server.json").read_text())
-    found = {
+    package = {
         "pyproject.toml": declared,
         "server.json": sj["version"],
         "server.json#packages[0]": sj["packages"][0]["version"],
+    }
+    archive = {
         "CITATION.cff": str(yaml.safe_load((root / "CITATION.cff").read_text())["version"]),
     }
     zj = root / ".zenodo.json"
     if zj.is_file():
-        found[".zenodo.json"] = json.loads(zj.read_text())["version"]
+        archive[".zenodo.json"] = json.loads(zj.read_text())["version"]
 
-    assert len(set(found.values())) == 1, f"version drift: {found}"
+    assert len(set(package.values())) == 1, f"package version drift: {package}"
+    assert len(set(archive.values())) == 1, f"archive version drift: {archive}"
+
+    prerelease = any(m in declared for m in (".dev", "a", "b", "rc")) and declared[0].isdigit()
+    if not prerelease:
+        assert set(package.values()) == set(archive.values()), (
+            f"a release must agree everywhere: {package} vs {archive}")
 
 
 def test_no_file_cites_a_doi_that_was_only_reserved():

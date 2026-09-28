@@ -177,21 +177,37 @@ it, the declaration stops standing and the gate re-opens.
 
 > *"Run it. What happens if my laptop sleeps four hours in?"*
 
-One shard per sample, three attempts each, and the output file is the only
-record of what finished - so resume is decided by the filesystem rather than by
-a ledger that can disagree with it:
+Extraction runs through the same surface a client uses, not through a script
+around it. Each modality is its own agent, because they ask different questions:
+the H&E arm asks about gated weights and a tile geometry, the ST arm about the
+encoder's prototype floor and the edge scale.
 
-```python
-from omicstra.protocols.encode import HeGeometry, encode_he_cohort
-
-geom = HeGeometry.from_platform(platform, "original_st")   # declared, not inferred
-encode_he_cohort(samples, out_dir, geom, device="mps")
+```
+he_encode(compute=True)                      -> awaiting_answer: 3 gates
+runs_resume(run_id, answers={...})           -> submitted, in 0.3 s
+                                                (submission returns; the run does not)
+runs_status(run_id)                          -> running  2/4  missing [sec2, sec3]
 ```
 
-Killed mid-shard and started again, the same command skipped the two finished
-shards in 8.8 s and re-ran only the one that was interrupted. Nothing was told
-what had completed. A shard that fails three times is recorded as failed and the
-run continues - one unreadable slide does not cost the other 279.
+Gates arrive as interrupts carrying their evidence and what accepting forecloses,
+so nobody accepts a caution without seeing the diagnostic behind it. An answer
+already in the cohort's declarations closes its gate without asking.
+
+One shard per section, three attempts each, and the output file is the only
+record of what finished - so resume is decided by the filesystem rather than by
+a ledger that can disagree with it. Kill the process mid-shard and a second
+process, given only the `run_id`, reads the missing sections off disk, resumes,
+and does not rewrite what landed. A shard that fails every attempt is recorded
+as failed rather than staying indistinguishable from a slow one - one unreadable
+slide does not cost the other 279.
+
+Two executors, and the record names which one ran, because they promise
+different things:
+
+| | what survives a restart |
+|---|---|
+| in-process | the output files and the checkpoint. the thread does not; `runs_resume` re-dispatches what is missing |
+| Temporal | the workflow history. a worker that never met the submitting process finishes the run |
 
 **check the vectors are the ones the published grid used**
 
@@ -239,6 +255,50 @@ A cohort with no evidence of its own is not routable, and the server says so rat
 | `decision_record` | what has been decided here, by rule and by person |
 | `check_compute_gates` | what a compute run would need answered first |
 | `describe_compute_plan` | what a run would cost, read, write, and leave untouched |
+| `he_encode` | run the H&E morphology agent; returns a run handle |
+| `st_encode` | run the spatial-transcriptomics agent; its own gates, not a mode of the above |
+| `runs_status` | what a run is doing, counted from the output files rather than remembered |
+| `runs_resume` | answer an open gate, or re-dispatch the sections a dead run left missing |
+| `runs_record` | the run's half of the ledger: every gate, who answered it, from which declaration |
+
+**what that lets you do today**
+
+```
+1  point it at a cohort it has never seen          hest-breast, 3 sections encoded
+2  ask what the data is and whether the declared    no compute
+   encoders were built for it
+3  run the admissibility checks per section         pass / fail / not_run /
+                                                    not_applicable, never a guess
+4  ask what an encode would cost                    no compute
+5  start an H&E or ST encode, answer its gates,     submission returns in 0.3 s
+   and walk away
+6  kill the process, come back, resume by run_id    finishes without redoing work
+7  read the record: which gate, which answer,       and whether a person or a
+   from which declaration                           client supplied it
+8  ask which fusion answers which question          tnbc-92 only - a cohort with
+   on the seed cohort, and why                      no evidence is not routable
+```
+
+Two claims in there are separate and are tested separately: **resume** is
+verified by killing a process mid-shard on both executors, and **byte-identity**
+by re-encoding sections of the seed cohort and diffing against the published
+cache - exact on the ST side, within a declared tolerance on H&E.
+
+Four of the ten admissibility checks currently return `not_run` on the seed
+cohort for want of a cohort declaration, and three are declared in the contract
+with no implementation registered behind them. The gate reports that rather than
+reaching a verdict on silence.
+
+**what it cannot do yet**
+
+```
+fuse or align on a second cohort         step 4
+produce that cohort's own evidence pack  step 5
+the pathway agent                        step 7, may slip to 1.3
+registration across sections             declared, not built - both cohorts are
+                                         same-section, so nothing needs it here
+SLURM                                    1.3
+```
 
 ---
 
@@ -354,7 +414,7 @@ omicstra/
 │   · models/encoders.py             # the encoder registry, resolved by declared name.
 │   │                                #   spec() is metadata; only load() needs torch
 │   · agents/modality.py             # he / st / pathway agents - read recorded evidence
-│   · mcp/server.py                  # 11 tools, 2 resources, stdio + http. zero model calls
+│   · mcp/server.py                  # 16 tools, 2 resources, stdio + http. zero model calls
 │   · records.py  artifacts.py       # the record contract - inventory/eda_summary io
 │   · settings.py  cli.py            # 8 commands. settings imports nothing from omicstra
 │   · routing.py  eda.py  figures.py # resolve + ledger · gate · plots
