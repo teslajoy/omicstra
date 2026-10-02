@@ -8,7 +8,7 @@ the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.22754114-1682D4)](https://doi.org/10.5281/zenodo.22754114)
 
-`v1.0.0` · `v1.1.0a1` pre-release · `v1.1.0`  `ResearchHub Foundation grant`  `Brenden-Colson Center / Sears Lab, OHSU`
+`v1.0.0` · `v1.1.0` · `v1.2.0`  `ResearchHub Foundation grant`  `Brenden-Colson Center / Sears Lab, OHSU`
 
 **v1.0** ships the read path (inventory, EDA, admissibility gate, routing) over
 stdio and HTTP, the alignment and evaluation stages verified bit-identical
@@ -25,8 +25,16 @@ both.
 That report is a **template, not this cohort's report**. The renderer takes a
 pack and a record ledger and knows nothing about tnbc-92 - sections appear
 because a record exists, so a cohort that never ran H3 has no H3 section and says
-why. That is what makes a second cohort's report free: same code, different
-declarations. See `design/v1_1_scope.md`.
+why. See `design/v1_1_scope.md`.
+
+**v1.2** makes both modality agents reachable by a client, with a run handle that
+survives the process, and runs a cohort the package had never seen through them.
+The agents are separate on purpose: the H&E arm asks about gated weights and a
+tile geometry, the ST arm about the encoder's prototype floor and the edge scale,
+and one tool would hide what each exists to ask. A cohort with no recorded
+evaluation of its own is **not routable**, and the server says so rather than
+reusing the seed cohort's winner. The second cohort's own evidence pack is 1.3 -
+see `design/v1_3_scope.md`, which carries it with the open questions measured.
 
 ---
 
@@ -268,7 +276,7 @@ A cohort with no evidence of its own is not routable, and the server says so rat
 2  ask what the data is and whether the declared    no compute
    encoders were built for it
 3  run the admissibility checks per section         pass / fail / not_run /
-                                                    not_applicable, never a guess
+   across the whole cohort, each with its null      not_applicable, never a guess
 4  ask what an encode would cost                    no compute
 5  start an H&E or ST encode, answer its gates,     submission returns in 0.3 s
    and walk away
@@ -284,19 +292,24 @@ verified by killing a process mid-shard on both executors, and **byte-identity**
 by re-encoding sections of the seed cohort and diffing against the published
 cache - exact on the ST side, within a declared tolerance on H&E.
 
-Four of the ten admissibility checks currently return `not_run` on the seed
-cohort for want of a cohort declaration, and three are declared in the contract
-with no implementation registered behind them. The gate reports that rather than
-reaching a verdict on silence.
+Four of the ten admissibility checks return `not_run` on the seed cohort for want
+of a cohort declaration, and three are declared in the contract with no
+implementation registered behind them. The gate reports that rather than reaching
+a verdict on silence - and a check that finds none of its declared genes returns
+`not_run` with the missing list, because a check that measured nothing must not
+read as a pass.
 
 **what it cannot do yet**
 
 ```
-fuse or align on a second cohort         step 4
-produce that cohort's own evidence pack  step 5
-the pathway agent                        step 7, may slip to 1.3
-registration across sections             declared, not built - both cohorts are
-                                         same-section, so nothing needs it here
+fuse or align on a second cohort         1.3 - its EDA gate does not pass, and
+                                         nothing may run past a failed gate
+produce that cohort's own evidence pack  1.3 - the release claim it is named for
+a package path for the pathway arm       1.3
+registration across sections             declared, not built. both cohorts are
+                                         same-section, so nothing here needs it
+mitochondrial-fraction exclusion         not implemented. a proposal commitment,
+                                         recorded in design/v1_3_scope.md
 SLURM                                    1.3
 ```
 
@@ -512,6 +525,52 @@ the `_meta` block is not optional and is the first thing a new http caller gets
 wrong. protocol revision 2026-07-28 removed the initialize handshake, so the
 version travels on **every** request rather than being negotiated once. a call
 without it is refused with `-32602`, naming the two keys it wants.
+
+**the modality agents are client-callable, not CLI commands.** `omicstra --help`
+covers the read path and the chain; `he_encode` and `st_encode` are MCP tools,
+because each fires gates a client has to answer and returns a run handle a later
+request resumes. Driving them from a shell would mean inventing a way to answer
+an interrupt.
+
+A worked run, on a cohort the package had never seen - three sections, two gene
+identifier spaces and three different edge scales in one call:
+
+```
+st_encode(platform="original_st", samples=["SPA125","SPA126","SPA99"], compute=True)
+  -> awaiting_answer: encoder_compatibility, platform_floor, capacity
+
+runs_resume(run_id, answers={
+    "encoder_compatibility": "proceed_anyway_recorded_as_dissent",
+    "platform_floor": "run_and_mark",
+    "capacity": "continue"})
+  -> submitted                       executor in_process, returns in 0.0 s
+     scale_to_microns   [0.6894, 0.6911, 0.6971]   per_sample: true
+     gene_axis_route    ["ensembl->symbol", "symbol->symbol"]
+     gene_axis_map      ensembl_to_symbol.tsv @ 3d6e353cc58391fa
+
+runs_status(run_id)   -> complete 3/3
+runs_record(run_id)   -> preflight_encode  selection  actor=client  confirmed_by=null
+                         encode_dispatch   dispatch   actor=system  executor=in_process
+```
+
+The gates are interrupts carrying their evidence and what accepting forecloses,
+so nobody accepts a caution without the diagnostic behind it. An answer already
+in the cohort's declarations closes its gate without asking, and an answer given
+through the surface is recorded `actor=client` - the server sees a tool call, not
+a person, and the pack cites gate answers.
+
+**Refusals are per section, and they name the missing declaration.** Before this
+cohort declared a `gene_mapping`, the same call returned:
+
+```
+n_shards 2    skipped 1
+  SPA99  [gene_mapping]  section is 'ensembl', encoder needs 'symbol',
+                         cohort declares no gene_mapping
+```
+
+Two sections encoded, one named what it needed. The alternative is what happened
+first: the encoder's own `AssertionError: Too few genes (0) are known` from inside
+a worker, on whichever section happened to be indexed differently.
 
 a cohort with no evidence pack is **not routable**, and the compute path refuses
 rather than improvising: `route` declines instead of inheriting another cohort's
