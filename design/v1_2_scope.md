@@ -1,8 +1,21 @@
 # 1.2 scope
 
-> **a second cohort goes from files to its own pack and report THROUGH THE SAME
-> SURFACE A CLIENT USES. onboarding the cohort touches nothing in `src/` -
-> anything it forces there is recorded as a finding.**
+> **RELEASED AS: both modality agents are reachable by a client, a cohort the
+> package had never seen runs through them, and the server refuses what it cannot
+> answer rather than inheriting another cohort's result.**
+
+the line this file opened with was *"a second cohort goes from files to its own
+pack and report through the same surface a client uses"*. the pack is step 5 and
+step 5 did not land, so that sentence is **1.3's** and has moved there. what
+shipped is the first two thirds of it: files to embeddings through the surface,
+for a cohort with no evidence of its own, with every refusal named.
+
+the second half of the original line held exactly and is the result worth
+keeping: **onboarding the cohort touched nothing in `src/` that was not a
+finding.** every package edit this release forced is recorded below as one of the
+two kinds it names - cohort knowledge wearing a package's clothes, or a path no
+cohort had taken. there were more of the second than expected, and none of the
+first.
 
 read this before adding anything. the line above ends a scope argument; a
 judgement about whether the work is good does not.
@@ -257,16 +270,26 @@ is what the gate reports rather than reaching a verdict on silence.
 ## order, and what each step is accepted on
 
 ```
-0  scope line       this file                                              done
+0  scope line       done
 1  commit           ingest_hest image fix                                  done
 2  he agent         he.encode -> run_id, runs.status/resume/record         done
-3  st agent         graphs/st.py over the novae port, st.encode            <- here
-6  eda acceptance   panels + gene axis declared; tnbc-92 four-way table
-4  downstream       align.run / evaluate.run behind the same run handle
-5  hest pack        promote + report
-7  pathway agent    package path for gpath2vec (may slip to 1.3)
-8  tag v1.2.0       0-6 green in a clean clone
+3  st agent         graphs/st.py over the novae port, st.encode            done
+6  eda acceptance   the chain RUNS and its table is measured.              partial
+                    7 of 10 checks cannot answer - 4 undeclared, 3
+                    unimplemented - and that is reported rather than
+                    resolved. the remainder is 1.3.
+4  downstream       align.run / evaluate.run behind the same run handle    -> 1.3
+5  hest pack        promote + report                                       -> 1.3
+7  pathway agent    package path for gpath2vec                             -> 1.3
+8  tag v1.2.0       what 0-3 built, green in a clean clone                  <- here
 ```
+
+6 was ordered before 4 because this repo's first constraint is that nothing runs
+past a failed EDA gate. that constraint is unchanged and is why 4 and 5 move
+together: the second cohort's gate does not pass, so its pipeline must not run,
+and a release that shipped 4 without 6 would have broken the rule the project
+enforces on itself. the gate now REPORTS that rather than being unreachable,
+which is the part that was worth shipping.
 
 6 sits before 4 deliberately. this repo's own first constraint is that no
 alignment or evaluation happens until the EDA gate is satisfied, and the second
