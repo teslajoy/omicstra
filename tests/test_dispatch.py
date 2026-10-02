@@ -198,6 +198,18 @@ run_shards_locally(shards, fn)
 '''
 
 
+def _landed(d: Path) -> list[str]:
+    """finished outputs only.
+
+    `atomic_write` names its temp with the suffix LAST - `s3.partial.txt`, not
+    `s3.txt.partial` - because writers that rewrite the name they are handed
+    (np.save) need the temp to look like the destination. so `s*.txt` matches
+    half-written files, and a poll on it counts a shard as finished while it is
+    still being written.
+    """
+    return sorted(f.name for f in d.glob("s*.txt") if ".partial." not in f.name)
+
+
 def test_kill_and_resume(tmp_path):
     """THE acceptance. SIGKILL mid-run, restart, finish without redoing work.
 
@@ -215,7 +227,7 @@ def test_kill_and_resume(tmp_path):
     # wait until it has genuinely started producing, then kill mid-shard
     deadline = time.time() + 30
     while time.time() < deadline:
-        if len(list(tmp_path.glob("s*.txt"))) >= 2:
+        if len(_landed(tmp_path)) >= 2:
             break
         time.sleep(0.05)
     else:
@@ -225,23 +237,26 @@ def test_kill_and_resume(tmp_path):
     p.wait(timeout=10)
 
     assert not (tmp_path / "FINISHED").exists(), "it was not killed mid-run"
-    finished_before = sorted(q.name for q in tmp_path.glob("s*.txt"))
+    finished_before = _landed(tmp_path)
     assert 0 < len(finished_before) < n
 
     # progress.log is appended by BOTH runs, so the resume's work is the tail.
     # comparing the whole file says every shard was redone even when none was.
     log_before = (tmp_path / "progress.log").read_text().split()
 
-    # a killed write must not leave something is_done() would believe
-    assert not list(tmp_path.glob("*.partial")), "a partial file survived the kill"
-    for f in tmp_path.glob("s*.txt"):
-        assert f.stat().st_size > 0, f"{f.name} is empty and would be skipped as done"
+    # a killed write must not leave something is_done() would believe. the glob
+    # here was "*.partial", which the suffix-last temp name never matches - so
+    # this assertion was vacuous from the moment atomic_write changed its naming.
+    assert not list(tmp_path.glob("*.partial.*")), "a partial file survived the kill"
+    for name in _landed(tmp_path):
+        assert (tmp_path / name).stat().st_size > 0, \
+            f"{name} is empty and would be skipped as done"
 
     r = subprocess.run([sys.executable, str(script), str(tmp_path), str(n)],
                        env=env, capture_output=True, text=True, timeout=120, check=False)
     assert r.returncode == 0, r.stderr[-800:]
     assert (tmp_path / "FINISHED").exists()
-    assert len(list(tmp_path.glob("s*.txt"))) == n, "the resume did not finish the job"
+    assert len(_landed(tmp_path)) == n, "the resume did not finish the job"
 
     # and it did not redo what had already landed
     redone = (tmp_path / "progress.log").read_text().split()[len(log_before):]
