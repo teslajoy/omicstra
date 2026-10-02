@@ -39,6 +39,10 @@
         "rule": "fraction",
         "p": 0.9,
         "p_basis": "a marker panel is a claim about the TISSUE. one section in ten failing is a bad section - thin tissue, low depth, a torn edge - not the cohort lacking the marker. below that the panel is wrong for the tissue and the check should say so."
+      },
+      "params_from": {
+        "positive": "marker_panels.positive",
+        "min_pct_positive": "marker_panels.min_pct_positive"
       }
     },
     {
@@ -56,6 +60,10 @@
         "rule": "fraction",
         "p": 0.9,
         "p_basis": "same shape, same reason. a control present in a third of sections is not a control."
+      },
+      "params_from": {
+        "negative": "marker_panels.negative",
+        "max_pct_negative": "marker_panels.max_pct_negative"
       }
     },
     {
@@ -77,6 +85,12 @@
         "rule": "fraction",
         "p": 0.8,
         "p_basis": "looser on purpose. Moran's I is measured on one section's own lattice, so a section with few informative spots can fail for geometry rather than biology. the check's inner rule is already 'I above threshold for >= k of the top n markers', so this is a second and weaker screen, across sections rather than within one."
+      },
+      "params_from": {
+        "markers": "marker_panels.spatial_autocorrelation",
+        "k": "marker_panels.k",
+        "n_perm": "marker_panels.n_perm",
+        "threshold": "marker_panels.threshold"
       }
     },
     {
@@ -90,7 +104,13 @@
       "authority_basis": "split criterion. the comparative half - technical must not exceed biological - holds anywhere. the absolute floor is a magnitude bar with no external source, so the check as a whole is calibrated",
       "forecloses": "a cohort with weaker biological separation reading its batch structure as acceptable because the inherited floor happens to sit above it",
       "unit": "cohort",
-      "unit_basis": "compares technical against biological silhouette BETWEEN samples - undefined for one"
+      "unit_basis": "compares technical against biological silhouette BETWEEN samples - undefined for one",
+      "params_blocked_on": [
+        "gene_universe (to stack the sections at all)",
+        "sample_meta - per-sample technical and biological covariates",
+        "technical - which of them are technical, e.g. plate, lane",
+        "biological - which are biological, e.g. subtype"
+      ]
     },
     {
       "id": "encoder_input_decision",
@@ -271,5 +291,6 @@
     "coverage_is_the_contracts": "the notebooks define the CHECKS, not the COVERAGE. which markers, Moran's I over the top n, what 'present' means - those come from the analysis. how many sections must agree was never answered there, because the exploratory work looked at one section and generalised by hand. so coverage is the contract's to declare, and p is a package decision with a reason rather than a number read off a notebook.",
     "p_is_never_fitted": "p is a property of sections in general and is never chosen to reproduce a cohort's recorded verdict. the per-check p_basis carries the reason for each value.",
     "p_basis_is_prose": "p_basis is a warrant for a human reader and is not machine-read. nothing downstream parses it."
-  }
+  },
+  "params_from_note": "each key a step declares in params_space is named here with the cohort declaration it comes from, dotted. the step publishes what it needs, the cohort declares the value, and neither names the other. a key absent from the cohort is not defaulted - the step refuses with what is missing."
 }

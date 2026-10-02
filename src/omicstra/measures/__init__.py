@@ -116,8 +116,34 @@ def marker_expression(adata, positive: dict[str, str], negative: dict[str, str],
 
     pos_ok = [g for g in positive if g in obs and obs[g]["pct_expressing"] >= min_pct_positive]
     neg_ok = [g for g in negative if g in obs and obs[g]["pct_expressing"] <= max_pct_negative]
-    passed = len(pos_ok) == len([g for g in positive if g in obs]) and \
-             len(neg_ok) == len([g for g in negative if g in obs])
+    n_pos, n_neg = len([g for g in positive if g in obs]), len([g for g in negative if g in obs])
+
+    # a marker declared but absent from var_names is NOT a marker that behaved.
+    # `len(ok) == len(found)` is 0 == 0 when nothing was found, so an empty
+    # intersection read as unanimous agreement - a pass on zero measurements,
+    # with the absence in a caveat the aggregation never reads. this is the
+    # panel-on-the-wrong-gene-axis case and it must not be green.
+    if (positive or negative) and not obs:
+        return DiagnosticRecord(
+            step_id="marker_expression",
+            method="fraction of observations with non-zero expression, per declared marker",
+            params={"min_pct_positive": min_pct_positive,
+                    "max_pct_negative": max_pct_negative},
+            scope=f"{_fmt(adata.n_obs)} observations",
+            observed={"n_declared": len(positive) + len(negative), "n_found": 0,
+                      "missing": missing,
+                      "matrix_axis_example": [str(g) for g in adata.var_names[:3]]},
+            criterion="at least one declared marker present in var_names",
+            result=f"0 of {len(positive) + len(negative)} declared markers are in var_names",
+            decision=("the panel and the counts matrix are on different gene axes, or the "
+                      "panel names genes this assay never measured. nothing was measured, "
+                      "so there is nothing to pass"),
+            status="not_run",
+            caveats=[f"not in var_names: {', '.join(missing)}"],
+            duration_s=round(time.time() - t0, 3),
+        )
+
+    passed = len(pos_ok) == n_pos and len(neg_ok) == n_neg
 
     return DiagnosticRecord(
         step_id="marker_expression",
@@ -125,7 +151,8 @@ def marker_expression(adata, positive: dict[str, str], negative: dict[str, str],
         params={"min_pct_positive": min_pct_positive, "max_pct_negative": max_pct_negative},
         scope=f"{_fmt(adata.n_obs)} observations, "
               f"{len(positive)} positive and {len(negative)} negative markers",
-        observed=obs,
+        observed={**obs, "_coverage": {"n_declared": len(positive) + len(negative),
+                                       "n_found": len(obs), "missing": missing}},
         criterion=f"positives >= {min_pct_positive}% expressing, "
                   f"negatives <= {max_pct_negative}%",
         result=f"{len(pos_ok)}/{len([g for g in positive if g in obs])} positives present, "

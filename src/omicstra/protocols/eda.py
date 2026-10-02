@@ -19,6 +19,7 @@ from __future__ import annotations
 from omicstra import measures
 from omicstra.protocols import Step
 from omicstra.records import DiagnosticRecord
+from omicstra.settings import settings
 
 Ctx = dict
 
@@ -45,13 +46,19 @@ class _Undeclared(KeyError):
     """a cohort has not declared something the check requires. not a crash."""
 
 
-def _panel(ctx: Ctx, which: str) -> dict:
-    """the marker panel this cohort declares. absent is a refusal, not an error.
+def _panel(ctx: Ctx, which: str, adata=None):
+    """the marker panel this cohort declares, ON THE MATRIX'S OWN GENE AXIS.
 
-    the panel is a property of the tissue and disease context, so it is the
-    cohort's to declare. it has never been: the exploratory notebook held it
-    inline and the calibration record points at project.json, where it is not.
-    saying so beats a KeyError that looks like a bug in the step.
+    the panel is a property of the tissue, so it is the cohort's to declare. it
+    has never been: the exploratory notebook held it inline and the calibration
+    record points at project.json, where it is not.
+
+    a panel is written in symbols because that is what a person knows, and the
+    seed cohort's counts are versioned Ensembl because the ingest refuses to bake
+    an annotation release into the artifact. so `adata` is taken and the panel is
+    re-keyed through the cohort's declared gene_mapping. without that the lookup
+    finds nothing, and `marker_expression` used to read an empty intersection as
+    unanimous agreement.
     """
     v = ctx.get("params", {}).get(which)
     if not v:
@@ -59,7 +66,31 @@ def _panel(ctx: Ctx, which: str) -> dict:
             f"no {which} marker panel declared for this cohort. the panel names genes "
             f"expected in this tissue, so it cannot be inherited from another cohort or "
             f"guessed from the matrix - declare it and re-run.")
-    return v
+    if adata is None:
+        return v
+
+    from omicstra.adapters.canonical import observed_gene_id
+    from omicstra.protocols.encode import GeneAxis, panel_on_axis
+
+    cohort = _project(ctx)
+    sid = str((adata.obs["sample_id"].iloc[0] if "sample_id" in adata.obs
+               else ctx.get("_sample_id")) or "")
+    try:
+        axis = GeneAxis.resolve(cohort, want="symbol",
+                                observed=observed_gene_id(
+                                    settings.project_root(ctx.get("project_id")), sid),
+                                root=settings.project_root(ctx.get("project_id")))
+    except ValueError as e:
+        raise _Undeclared(
+            f"the {which} panel names symbols and this section's counts are not on that "
+            f"axis, and the route between them is not declared: {e}") from e
+
+    keyed, unresolved = panel_on_axis(v, axis, adata.var_names)
+    if not keyed:
+        raise _Undeclared(
+            f"none of the {len(v)} genes in the {which} panel resolves onto this "
+            f"section's axis ({axis.have}). unresolved: {unresolved[:8]}")
+    return keyed
 
 
 def _attach_coords(a, sample) -> bool:
@@ -387,7 +418,7 @@ EDA_STEPS: list[Step] = [
          authority="cohort_calibrated",
          params_space=("positive", "min_pct_positive"),
          fn=_per_section("positive_markers", lambda a, c: measures.marker_expression(
-             a, positive=_panel(c, "positive"), negative={},
+             a, positive=_panel(c, "positive", a), negative={},
              min_pct_positive=c["params"].get("min_pct_positive", 1.0)))),
 
     Step(id="negative_markers", requires=frozenset({"counts"}),
@@ -395,7 +426,7 @@ EDA_STEPS: list[Step] = [
          authority="cohort_calibrated",
          params_space=("negative", "max_pct_negative"),
          fn=_per_section("negative_markers", lambda a, c: measures.marker_expression(
-             a, positive={}, negative=_panel(c, "negative"),
+             a, positive={}, negative=_panel(c, "negative", a),
              max_pct_negative=c["params"].get("max_pct_negative", 10.0)))),
 
     Step(id="spatial_autocorrelation", requires=frozenset({"counts"}),
@@ -408,7 +439,7 @@ EDA_STEPS: list[Step] = [
          params_space=("markers", "k", "n_perm", "threshold"),
          fn=_per_section("spatial_autocorrelation",
                          lambda a, c: measures.spatial_autocorrelation(
-                             a, markers=_panel(c, "markers"),
+                             a, markers=list(_panel(c, "markers", a)),
                              **{k: v for k, v in c["params"].items() if k != "markers"}),
                          applicable=_has_spatial,
                          why_not="no spatial coordinates in obsm - not a spatial assay")),

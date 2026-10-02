@@ -1041,6 +1041,54 @@ def apply_gene_axis(adata, axis: GeneAxis):
                  "route": f"{axis.have}->{axis.want} ({axis.duplicates})"}
 
 
+def panel_on_axis(panel, axis: GeneAxis, var_names) -> tuple[dict, list]:
+    """re-key a declared gene panel onto the matrix's own axis.
+
+    a panel is written in symbols because that is what a person knows; the seed
+    cohort's counts are versioned Ensembl because the ingest refuses to bake an
+    annotation release into the artifact. so the two never meet, and a check that
+    looks up a symbol in an Ensembl index finds nothing.
+
+    the declared `gene_mapping` already holds the table and its hash. this walks
+    it in the other direction - target name back to the source ids present in the
+    matrix - and returns (matrix_key -> reason, unresolved). a symbol reaching
+    several source ids yields all of them; which is correct for a detection rate,
+    where a gene counts as expressed if any of its ids is.
+
+    `panel` may be a dict of {name: why} or a sequence of names. the return keeps
+    whichever shape the caller gave, keyed by matrix id.
+    """
+    import pandas as pd
+
+    names = dict(panel) if isinstance(panel, dict) else {g: "" for g in panel}
+    have = {str(v) for v in var_names}
+
+    if axis.is_identity():
+        out = {g: w for g, w in names.items() if g in have}
+        return out, [g for g in names if g not in have]
+
+    tbl = pd.read_csv(axis.map_path, sep="\t")
+    # target -> [source stems]
+    back: dict[str, list[str]] = {}
+    for src, tgt in zip(tbl.iloc[:, 0].astype(str), tbl.iloc[:, 1].astype(str)):
+        back.setdefault(tgt, []).append(src)
+
+    # the matrix may carry versions; index its stems so a stem lookup reaches it
+    by_stem: dict[str, list[str]] = {}
+    for v in have:
+        by_stem.setdefault(v.split(".")[0] if axis.strip_version else v, []).append(v)
+
+    out, unresolved = {}, []
+    for g, why in names.items():
+        keys = [k for stem in back.get(g, []) for k in by_stem.get(stem, [])]
+        if keys:
+            for k in keys:
+                out[k] = why
+        else:
+            unresolved.append(g)
+    return out, unresolved
+
+
 def run_one_st(counts_path, coords, graph: StGraph, axis: GeneAxis,
                encoder: str = "novae", model=None):
     """one section -> (n, dim) spot vectors + a record. no cohort in it.

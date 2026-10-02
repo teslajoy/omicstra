@@ -42,7 +42,9 @@ class NoCohortData(RuntimeError):
     tell "not ingested yet" from "the graph is broken".
     """
 
+from omicstra.contracts.eda import resolve_step_params
 from omicstra.eda import cohort_escalations, load_calibration, load_contract
+from omicstra.graph import _load_cohort
 from omicstra.protocols import build_protocol
 from omicstra.protocols.eda import EDA_STEPS
 from omicstra.protocols.inventory import INVENTORY_STEPS
@@ -121,8 +123,16 @@ def profile(state: EDAState) -> dict:
             "step_id": "profile", "kind": "gate", "status": "not_run",
             "verdict": "halt", "reason": _NO_DATA}]}
 
-    ctx = {"project_id": state.get("project_id"),
-           "params": state.get("params", {})}
+    # the cohort's declarations fill the params each step declares it needs. the
+    # caller's own params win, so a one-off run can override without editing a
+    # cohort file - and a key neither supplies is omitted, so the step refuses
+    # with what is missing rather than measuring against a default.
+    declared = resolve_step_params(_load_cohort(state.get("project_id")),
+                                   [s.id for s in EDA_STEPS])
+    supplied = state.get("params", {})
+    params = {sid: {**declared.get(sid, {}), **(supplied.get(sid) or {})}
+              for sid in supplied} or declared
+    ctx = {"project_id": state.get("project_id"), "params": params}
     recs = build_protocol(EDA_STEPS, "eda").invoke(ctx)
     return {"records": list(state.get("records", [])) + list(recs.values())}
 
