@@ -33,7 +33,26 @@ printf '    embeddings cache      %s\n' \
   "$([ -d "$WORK/clone/data/embeddings" ] && echo present || echo absent)"
 
 echo "==> installing with measure+dev only, as the workflow does"
-python3 -m venv "$WORK/venv"
+# the interpreter is PINNED to one the workflow matrix covers. bare `python3`
+# followed whatever the machine had, and when that became 3.15 the install died
+# building ormsgpack's pyo3-ffi - a failure about this machine, reported as a
+# failure about the clone. a verifier that is "like CI" has to run a version CI
+# runs.
+#
+# MATRIX is read from the workflow so the two cannot drift apart.
+MATRIX="$(grep -o '"3\.[0-9]\+"' "$REPO/.github/workflows/release.yml" \
+          | tr -d '"' | sort -u | tr '\n' ' ')"
+PY=""
+for v in $MATRIX; do
+  if command -v "python$v" >/dev/null 2>&1; then PY="python$v"; fi
+done
+if [ -z "$PY" ]; then
+  echo "no interpreter from the CI matrix ($MATRIX) is installed." >&2
+  echo "bare python3 is $(python3 -V 2>&1), which CI does not test." >&2
+  exit 2
+fi
+echo "==> interpreter $PY  (CI matrix: $MATRIX)"
+"$PY" -m venv "$WORK/venv"
 "$WORK/venv/bin/pip" install -q --upgrade pip
 "$WORK/venv/bin/pip" install -q -e "$WORK/clone[measure,dev]"
 
