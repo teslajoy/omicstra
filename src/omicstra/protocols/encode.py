@@ -160,7 +160,10 @@ def preflight(cohort: dict, encoder: str, *, unit_counts: dict[str, int] | None 
         es = None
 
     out: list[GateRequest] = []
-    for g in contract()["gates"]:
+    # gates declare the protocol they belong to; absent means `encode`, which is
+    # where gates existed first. without the filter, declaring an align gate
+    # would open it on every encode run.
+    for g in (x for x in contract()["gates"] if x.get("stage", "encode") == "encode"):
         if g["when"] != "preflight":
             continue
         answer = _resolve_option(_declared(cohort, g.get("pre_answerable_by")),
@@ -249,11 +252,17 @@ def preflight(cohort: dict, encoder: str, *, unit_counts: dict[str, int] | None 
     return out
 
 
-def gate_record(reqs: list[GateRequest], encoder: str) -> DiagnosticRecord:
-    """the preflight state as one record. describes; it does not decide."""
+def gate_record(reqs: list[GateRequest], encoder: str,
+                step_id: str = "preflight_encode") -> DiagnosticRecord:
+    """the preflight state as one record. describes; it does not decide.
+
+    `step_id` names the stage. it was hardcoded to the encode one, so align's
+    gates recorded themselves under `preflight_encode` and a ledger reader could
+    not tell which protocol had asked.
+    """
     open_ = [r.id for r in reqs if r.open]
     return DiagnosticRecord(
-        step_id="preflight_encode",
+        step_id=step_id,
         # `not_run`, not `fail`. an unanswered gate is not a failed check - the
         # question has simply not been put to anyone yet, and calling that a
         # failure would put a violation in the ledger where a pending decision

@@ -536,3 +536,128 @@ def run_qc(cfg: ProjectConfig, project_id: str | None = None):
     """
     raise NotImplementedError(
         "the admissibility gate is graphs/eda.py - use `omicstra eda`.")
+
+# --- the align gates: admissibility before a grid ---------------------------
+class EdaGateMissing(ComputeUnavailable):
+    """no eda_summary.json, so there is no verdict to accept.
+
+    a refusal and not a gate. a gate is a question with a closed option set and
+    someone to ask; "the gate has never been run" offers neither, and asking a
+    person to accept a verdict nobody computed is how a cohort gets a pass it
+    never earned.
+    """
+
+
+def _declarations(project_id: str | None) -> dict:
+    """project.json over cohort.json, merged.
+
+    both are the cohort's, and which field lives in which is a layout decision
+    rather than a semantic one - the grid is in project.json, the gate answers in
+    cohort.json. a caller asking "what did this cohort declare" should not have
+    to know that, so the pointer in the contract names the file and this reads
+    both.
+    """
+    import json as _j
+
+    out: dict = {}
+    # cohort.json FIRST so project.json wins a collision, which is what the
+    # sentence above says. merged the other way round, cohort.json won silently.
+    for name in ("cohort.json", "project.json"):
+        f = settings.project_root(project_id) / name
+        if not f.is_file():
+            continue
+        try:
+            out |= _j.loads(f.read_text())
+        except ValueError as e:
+            # a declaration that will not parse is not an absent declaration.
+            # swallowing it meant a typo in cohort.json reopened every gate as
+            # though nothing had been declared.
+            raise ComputeUnavailable(
+                f"{name} does not parse: {e}. a malformed declaration is not an "
+                f"absent one - fix it rather than running as if undeclared.") from e
+    return out
+
+
+def preflight_align(cohort: dict | None = None, project_id: str | None = None) -> list:
+    """the gates that fire before a grid, resolved as far as the cohort allows.
+
+    the first is this repo's opening constraint, which was a convention until
+    now: no alignment, retrieval or evaluation until the EDA gate is satisfied.
+    `eda_admissibility` is that sentence as a gate.
+
+    deterministic and side-effect free, like `encode.preflight`: it reads the
+    cohort's recorded summary through `run_gate` and measures nothing itself.
+    """
+    from omicstra.eda import run_gate
+    from omicstra.protocols.encode import GateRequest, _resolve_option, contract
+
+    cohort = _declarations(project_id) if cohort is None else {
+        **_declarations(project_id), **cohort}
+    try:
+        r = run_gate(project_id)
+    except FileNotFoundError as e:
+        # FileNotFoundError only. catching KeyError here reported any lookup bug
+        # inside run_gate as "the gate was never run", which is a different and
+        # much more comfortable statement than the truth.
+        raise EdaGateMissing(
+            f"no EDA verdict for this cohort, so there is nothing to accept and no "
+            f"option list to offer: {e}. run the gate first - the constraint is that "
+            f"no alignment, retrieval or evaluation happens until it is satisfied, and "
+            f"an unrun gate is not a satisfied one.") from e                     # raises if there is no summary
+    gates = {g["id"]: g for g in contract()["gates"] if g.get("stage") == "align"}
+    out = []
+    for gid in ("eda_admissibility", "verdict_disagreement", "grid_scope"):
+        g, answer, observed = gates[gid], None, {}
+
+        if gid == "eda_admissibility":
+            observed = {"verdict": r.verdict, "declared_verdict": r.declared_verdict,
+                        "n_violations": len(r.violations),
+                        "n_cautions": len(r.cautions),
+                        "n_escalations": len(r.escalations),
+                        "cautions": list(r.cautions)[:6]}
+            if r.verdict == "proceed":
+                answer = "accept_cautions"          # nothing to accept; it passed
+            elif r.declared_verdict == "proceed":
+                # `graphs/eda.py` already interrupts on a cautionary verdict, so
+                # asking again here would have a person accept the same cautions
+                # twice, in two records. a person wrote `proceed` into the
+                # committed summary and version control attests the file - that
+                # IS the recorded acceptance, the same rule the actor vocabulary
+                # uses. `verdict_disagreement` below still fires, because the
+                # acceptance being on record does not make the two verdicts agree.
+                answer = "accept_cautions"
+        elif gid == "verdict_disagreement":
+            observed = {"computed": r.verdict, "declared": r.declared_verdict,
+                        "agrees": r.agrees_with_declared}
+            if r.agrees_with_declared:
+                answer = "computed"                # they are the same value
+        else:
+            grid = list(cohort.get("contrastive_runs") or []) + \
+                   list(cohort.get("classical_runs") or [])
+            observed = {"declared_grid": grid, "n_arms": len(grid)}
+            if grid:
+                answer = "declared_grid"
+
+        src = None
+        if answer is not None:
+            src = ("the verdict itself" if gid != "eda_admissibility" or
+                   r.verdict == "proceed" else "eda_summary.json#verdict")
+        declared = _declared_align(cohort, g.get("pre_answerable_by"))
+        if declared is not None:
+            answer = _resolve_option(declared, tuple(g["options"]), gid,
+                                     g.get("answer_kind", "choice"))
+            src = g.get("pre_answerable_by")
+
+        out.append(GateRequest(
+            id=gid, when=g["when"], question=g["question"],
+            options=tuple(g["options"]), forecloses=g["forecloses"],
+            pre_answerable_by=g.get("pre_answerable_by"),
+            answer=answer, source=src, observed=observed or None))
+    return out
+
+
+def _declared_align(cohort: dict, pointer: str | None):
+    """the cohort's own answer, if it declared one. `cohort.json#field`."""
+    if not pointer or "#" not in pointer:
+        return None
+    return cohort.get(pointer.split("#", 1)[1]) or None

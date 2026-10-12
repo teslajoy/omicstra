@@ -349,15 +349,40 @@ GATES = {g["id"]: g for g in COMPUTE["gates"]}
 
 
 def test_five_preflight_one_mid_run():
-    """the split is the argument. five of six can be asked before a unit is
-    embedded, so durable execution is justified by ONE mid-run gate plus
-    waiting-without-an-allocation - not by 'six human pauses overnight'."""
-    pre = [g for g in GATES.values() if g["when"] == "preflight"]
-    mid = [g for g in GATES.values() if g["when"] == "mid_run"]
-    assert len(pre) == COMPUTE["summary"]["preflight"] == 5
-    assert len(mid) == COMPUTE["summary"]["mid_run"] == 1
+    """the split is the argument, and it is about ENCODE. five of six can be asked
+    before a unit is embedded, so durable execution is justified by ONE mid-run
+    gate plus waiting-without-an-allocation - not by 'six human pauses overnight'.
+
+    counted per stage because align's gates fire before a GRID rather than before
+    an embed, so they neither strengthen nor weaken this claim.
+    """
+    enc = [g for g in GATES.values() if g.get("stage", "encode") == "encode"]
+    pre = [g for g in enc if g["when"] == "preflight"]
+    mid = [g for g in enc if g["when"] == "mid_run"]
+    assert len(pre) == COMPUTE["summary"]["encode"]["preflight"] == 5
+    assert len(mid) == COMPUTE["summary"]["encode"]["mid_run"] == 1
     assert mid[0]["id"] == "shard_failure_threshold"
     assert "cannot be asked before submission" in mid[0]["why_it_cannot_be_preflight"]
+
+
+def test_the_align_stage_opens_with_the_admissibility_constraint():
+    """this repo's first constraint is that nothing runs until the EDA gate is
+    satisfied. it was a convention; `eda_admissibility` is the gate that enforces
+    it, and it must be the one that fires before a grid.
+    """
+    al = [g for g in GATES.values() if g.get("stage") == "align"]
+    assert len(al) == COMPUTE["summary"]["align"]["preflight"] == 3
+    assert {g["id"] for g in al} == {"eda_admissibility", "verdict_disagreement",
+                                     "grid_scope"}
+    # structure, not prose. the previous version .replace()d the note so it would
+    # contain its own phrase, which asserted nothing.
+    adm = GATES["eda_admissibility"]
+    assert adm["when"] == "preflight" and adm["stage"] == "align"
+    assert "halt" in adm["options"] and adm["default"] is None
+    assert adm["pre_answerable_by"].startswith(DECL_FILES)
+    # the refusal is behaviour, so it is asserted against behaviour
+    from omicstra.protocols.align import EdaGateMissing
+    assert issubclass(EdaGateMissing, Exception)
 
 
 @pytest.mark.parametrize("gid", sorted(GATES))
@@ -372,14 +397,27 @@ def test_every_gate_has_a_closed_option_set_and_no_default(gid):
     assert g["forecloses"], f"{gid} must say what accepting gives up"
 
 
+# a cohort declares across two committed files: cohort.json holds the gate
+# answers and the data declarations, project.json the run layout - the grid among
+# it. both are the cohort's, so a pointer into either is a declared answer.
+DECL_FILES = ("cohort.json#", "project.json#")
+
+
 def test_preflight_gates_are_pre_answerable_and_the_mid_run_one_is_not():
     """a gate with a declared answer does not fire. that is what makes an
     unattended run possible without lowering the bar - the answer is still
-    recorded, with the declaration as its source."""
+    recorded, with the declaration as its source.
+
+    the invariant is that the pointer names a COMMITTED declaration, not that it
+    names one particular file. this read `cohort.json#` until an align gate
+    pointed at the grid, which lives in project.json.
+    """
     for g in GATES.values():
         if g["when"] == "preflight":
             assert g["pre_answerable_by"], f"{g['id']} has no cohort declaration"
-            assert g["pre_answerable_by"].startswith("cohort.json#"), g["id"]
+            assert g["pre_answerable_by"].startswith(DECL_FILES), (
+                f"{g['id']} points at {g['pre_answerable_by']!r}, which is not a "
+                f"committed cohort declaration")
         else:
             assert g["pre_answerable_by"] is None, (
                 f"{g['id']} is mid_run - it depends on failures that have not "

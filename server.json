@@ -71,6 +71,7 @@
         "describe_compute_plan",
         "he_encode",
         "st_encode",
+        "align_run",
         "runs_resume",
         "runs_status",
         "runs_record"

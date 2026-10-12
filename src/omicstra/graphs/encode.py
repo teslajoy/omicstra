@@ -136,7 +136,8 @@ def ask(state: EncodeState) -> dict:
     return _accept(state, answer)
 
 
-def _accept(state: EncodeState, answer: Any) -> dict:
+def _accept(state: EncodeState, answer: Any,
+            step_id: str = "preflight_encode") -> dict:
     """validate a human's answer against the SAME closed option set a declaration
     faces.
 
@@ -166,7 +167,7 @@ def _accept(state: EncodeState, answer: Any) -> dict:
     if missing:
         return {"approved": False, "halted": True,
                 "records": [*state.get("records", []),
-                            {"step_id": "preflight_encode", "kind": "gate", "status": "not_run",
+                            {"step_id": step_id, "kind": "gate", "status": "not_run",
                              "actor": "client", "verdict": "halt",
                              "reason": f"unanswered: {missing}"}]}
 
@@ -176,7 +177,7 @@ def _accept(state: EncodeState, answer: Any) -> dict:
         if g is None:
             return {"approved": False, "halted": True,
                     "records": [*state.get("records", []),
-                                {"step_id": "preflight_encode", "kind": "gate",
+                                {"step_id": step_id, "kind": "gate",
                                  "status": "error", "actor": "client",
                                  "reason": f"{gid} is not a gate in the contract"}]}
         try:
@@ -185,7 +186,7 @@ def _accept(state: EncodeState, answer: Any) -> dict:
         except ValueError as e:
             return {"approved": False, "halted": True,
                     "records": [*state.get("records", []),
-                                {"step_id": "preflight_encode", "kind": "gate",
+                                {"step_id": step_id, "kind": "gate",
                                  "status": "error", "actor": "client", "reason": str(e)}]}
 
     if any(v == "halt" for v in resolved.values()):
@@ -197,9 +198,9 @@ def _accept(state: EncodeState, answer: Any) -> dict:
                  for g in state.get("gates", [])]
     return {"approved": True, "halted": False, "answers": resolved, "gates": gates_now,
             "records": [*state.get("records", []),
-                        {"step_id": "preflight_encode", "kind": "selection", "status": "pass",
+                        {"step_id": step_id, "kind": "selection", "status": "pass",
                          "actor": "client", "confirmed_by": None, "chosen": resolved,
-                         "note": "answered through the surface at the encode gate; "
+                         "note": f"answered through the surface at {step_id}; "
                                  "recorded, not defaulted. `client` because the server "
                                  "sees a tool call, not a person - a human confirmation "
                                  "is a later, separate act"}]}
@@ -296,6 +297,16 @@ def encode(state: EncodeState) -> dict:
 
 
 def halt(state: EncodeState) -> dict:
+    """stop, and keep the reason if one was already given.
+
+    an upstream node that halts with its OWN report has said something specific -
+    a refusal names what was missing. overwriting it with the generic note left
+    the cause in the ledger and out of the response, which is the half a caller
+    reads.
+    """
+    prior = state.get("report") or {}
+    if prior.get("status") in ("refused", "unavailable"):
+        return {"halted": True, "report": prior}
     return {"halted": True, "report": {"status": "halted",
                                        "note": "a preflight gate was refused; nothing ran"}}
 

@@ -47,7 +47,8 @@
       "system": "the server acted on its own account - dispatched, re-dispatched, recorded",
       "closed_set": true,
       "why_client_is_not_human": "the pack cites gate answers, so 'a person decided this' must not appear on no evidence. a human confirmation of a client answer is a later and separate act, recorded where it can be attested - a commit, or a declaration carrying actor=human."
-    }
+    },
+    "stage": "which protocol a gate belongs to. absent means `encode`, which is where gates existed first. `align` gates fire before the grid, and the first of them is the EDA constraint this repo opens with."
   },
   "gates": [
     {
@@ -151,12 +152,76 @@
       "why_it_cannot_be_preflight": "it depends on failures that have not happened yet. this is the ONLY gate on the compute path that genuinely cannot be asked before submission, and it is therefore the only one that needs a host that can wait without holding an allocation.",
       "threshold_from": "cohort.json#shard_failure_threshold, defaulting to a fraction rather than a count so it scales with the cohort",
       "answer_kind": "choice"
+    },
+    {
+      "id": "eda_admissibility",
+      "when": "preflight",
+      "stage": "align",
+      "question": "this cohort's EDA gate returned a verdict short of proceed. accept the cautions and continue, or halt?",
+      "options": [
+        "accept_cautions",
+        "proceed_as_recorded_dissent",
+        "halt"
+      ],
+      "default": null,
+      "pre_answerable_by": "cohort.json#eda_verdict_policy",
+      "emits": "SelectionRecord",
+      "forecloses": "every number the grid produces inherits the cohort's admissibility. accepting a caution here is accepting it in each downstream metric, and a dissent travels with the results.",
+      "reads": "the cohort's own eda_summary.json through the gate, re-measuring nothing",
+      "note": "this repo's first constraint is that no alignment, retrieval or evaluation runs until the EDA gate is satisfied. the constraint was a convention; this is the gate that enforces it. a cohort with NO eda_summary.json is refused rather than asked - there is no verdict to accept and no option list to offer.",
+      "answer_kind": "choice"
+    },
+    {
+      "id": "verdict_disagreement",
+      "when": "preflight",
+      "stage": "align",
+      "question": "the computed EDA verdict differs from the one the cohort declares. which stands?",
+      "options": [
+        "computed",
+        "declared_with_reason",
+        "halt"
+      ],
+      "default": null,
+      "pre_answerable_by": "cohort.json#eda_verdict_authority",
+      "emits": "SelectionRecord",
+      "forecloses": "the declared verdict is what a reader of the summary sees. running under the computed one without recording the difference means the pack and the summary disagree with nobody saying so.",
+      "reads": "run_gate()'s verdict against eda_summary.json's declared one",
+      "note": "the same shape as the geometry escalation: a measurement that contradicts a declaration escalates rather than silently winning.",
+      "answer_kind": "choice",
+      "answer_requires": {
+        "declared_with_reason": "a non-empty reason, recorded with the answer",
+        "why": "choosing the declared verdict over the computed one is the 'pass it never earned' path the admissibility refusal warns about. it stays available - a person may know why the computed verdict is wrong - but not silently."
+      }
+    },
+    {
+      "id": "grid_scope",
+      "when": "preflight",
+      "stage": "align",
+      "question": "which arms of the grid does this run cover?",
+      "options": [
+        "declared_grid",
+        "named_subset",
+        "halt"
+      ],
+      "default": null,
+      "pre_answerable_by": "project.json#contrastive_runs",
+      "emits": "SelectionRecord",
+      "forecloses": "a reduced grid is never a candidate for winner.json and its metrics are not comparable with a full run's. which arms ran has to be in the record, not in a shell history.",
+      "reads": "the cohort's declared contrastive_runs and classical_runs. they live in project.json, not cohort.json - cohort.json holds the gate answers and the data declarations, project.json the run layout",
+      "answer_kind": "value"
     }
   ],
   "summary": {
-    "preflight": 5,
-    "mid_run": 1,
+    "encode": {
+      "preflight": 5,
+      "mid_run": 1
+    },
+    "align": {
+      "preflight": 3,
+      "mid_run": 0
+    },
     "note": "five of six can be asked, or declared, before a single unit is embedded. so an unattended run on a scheduler asks nothing until shards start failing - which is a narrower and more defensible reason for durable execution than 'people must be askable overnight'.",
+    "why_counted_per_stage": "the five-of-six argument is about ENCODE and is what justifies durable execution there. align's gates fire before a grid rather than before an embed, and the first of them is the admissibility constraint this repo opens with - a different question, counted separately.",
     "what_durable_execution_actually_buys": [
       "waiting on a scheduled job without holding a compute allocation",
       "surviving the worker process dying mid-run - a checkpointer saves state BETWEEN nodes, never inside one, and an embedding run is one long node",

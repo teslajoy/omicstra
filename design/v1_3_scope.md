@@ -68,6 +68,44 @@ is on the critical path to the pack.
 
 ---
 
+## the level rule, restated - step 4 forced it
+
+the rule said two things that step 4 put in conflict:
+
+```
+align and evaluate are LEVEL 2        protocols: order, applicability, authority,
+                                      no maths, NO INTERRUPT
+anything that can interrupt()         gets its own LEVEL 1 graph
+```
+
+`graphs/align.py` interrupts, so the second clause admits it and the first
+forbids it. the resolution, and the reason:
+
+**the gate is level 1; the protocol stays level 2.** `protocols/align.py` gained
+`preflight_align`, which is deterministic, side-effect free and asks nobody - it
+computes a gate list from a recorded verdict, exactly as `protocols/encode.py`
+does. `graphs/align.py` holds the interrupt and nothing else. so align is level 2
+and *has* a level-1 gate, which is what encode already was and what the rule
+meant.
+
+what would have violated it: putting the verdict decision inside
+`protocols/align.py`, or letting the graph compute a metric. neither happened.
+
+this is a restatement rather than a new layer, so the 2 sep stop condition holds:
+no file moved level, and `graphs/` gained a module for a gate that already
+existed as a sentence in CLAUDE.md.
+
+### and `align_run` does not align
+
+it RESOLVES. `compute=True` is accepted and reaches `run_align`, but alignment
+has never executed through the package - the scripts are still the method, and
+the 21 sep status on that is unchanged. the tool's description says so in its
+first sentence. the claim "align runs through the surface" waits for a
+`compute=True` run that reproduces a trained arm, which is 1.3 work and is not
+done.
+
+---
+
 ## open questions carried forward, with their evidence
 
 ### the spatial check thresholds a raw statistic and discards its own null
@@ -100,6 +138,33 @@ exclusion to be reported with counts. nothing in the package computes a
 mitochondrial fraction. the two cohorts are asymmetric about it: the second ships
 `pct_counts_mito` precomputed in `obs`, and the seed cohort's canonical `.h5ad`
 carries no QC columns at all.
+
+### the seed cohort's verdict disagreement, investigated
+
+the align gate surfaced that tnbc-92 computes `proceed_with_caution` while its
+summary declares `proceed`. the pack shipped under `proceed`, so this needed
+checking rather than noting. from `run_gate('tnbc-92')`, 0 violations, 0
+escalations, 3 cautions:
+
+```
+1  segmentation_qc: null          "cannot distinguish 'not applicable' from
+2  multi_section_alignment: null   'not measured'; EDA.md schema has no marker"
+3  risks[]: 4 entry(s) recorded and not marked accepted
+```
+
+**no biology hides here.** 1 and 2 are a SCHEMA gap - the summary has no way to
+say "not applicable" - and the package's own graph already resolves what the
+schema cannot express, reaching `not_applicable` on `segmentation_qc` with "no
+segmentation masks - spot-resolution platform". 3 is the four `open_risks` the
+summary itself records: Novae compatibility on this platform, Moran's I computed
+on one subarray, MKI67's low I, and 17 subarrays under 500 spots. all four were
+carried deliberately.
+
+so the declared `proceed` is a person's judgement that those were acceptable,
+and the computed `proceed_with_caution` is the absence of a marker for that
+judgement. **two closable things follow:** give `EDA.md`'s schema a
+not-applicable marker, and mark the four risks accepted with an actor. neither
+changes a number.
 
 ### the gene universe, measured before declaring
 

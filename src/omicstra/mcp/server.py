@@ -682,7 +682,8 @@ def _runner(arm: str = "he"):
 # one a handle belongs to, and it reads that from the checkpoint rather than from
 # the shape of the run_id.
 ARMS = {"he": "omicstra.graphs.encode:build_encode_graph",
-        "st": "omicstra.graphs.st:build_st_graph"}
+        "st": "omicstra.graphs.st:build_st_graph",
+        "align": "omicstra.graphs.align:build_align_graph"}
 
 
 def _app_for(target: str, saver):
@@ -787,6 +788,36 @@ def st_encode(project_id: str | None = None, platform: str | None = None,
                       "samples": samples, "compute": compute}, cfg)
     return {**_handle(app, rid, out), "checkpointer": spec,
             "unit_counts_cover": coverage}
+
+
+@srv.tool(description=(
+    "RESOLVE a cohort's alignment grid from its recorded artifacts, behind a run "
+    "handle. It does not train: alignment has never executed through the package, "
+    "and compute=true is not wired yet - the scripts are still the method. What "
+    "this adds is the gate in front of it. Its first gate is the cohort's own EDA "
+    "verdict: this project's opening constraint is that no alignment, retrieval "
+    "or evaluation happens until that gate is satisfied, and this is where that "
+    "sentence is enforced rather than kept. A cohort with no recorded verdict is "
+    "REFUSED, not asked - there is nothing to accept and no option list to offer. "
+    "It also surfaces a computed verdict that disagrees with the one the cohort "
+    "declares, and records which arms of the grid are in scope. Returns a run "
+    "handle. compute=false (the default) resolves the grid from recorded "
+    "artifacts and reports it without training."))
+def align_run(project_id: str | None = None, compute: bool = False,
+              hypotheses: list[str] | None = None,
+              run_id: str | None = None) -> dict:
+    import uuid
+
+    from omicstra.graph import _load_cohort
+
+    app, spec = _runner("align")
+    rid = run_id or f"align-{uuid.uuid4().hex[:12]}"
+    cfg = {"configurable": {"thread_id": rid}}
+    out = app.invoke({"project_id": project_id, "arm": "align",
+                      "cohort": _load_cohort(project_id),
+                      "hypotheses": hypotheses or ["H1"],
+                      "compute": compute}, cfg)
+    return {**_handle(app, rid, out), "checkpointer": spec}
 
 
 @srv.tool(description=(
