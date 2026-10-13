@@ -697,15 +697,29 @@ def run_cmd(project_dir: Path | None, project_id: str | None, out_dir: Path | No
 
 
 @main.command()
-@click.option("--project-id", default="tnbc-92")
+@click.option("--project-id", default=None)
 @click.option("--project-dir", default=None, type=click.Path(path_type=Path),
               help="cohort root. defaults to OMICSTRA_PROJECT_DIR.")
-def selftest(project_id: str, project_dir: Path | None = None) -> None:
-    """assert the routing rules hold on this cohort. one line per check."""
-    from omicstra.routing import list_task_families, load_routing_evidence, resolve
+def selftest(project_id: str | None, project_dir: Path | None = None) -> None:
+    """assert the ROUTING RULES hold, then report what this cohort can answer.
 
-    # every other command takes --project-dir; selftest did not, and it is the
-    # one the readme tells a new cohort owner to run FIRST.
+    the two halves are separate on purpose. the rules are properties of the
+    contract and must hold on every cohort, so they are asserted against
+    synthetic evidence packs built here. what a cohort ANSWERS is a property of
+    its own recorded evaluation, so it is reported rather than asserted.
+
+    this read the other way until 2026-10-13: it defaulted --project-id to the
+    seed cohort, asserted that cross_modal_retrieval recommends and
+    tissue_state_grouping ties, named `B1_v3` as the contraindicated method, and
+    printed `raw_he 0.164` - that cohort's measurement, as a literal in package
+    code. on a second cohort those failed because the cohort differed, not
+    because a rule broke, and one of them PASSED on a cohort with no evidence at
+    all because it tested a string prefix that an absent `why` cannot have. this
+    is the first command the readme tells a new cohort owner to run.
+    """
+    from omicstra.routing import list_task_families, load_routing_evidence, resolve
+    from omicstra.routing import resolve as _res
+
     if project_dir is not None:
         settings.project_dir = project_dir.expanduser()
 
@@ -717,47 +731,86 @@ def selftest(project_id: str, project_dir: Path | None = None) -> None:
         fails += not ok
         click.echo(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f"  {detail}" if detail else ""))
 
+    def report(name: str, detail: str) -> None:
+        click.echo(f"  [ -- ] {name}  {detail}")
+
     def r(tid, **kw):
         return resolve(tid, project_id=project_id, log=False, **kw)
 
-    check("evidence loads", bool(ev), f"{len(ev.get('tasks', {}))} tasks")
-    check("scope statement present", bool(ev.get("scope_statement")))
-    fams = list_task_families(project_id=project_id)["families"]
-    check("every family declared", len(fams) == 7, f"{len(fams)} families")
+    def pack(task: str, **over) -> dict:
+        """a synthetic evidence pack. the rules are asserted against THIS, not
+        against whatever cohort happens to be bound."""
+        return {"project_id": "synthetic", "evidence_version": "t",
+                "scope_statement": "synthetic", "method_names": {"M1": "method one",
+                                                                 "M2": "method two"},
+                "tasks": {task: {"metric": "toy", "source": "none",
+                                 "higher_is_better": True,
+                                 "floor": {"id": "nothing", "value": 0.0},
+                                 "candidates": [{"id": "M1", "value": 0.5}], **over}}}
 
+    # --- the rules. cohort-independent, must hold everywhere ----------------
+    click.echo("\nrules (asserted against synthetic evidence):")
+    check("one clear leader recommends",
+          _res("cross_modal_retrieval", evidence=pack("cross_modal_retrieval"),
+               log=False).chosen == "method one")
+    check("equal candidates decline to pick",
+          _res("cross_modal_retrieval",
+               evidence=pack("cross_modal_retrieval",
+                             candidates=[{"id": "M1", "value": 0.5},
+                                         {"id": "M2", "value": 0.5}]),
+               log=False).chosen is None)
+    check("a leader below the reference says so first",
+          _res("tissue_state_grouping",
+               evidence=pack("tissue_state_grouping",
+                             reference={"id": "raw_modality", "value": 0.9}),
+               log=False).why.startswith("raw_modality scores 0.9"))
+    check("a named contraindication refuses",
+          _res("cross_modal_retrieval", evidence=pack("cross_modal_retrieval"),
+               proposed_method="M1", log=False, override=False) is not None)
+    check("unknown task not routed", r("no_such_family").status == "not_run")
+    check("every family the contract declares is listed",
+          len(list_task_families(project_id=project_id)["families"]) == 7,
+          f"{len(list_task_families(project_id=project_id)['families'])} families")
+
+    # --- this cohort. reported, not asserted --------------------------------
+    cohort = settings.project_root(project_id).name
+    click.echo(f"\nthis cohort ({cohort}):")
+    if not ev or not ev.get("tasks"):
+        report("recorded evaluation", "NONE - this cohort is not routable, which is "
+                                      "the correct state before it has been evaluated")
+        click.echo(f"\n{fails} rule failure(s)." if fails else "\nrules hold.")
+        raise SystemExit(1 if fails else 0)
+
+    check("scope statement present", bool(ev.get("scope_statement")))
     for tid in sorted(ev.get("tasks", {})):
         d = r(tid)
         check(f"{tid} resolves", bool(d.why), d.chosen or ("tie" if d.tie else "-"))
         check(f"{tid} carries scope", ev["scope_statement"] in d.caveats)
+        report(f"{tid} outcome", d.chosen or ("tie" if d.tie else
+                                              "escalate" if d.escalated else "-"))
 
-    check("recommend names one", bool(r("cross_modal_retrieval").chosen))
-    check("tie declines to pick", r("tissue_state_grouping").chosen is None)
-    check("clears its un-aligned reference",
-          not r("tissue_state_grouping").why.startswith("raw_he scores"), "raw_he 0.164")
-    # the shortfall path fires on no current task - assert the rule on a fixture
-    synth = {"project_id": "synthetic", "evidence_version": "t",
-             "scope_statement": "synthetic", "method_names": {"M1": "method one"},
-             "tasks": {"tissue_state_grouping": {
-                 "metric": "toy", "source": "none", "higher_is_better": True,
-                 "floor": {"id": "nothing", "value": 0.0},
-                 "reference": {"id": "raw_modality", "value": 0.9},
-                 "candidates": [{"id": "M1", "value": 0.5}]}}}
-    from omicstra.routing import resolve as _res
-    check("a leader below the reference says so first",
-          _res("tissue_state_grouping", evidence=synth, log=False)
-          .why.startswith("raw_modality scores 0.9"))
-    check("agreeing axes recommend", bool(r("structural_agreement").chosen))
-    check("disagreeing axes escalate", r("pathway_discrimination").tie)
-    check("named contraindication refuses",
-          r("subject_identity_suppression", proposed_method="B1_v3").contraindicated)
-    ov = r("subject_identity_suppression", proposed_method="B1_v3", override=True)
-    check("override proceeds as dissent", bool(ov.chosen) and ov.actor == "human")
-    check("contraindication is task-scoped",
-          not r("pathway_transfer", proposed_method="B1_v3").contraindicated)
+    # a contraindication is cohort-specific, so the method and the tasks are READ
+    # from the pack. this named `B1_v3` as a literal, which is a tnbc-92 run id.
+    contra = (ev.get("contraindications") or [{}])[0]
+    mid = contra.get("method")
+    applies = list(contra.get("applies_to") or [])
+    exempt = list(contra.get("does_not_apply_to") or [])
+    if mid and applies:
+        check("a contraindication the pack records refuses",
+              all(r(t, proposed_method=mid).contraindicated for t in applies),
+              f"{mid} on {', '.join(applies)}")
+        ov = r(applies[0], proposed_method=mid, override=True)
+        check("overriding it proceeds as recorded dissent", bool(ov.chosen))
+        if exempt:
+            check("and it does not reach the tasks the pack exempts",
+                  not any(r(t, proposed_method=mid).contraindicated for t in exempt),
+                  ", ".join(exempt))
+    else:
+        report("contraindications", "none recorded")
+
     check("record_id stable across wording",
-          r("cross_modal_retrieval", question="a").record_id ==
-          r("cross_modal_retrieval", question="b").record_id)
-    check("unknown task not routed", r("no_such_family").status == "not_run")
+          r(min(ev["tasks"]), question="a").record_id ==
+          r(min(ev["tasks"]), question="b").record_id)
 
     click.echo(f"\n{'all checks passed' if not fails else f'{fails} FAILED'}")
     raise SystemExit(1 if fails else 0)

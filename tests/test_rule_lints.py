@@ -135,3 +135,41 @@ def test_every_funded_deliverable_row_names_an_artifact_or_no_home():
         if "**built**" in r:
             assert "cited" in r, (
                 f"a row marked built must say it is cited by the pack: {r[:90]}")
+
+
+# --- no cohort in the package ----------------------------------------------
+SRC = ROOT / "src" / "omicstra"
+COHORT_TOKENS = ("tnbc-92", "tnbc92", "hest-breast", "B1_v3", "R4_v3")
+
+
+def test_no_cohort_name_or_run_id_appears_in_package_CODE():
+    """a cohort name in a docstring is context; in code it is a default.
+
+    `selftest` - the command the readme tells a new cohort owner to run FIRST -
+    defaulted --project-id to the seed cohort, named `B1_v3` as the
+    contraindicated method, and printed `raw_he 0.164`, that cohort's
+    measurement, as a literal. on a second cohort its checks failed because the
+    cohort differed rather than because a rule broke, and one PASSED on a cohort
+    with no evidence at all.
+    """
+    offenders = []
+    for f in sorted(SRC.rglob("*.py")):
+        tree = ast.parse(f.read_text())
+        docs = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef,
+                                 ast.AsyncFunctionDef)):
+                d = ast.get_docstring(node, clean=False)
+                if d:
+                    docs.add(d)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
+                continue
+            if node.value in docs:
+                continue                      # a docstring is context, not a default
+            for t in COHORT_TOKENS:
+                if t in node.value:
+                    offenders.append(f"{f.relative_to(ROOT)}:{node.lineno} {t!r} "
+                                     f"in {node.value[:48]!r}")
+    assert not offenders, (
+        "a cohort name or run id reached package code:\n  " + "\n  ".join(offenders))
