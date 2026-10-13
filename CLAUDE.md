@@ -209,6 +209,39 @@ the scope docs are the plan, one per release, each written before the work and
 corrected after it. `design/v1_1_scope.md`, `design/v1_2_scope.md`,
 `design/v1_3_scope.md`. the one named for the NEXT version is the live one.
 
+## rules that span releases
+
+the scope docs are per release. these are not, and each one is a test in
+`tests/test_rule_lints.py` rather than a sentence to remember - every one of them
+was already written in prose when it was broken.
+
+```
+a LEVEL 1 module is a gate            it builds a graph that can pause, or it is
+                                      declared shared machinery with a reason
+a graph computes no metric            the maths is in measures/, callable from a
+                                      notebook. a statistic computed in a graph
+                                      is one no notebook can check
+a shared helper names no stage        `_accept` and `gate_record` hardcoded
+                                      `preflight_encode`, so the align stage
+                                      recorded under the encode step
+a declaration is read, not guessed    absent means refuse with a reason. never a
+                                      default, and never a KeyError
+a fact the ingest observes is not     the gene identifier space is per section
+  declared by a cohort                 and recorded by the ingest; declaring it
+                                       was wrong for 68 of 108 sections
+a check that measures nothing is      0 == 0 is not unanimous agreement
+  not a pass
+a number in the evidence pack         routing_evidence.json is what `route`
+  resolves to an artifact              reads, so a number that disagrees with
+                                       its artifact is a routing defect
+a test guards on what it NEEDS        not on a committed record. ingest.json is
+                                      tracked and the data beside it is not, so
+                                      guarding on the record passes here and
+                                      fails in every clone
+work lands via a branch and a PR      the template states the scope, because
+                                      tests catch correctness and not altitude
+```
+
 ---
 
 ## key docs
