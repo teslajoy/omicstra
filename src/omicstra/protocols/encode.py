@@ -1272,6 +1272,262 @@ def encode_he_cohort(samples, out_dir, geom: HeGeometry, *, encoder: str = "virc
                       max_attempts=max_attempts, on_event=on_event)
 
 
+# --- pathway: the third arm, declared the same way ---------------------------
+@dataclass(frozen=True)
+class PathwayUniverse:
+    """which pathways, from which Reactome release, at which sizes.
+
+    the third declaration of the same kind as `HeGeometry` and `StGraph`. the
+    release is a choice - Reactome reorganises its hierarchy between releases, so
+    a parent's gene union is not stable across them - and the size bounds decide
+    which pathways are testable at all. neither defaults.
+
+    `targets` are the pre-registered parents. they are named by stable id rather
+    than by display name because a name changes between releases and an id does
+    not.
+    """
+    gmt: Path                          # low-level pathways, gene sets per stId
+    target_sets: Path | None           # the pre-registered parents, already rolled up
+    targets: tuple[str, ...]           # the pre-registered parent stIds
+    min_size: int
+    max_size: int
+    release: str | None                # the Reactome version, if declared
+    drop_prefixes: tuple[str, ...]     # genes removed before aggregation
+
+    @classmethod
+    def from_cohort(cls, cohort: dict, root: Path | None = None) -> PathwayUniverse:
+        d = cohort.get("pathway_universe")
+        d = d if isinstance(d, dict) else {}
+        if not d:
+            raise ValueError(
+                "this cohort declares no pathway_universe. which Reactome release, "
+                "which parent pathways, and which size bounds are a cohort's "
+                'decisions - declare pathway_universe: {gmt, targets, min_size, '
+                'max_size, release, drop_prefixes} in cohort.json. a release '
+                "cannot default: parents are reorganised between them, so the same "
+                "id names a different gene union.")
+        for f in ("gmt", "targets", "min_size", "max_size"):
+            if d.get(f) in (None, "", [], {}):
+                raise ValueError(f"pathway_universe declares no {f}")
+        def _rel(v):
+            if not v:
+                return None
+            q = Path(v)
+            return q if q.is_absolute() or root is None else (root / q).resolve()
+
+        g = _rel(d["gmt"])
+        return cls(gmt=g, target_sets=_rel(d.get("target_sets")),
+                   targets=tuple(d["targets"]),
+                   min_size=int(d["min_size"]), max_size=int(d["max_size"]),
+                   release=d.get("release"),
+                   drop_prefixes=tuple(d.get("drop_prefixes") or ()))
+
+    def params(self) -> dict:
+        return {"pathway_gmt": self.gmt.name,
+                "pathway_target_sets": None if self.target_sets is None
+                else self.target_sets.name,
+                "pathway_targets": list(self.targets),
+                "pathway_min_size": self.min_size, "pathway_max_size": self.max_size,
+                "pathway_release": self.release,
+                "pathway_drop_prefixes": list(self.drop_prefixes)}
+
+
+def niche_sum(X, idx):
+    """7-spot SUM per niche, not a mean.
+
+    the H&E arm pools encoded tiles by mean because it is averaging vectors; this
+    sums COUNTS, because a niche's library is the libraries of its spots and the
+    normalisation that follows divides by it. a mean here would rescale every
+    niche by 1/7 and then be undone, except on boundary niches with fewer than
+    seven real neighbours - where it would silently reweight.
+    """
+    import numpy as np
+    from scipy.sparse import csr_matrix, vstack
+
+    X = csr_matrix(X)
+    return vstack([csr_matrix(X[np.asarray(row)].sum(axis=0)) for row in idx]).tocsr()
+
+
+def run_one_pathway(counts_path, coords, universe: PathwayUniverse, axis: GeneAxis,
+                    k: int = 6, net: str = "targets", model=None):
+    """one section of counts -> per-niche pathway activity, plus a record.
+
+    published order, and each step is load-bearing:
+
+        gene axis -> drop MT -> niche SUM -> normalise to 1e4 -> log1p -> AUCell
+                  -> z-score within the section
+
+    MT genes go BEFORE aggregation, which is standard ST QC: mitochondrial reads
+    are a dissociation and quality signal rather than a pathway one, and summing
+    them into a niche then normalising by the total lets one stressed spot shift
+    every pathway score in its neighbourhood.
+
+    the z-score is within the SECTION, which is what the published pipeline calls
+    per-subarray. sharding per section therefore reproduces it exactly rather
+    than approximating it - the statistic never crossed a section boundary.
+    """
+    import time
+
+    import anndata as ad
+    import numpy as np
+    import pandas as pd
+
+    from omicstra.measures.tiling import niche_neighbours
+
+    t0 = time.time()
+    a = counts_path if isinstance(counts_path, ad.AnnData) else ad.read_h5ad(counts_path)
+    a, axis_rec = apply_gene_axis(a, axis)
+
+    # the gene universe is FIXED and declared, not taken from this section. AUCell
+    # scores an AUC over a ranking of ALL genes, so the universe is the
+    # denominator: a section-local one makes every score depend on which genes
+    # that section happened to detect, and nothing is comparable across sections.
+    # measured - section-local scoring lands 7.6e-02 off the published values.
+    #
+    # the published universe is the ANNOTATION TABLE's own vocabulary minus the
+    # dropped prefixes, which is neither the sections' intersection nor their
+    # union. a gene in the universe and absent from a section is a measured zero
+    # there, which is correct: it was assayed and not detected.
+    uni = _gene_universe(universe, axis)
+    col = {g: i for i, g in enumerate(uni)}
+    have = {str(g): i for i, g in enumerate(a.var_names.astype(str))}
+    take = [(col[g], i) for g, i in have.items() if g in col]
+    n_dropped = a.n_vars - len(take)
+    genes = list(uni)
+
+    xy = np.asarray(coords, dtype=float).reshape(-1, 2)
+    if xy.shape[0] != a.n_obs:
+        raise ValueError(
+            f"{xy.shape[0]} coordinates against {a.n_obs} spots - the adapter joins "
+            "them by spot_id, so a mismatch means the join was skipped")
+    idx, counts_per = niche_neighbours(xy, k)
+    # ONLY full niches are centres. the published arm takes `neighbor_count >= 7`
+    # and drops the rest rather than padding them, which is the right call for a
+    # pathway score: a boundary niche pooled over four spots has a different
+    # library depth and its AUCell rank is not comparable with a seven-spot one.
+    # the H&E arm pads instead, because it is averaging already-encoded vectors.
+    full = [i for i, c in enumerate(counts_per) if int(c) >= k + 1]
+    if not full:
+        raise ValueError(
+            f"no niche on this section has a full {k + 1}-spot complement, so there "
+            "is nothing to score. a section this sparse is a funnel entry, not a "
+            "failure.")
+    n_partial = len(counts_per) - len(full)
+    idx = [idx[i] for i in full]
+    from scipy.sparse import csr_matrix
+
+    # the section's columns placed into the global universe, zeros elsewhere
+    src = csr_matrix(a.X)[:, [i for _, i in take]]
+    wide = csr_matrix((a.n_obs, len(uni)), dtype=src.dtype)
+    wide = wide.tolil()
+    wide[:, [c for c, _ in take]] = src.tolil()
+    X = niche_sum(wide.tocsr(), idx)
+
+    names = [str(a.obs_names[i]) for i in full]
+    nb = ad.AnnData(X=X, obs=pd.DataFrame(index=names),
+                    var=pd.DataFrame(index=genes))
+    lib = np.asarray(nb.X.sum(axis=1)).ravel()
+    nb.X = nb.X.multiply((1e4 / np.maximum(lib, 1))[:, None]).tocsr()
+    nb.X.data = np.log1p(nb.X.data)
+
+    the_net = _pathway_net(universe, net)
+    import decoupler as dc
+
+    dc.mt.aucell(nb, net=the_net, tmin=universe.min_size, verbose=False)
+    scores = pd.DataFrame(np.asarray(nb.obsm["score_aucell"]),
+                          index=nb.obs_names,
+                          columns=list(nb.obsm["score_aucell"].columns)
+                          if hasattr(nb.obsm["score_aucell"], "columns")
+                          else None)
+    # within-section z, which is what per-subarray means when a shard IS a section
+    z = scores.sub(scores.mean(0), axis=1).div(scores.std(0).replace(0, 1), axis=1)
+    z.columns = [f"{c}_z" for c in scores.columns]
+    out = pd.concat([scores, z], axis=1)
+
+    rec = TransformRecord(
+        step_id="encode_pathway",
+        params={"k": k, "n_niches": int(out.shape[0]), "n_pathways": int(scores.shape[1]),
+                "n_genes_universe": len(uni), "n_genes_from_section": len(take),
+                "n_section_genes_outside_universe": int(n_dropped),
+                "pathway_net": net, "n_niches_partial_dropped": int(n_partial),
+                **universe.params(), **axis_rec, **axis.params(),
+                "neighbour_counts": {int(c): int(n) for c, n in
+                                     zip(*np.unique(counts_per, return_counts=True))}},
+        produced=[Produced(path=str(counts_path), shape=list(out.shape),
+                           dtype=str(out.dtypes.iloc[0]))],
+        duration_s=round(time.time() - t0, 2),
+    )
+    return out, rec
+
+
+def _gene_universe(universe: PathwayUniverse, axis: GeneAxis) -> list[str]:
+    """the fixed gene axis every section is scored against.
+
+    the annotation table's own vocabulary, minus the declared prefixes. it is the
+    table and not the sections because AUCell's denominator has to be the same
+    for every section or the scores are not comparable - and because a gene the
+    assay measured and did not detect is a zero, not an absence.
+    """
+    import pandas as pd
+
+    if axis.map_path is None:
+        raise ValueError(
+            "the pathway arm needs a declared gene table to fix its universe from. "
+            "a cohort already on the encoder's axis has no table, so it must "
+            "declare the universe some other way - see gene_universe in "
+            "design/v1_3_scope.md.")
+    tbl = pd.read_csv(axis.map_path, sep="\t")
+    syms = {str(v) for v in tbl.iloc[:, 1] if v and not str(v).startswith(
+        universe.drop_prefixes)}
+    return sorted(syms)
+
+
+def _pathway_net(universe: PathwayUniverse, which: str = "targets"):
+    """the decoupler net: one row per (pathway, gene), size-bounded.
+
+    two nets, because the arm produces two things. `targets` scores the five
+    pre-registered parents, whose gene sets are a UNION over their descendants
+    and are read from a declared artifact rather than re-rolled here - the BFS
+    that built them walks a Reactome hierarchy, which is release-specific and is
+    the cohort's to supply. `low_level` scores the exploration matrix.
+
+    both are built from DECLARED files rather than package constants, so a cohort
+    on another release changes a declaration and not this function.
+    """
+    import json
+
+    import pandas as pd
+
+    if which == "targets":
+        if universe.target_sets is None:
+            raise ValueError(
+                "pathway_universe declares no target_sets, so the five parents "
+                "cannot be scored. their gene sets are a union over descendants in "
+                "a release-specific hierarchy - declared, not rebuilt here.")
+        raw = json.loads(universe.target_sets.read_text())
+        rows = [{"source": name, "target": g}
+                for name, info in raw.items()
+                for g in (info["genes"] if isinstance(info, dict) else info)]
+        return pd.DataFrame(rows)
+
+    raw = json.loads(universe.gmt.read_text())
+    sets = raw.get("pathways", raw)
+    rows = []
+    for stid, p in sets.items():
+        gs = p["genes"] if isinstance(p, dict) else list(p)
+        if not (universe.min_size <= len(gs) <= universe.max_size):
+            continue
+        name = p.get("name", stid) if isinstance(p, dict) else stid
+        src = f"{stid}|{str(name)[:50]}"
+        rows.extend({"source": src, "target": g} for g in gs)
+    if not rows:
+        raise ValueError(
+            f"no pathway in {universe.gmt.name} falls within "
+            f"[{universe.min_size}, {universe.max_size}] - the bounds exclude the "
+            "whole universe")
+    return pd.DataFrame(rows)
+
+
 # --- the cohort run: N shards of run_one_st ----------------------------------
 def st_shards(samples, out_dir, graph: StGraph | dict, axis: GeneAxis | dict,
               encoder: str = "novae"):

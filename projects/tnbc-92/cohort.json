@@ -46,5 +46,36 @@
       "why_it_matters": "novae zero-shot resolves var_names against a symbol vocabulary, so unreached ids are genes the model never sees. the shortfall is a property of this table, not of the tissue."
     },
     "observed_vs_declared": "the identifier SPACE is observed per section at ingest.json#counts.<id>.gene_id; strip_version is derived from it. only the release and its policy are declared here."
+  },
+  "pathway_universe": {
+    "gmt": "../../knowledge/reactome/low_level_pathways.json",
+    "targets": [
+      "R-HSA-170834",
+      "R-HSA-168256",
+      "R-HSA-1474244",
+      "R-HSA-1640170",
+      "R-HSA-5357801"
+    ],
+    "target_names": {
+      "R-HSA-170834": "TGF-beta Signaling",
+      "R-HSA-168256": "Immune System",
+      "R-HSA-1474244": "ECM Organization",
+      "R-HSA-1640170": "Cell Cycle",
+      "R-HSA-5357801": "Programmed Cell Death"
+    },
+    "min_size": 3,
+    "max_size": 500,
+    "release": null,
+    "drop_prefixes": [
+      "MT-",
+      "MTRNR"
+    ],
+    "basis": "the universe the published H3 arm was built against. the five parents are the proposal's pre-registered targets, named by stable id because a display name changes between Reactome releases and an id does not. size bounds 3-500 decide which pathways are testable at all: below 3 an AUCell score is noise, above 500 a set covers too much of the transcriptome to discriminate.",
+    "release_note": "UNRECORDED. knowledge/reactome/ carries no version stamp and nothing in the repo names the release, so this is pinned by the gmt's own content rather than by a version. it matters: parents are reorganised between releases, so the same id names a different gene union.",
+    "drop_basis": "standard ST QC. mitochondrial reads are a dissociation and quality signal, not a pathway one, and they are dropped BEFORE niche aggregation - summed in and then normalised by the total, one stressed spot shifts every pathway score in its neighbourhood.",
+    "actor": "human",
+    "declared_on": "2026-10-13",
+    "target_sets": "../../data/embeddings/biological_signals/reactome_parent_gene_sets.json",
+    "target_sets_basis": "the five parents' gene sets, a UNION over their Reactome descendants, built by BFS over events_hierarchy_9606.json. declared rather than rebuilt in the package because the BFS walks a release-specific hierarchy - the same reason the annotation table is declared rather than derived."
   }
 }

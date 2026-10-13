@@ -106,6 +106,87 @@ done.
 
 ---
 
+## 7a - the pathway arm ports, and its acceptance is a TOLERANCE not an exact
+
+`run_one_pathway` is built and runs through the canonical adapter. the arm is the
+third of the same shape: a declared universe (`PathwayUniverse`), the shared gene
+axis, the shared niche definition, and the cohort's own counts. the cohort-specific
+lines the published script carried - `selection.RData` through Rscript, a hardcoded
+`ensembl_to_symbol.tsv`, the `byArray` layout - are gone.
+
+**the numbers do not reproduce exactly.** on TNBC1_CN1_C1, against
+`niche_aucell_5targets.parquet`:
+
+| pathway | pearson | spearman | mine | published | max abs |
+|:--|--:|--:|--:|--:|--:|
+| ECM_Organization | 0.978 | 0.979 | 0.130 | 0.164 | 4.6e-02 |
+| Immune_System | 0.963 | 0.902 | 0.225 | 0.205 | 3.0e-02 |
+| Cell_Cycle | 0.877 | 0.858 | 0.074 | 0.102 | 3.7e-02 |
+| TGF-beta_Signaling | 0.843 | 0.825 | 0.137 | 0.180 | 6.5e-02 |
+| Programmed_Cell_Death | 0.766 | 0.733 | 0.116 | 0.169 | 7.6e-02 |
+
+strongly correlated, systematically offset, lower in four of five.
+
+### what was checked and MATCHES
+
+```
+gene universe       41,414 both. read from niche_counts_cache_genes.npy rather
+                    than inferred - the annotation table's vocabulary minus MT
+niche rule          full 7-spot centres only. the published arm takes
+                    neighbor_count >= 7 and DROPS the rest rather than padding,
+                    which the H&E arm does not - it averages encoded vectors,
+                    this sums counts and a four-spot library is not comparable
+tmin                3 both
+the net             the declared parent sets, 5 unions over Reactome descendants
+the gene axis       the hash-verified table, symbols, duplicates summed
+```
+
+three of those were changed during the port on the suspicion that each was the
+cause, and each moved the number by nothing - which is how they were eliminated
+rather than by argument.
+
+### the unconfirmed cause
+
+the cache records **no library version**. `decoupler` is 2.1.6 here and its
+`aucell` no longer exposes `n_up`, the top-fraction parameter AUCell's AUC depends
+on - so the API has changed since April 2026, when the cache was written. a
+different default top fraction would shift every score in one direction while
+leaving ranks largely intact, which is the signature observed.
+
+that is a CANDIDATE, not a finding. confirming it needs the version the cache was
+built with, which nothing records.
+
+**so by step 3's rule - "exact if deterministic, otherwise the tolerance is
+recorded with its cause" - this is a tolerance run whose cause is unconfirmed,
+which is weaker than the H&E arm's 3.02e-06 and weaker than the ST arm's zero.
+the port is not accepted on this evidence.** what would accept it: pin the
+version in the cohort's declaration the way the map table is pinned, re-run, and
+either reach zero or name a real cause.
+
+### and it surfaced the gene-universe answer for this arm
+
+the universe question has been open since 25 sep. for the pathway arm the
+published pipeline already answers it, and the answer is neither of the options
+on the table:
+
+```
+not the sections' intersection      7,288 of a 25,041 median - would discard 71%
+not union-with-zeros                rejected: an absent gene was not measured
+the ANNOTATION TABLE's vocabulary   41,414 symbols minus MT, fixed for every
+                                    section
+```
+
+and the reason is specific to AUCell rather than general: the score is an AUC over
+a ranking of ALL genes, so the universe is the denominator. a section-local one
+makes every score depend on which genes that section happened to detect. a gene in
+the universe and absent from a section is a measured zero there, which is correct -
+it was assayed and not detected.
+
+that does not settle the universe for `batch_structure`, which stacks means and
+has a different reason to care.
+
+---
+
 ## open questions carried forward, with their evidence
 
 ### the spatial check thresholds a raw statistic and discards its own null
