@@ -181,6 +181,100 @@ from a section was not measured there, and a zero would read as a measurement.
 
 ---
 
+## the three funded biological deliverables, audited against artifacts
+
+the proposal names three outputs "beyond the reusable software infrastructure".
+audited 2026-10-12 by opening each artifact. absences are stated, not explained.
+
+| # | funded deliverable | state | artifact |
+|:--|:--|:--|:--|
+| 1 | integrated multi-modal cohort characterisation | **partial** | retrieval half: `runs/tnbc-92_v3/eval/H1/summary.json`, cited. comparative half: `eval/H2/mc_coherence.parquet` rows `raw_he` / `raw_st`, uncited |
+| 2 | TME readability profiles | **partial** | `eval/H2/compartment_cosine.parquet` (108 = 12 compartments x 9 runs), `compartment_welch_contrasts.parquet` (54 = 6 contrasts x 9 runs). computed, uncited, and the prediction is inverted |
+| 3 | pathway-morphology spatial maps | **partial** | association: `runs/tnbc-92/eval/H3/pathway_cca/dag_full/compartment_table.parquet` (395 nodes x 7 compartments), uncited. **no map in tissue space exists** |
+
+**the deliverable-table rule:** every row names an artifact path or says "no home".
+a row whose state is `built` must also be cited by the evidence pack - an artifact
+nobody cites is not a delivered result. no row is `built`.
+
+### 1 is broader than retrieval, which is why it is partial
+
+verbatim: *"the shared embedding space combines morphological and transcriptomic
+signals into a joint representation that is **more informative for TME
+characterization than either modality alone**, enabling cross-modal retrieval
+that links tissue architecture to molecular state across patients."*
+
+retrieval is the second clause and is what the first ENABLES. the primary claim
+is comparative, and the comparison exists:
+
+```
+                     ARI      silhouette
+raw_he             0.1641       -0.0058
+raw_st             0.0458       -0.0724
+best aligned R5    0.2458       -0.0139
+```
+
+against the STRONGER single modality the gain is +50%, not the 5x against
+`raw_st` quoted earlier in this session - the proposal says "either modality
+alone", so `raw_he` is the bar. and on silhouette, which the proposal asks for
+alongside ARI, raw H&E is **better** than every aligned run. neither number is
+cited by the pack.
+
+### 2's prediction is inverted, with the numbers
+
+the proposal predicts *"morphologically distinct compartments (ex. tumor, TLS,
+necrosis) will show higher matched-pair cosine similarity than morphologically
+ambiguous compartments (ex. high-TIL vs. low-TIL stroma)"*. on R4_v3:
+
+| distinct | ambiguous | mean distinct | mean ambiguous | n dist / n amb | z | direction |
+|:--|:--|--:|--:|--:|--:|:--|
+| Tumor | High TIL stroma | 0.5785 | 0.6175 | 3659 / 76 | -3.26 | **INVERTED** |
+| Tumor | Low TIL stroma | 0.5785 | 0.6386 | 3659 / 268 | -15.41 | **INVERTED** |
+| Lymphoid nodule | High TIL stroma | 0.6303 | 0.6175 | 24 / 76 | +0.68 | ns |
+| Lymphoid nodule | Low TIL stroma | 0.6303 | 0.6386 | 24 / 268 | -0.55 | ns |
+| Necrosis | High TIL stroma | 0.5947 | 0.6175 | 1018 / 76 | -1.89 | ns |
+| Necrosis | Low TIL stroma | 0.5947 | 0.6386 | 1018 / 268 | -10.30 | **INVERTED** |
+
+**zero of six support it. three inverted, three underpowered** - Lymphoid nodule
+is 24 niches and High TIL stroma 76. the `direction` column has read INVERTED
+since the parquet was written in May and has never been read into a claim.
+
+**coverage.** `morphology_labels.tsv` carries `dominant_18class` with 18 `frac_`
+columns; `compartment_cosine` covers 12. six absent: `Nothing`, `Artefacts`,
+`Hole (whitespace)` are non-tissue, and `Tumor region`, `Nerve`, `Heterologous
+elements` are tissue categories with no row. the proposal says 17 categories and
+the artifact has 18; neither number is 12.
+
+**the missing arm is B4_v3** - the untrained random-init control, 9 of 10 runs
+present. that is the arm that WINS H2-B.2 at z=25.5, so the readability profile
+omits the only run that beat every trained one on a related readout.
+
+**cross-modal cosine is not a signal-to-noise ratio.** the proposal commits to
+"per-compartment signal-to-noise analysis"; what exists is mean matched-pair
+cosine per compartment with a Welch contrast. that is a different statistic and
+goes in `projects/tnbc-92/proposal_deviations.md` as a substitution, not a
+rename.
+
+### 3 is planned, not built
+
+the map belongs to `report.py`, not to a script: the renderer already takes a
+pack and a ledger and emits markdown, and a figure a script writes separately is
+a figure the pack cannot cite. the plan, deliberately one section and one
+pathway:
+
+```
+input   compartment_table.parquet (395 nodes x 7 compartments)
+        + projects/tnbc-92/data/canonical/{sid}_spots.parquet for x, y
+scope   ONE pre-registered pathway of the five, ONE section, named in the
+        pack rather than chosen at render time
+output  a tissue-space panel the report cites by path, next to the
+        compartment row it illustrates
+not     a per-pathway atlas. the deliverable is "spatial maps generated showing
+        pathway-morphology correspondence", and one correspondence shown
+        honestly is that; 395 panels is a different artifact
+```
+
+---
+
 ## grant commitments outstanding, not release work
 
 ```

@@ -53,6 +53,24 @@ source for all proposal wording: pp.5 (H1/H2/H3) + pp.9 (planned analyses) of th
 
 ---
 
+## cross-modal cosine substituted for signal-to-noise (added 2026-10-12)
+
+| proposal commitment | what was executed | status |
+|---|---|---|
+| "per-compartment **signal-to-noise** analysis quantifies where morphology and expression reinforce each other versus where they diverge" (deliverable 2) | mean matched-pair **cosine similarity** per compartment, with a Welch contrast between morphologically distinct and ambiguous compartments. `runs/tnbc-92_v3/eval/H2/compartment_cosine.parquet` and `compartment_welch_contrasts.parquet` | **substitution, not a rename.** cosine is a similarity between two representations of the same niche; SNR is a ratio of signal variance to noise variance and needs a noise model the design never declared. the substitute answers "do the modalities agree here" rather than "how much of what is here is signal" |
+
+the substitution is defensible and the direction of the result is not what was
+predicted. the proposal predicted distinct compartments above ambiguous ones; on
+R4_v3 three of six contrasts are INVERTED (Tumor vs Low TIL stroma z=-15.41) and
+three are underpowered (Lymphoid nodule n=24). see the audit table in
+`design/v1_3_scope.md`.
+
+two further gaps in the same artifact, both recorded there: 12 of the 18
+annotation classes carry a row, and `B4_v3` - the untrained control that wins
+H2-B.2 - is the one arm absent.
+
+---
+
 ## scope rules (locked before H3 compute)
 
 **run set for H3 CCA**: all 8 runs that have `runs/tnbc-92/{run}/embeddings_test.parquet` — R1, R2, R3, R4, R6, B1, B2, B3. Classical baselines (B1, B2, B3) included as the falsifier floor: the proposal's interpretability claim is that *alignment* produces directions correlated with pathways, so the unaligned-baseline comparison is required to make that falsifiable. Brief must mark classical (B1/B2/B3) vs contrastive (R1/R2/R3/R4/R6) explicitly in the H3 table.
