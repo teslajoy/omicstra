@@ -305,7 +305,10 @@ def halt(state: EncodeState) -> dict:
     reads.
     """
     prior = state.get("report") or {}
-    if prior.get("status") in ("refused", "unavailable"):
+    # `not_run` joined the list when the evaluate stage started halting on a
+    # scope nothing could fill: no gate was refused there, so the generic note
+    # below was not merely vaguer than the prior report, it was wrong.
+    if prior.get("status") in ("refused", "unavailable", "not_run"):
         return {"halted": True, "report": prior}
     return {"halted": True, "report": {"status": "halted",
                                        "note": "a preflight gate was refused; nothing ran"}}

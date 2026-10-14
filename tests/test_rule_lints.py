@@ -44,8 +44,9 @@ def test_every_graph_module_is_a_gate_or_declares_why_not():
 
 @pytest.mark.parametrize("mod,fn", [
     ("encode", "build_encode_graph"), ("st", "build_st_graph"),
-    ("align", "build_align_graph"), ("eda", "build_eda_graph"),
-    ("route", "build_route_graph"), ("promote", "build_promote_graph"),
+    ("align", "build_align_graph"), ("evaluate", "build_evaluate_graph"),
+    ("eda", "build_eda_graph"), ("route", "build_route_graph"),
+    ("promote", "build_promote_graph"),
 ])
 def test_every_graph_can_reach_an_interrupt(mod, fn):
     """the second half of the level rule: anything that can interrupt gets its
@@ -104,6 +105,64 @@ def test_no_shared_gate_helper_hardcodes_a_step_id():
             assert "step_id" in args, (
                 f"{path.name}:{fn.name} writes a step_id it does not take as a "
                 f"parameter - a shared helper cannot name one stage")
+
+
+# --- the route is discoverable ---------------------------------------------
+GRAPH_DOC = ROOT / "design" / "graph.md"
+
+
+def test_the_graph_doc_exists_and_names_every_graph_module():
+    """a session's first question is WHERE DOES THIS GO, and the answer was the
+    tree plus three scope docs plus CLAUDE.md's directory list.
+
+    `design/graph.md` is one page with the route on it. a new graph that forgets
+    its row fails here rather than being discoverable only by reading the tree -
+    which is the same rule as every other lint in this file: make it a test or a
+    refusal, not a convention.
+    """
+    assert GRAPH_DOC.is_file(), "design/graph.md is the route; it is missing"
+    doc = GRAPH_DOC.read_text()
+    for f in sorted(GRAPHS.glob("*.py")):
+        if f.name == "__init__.py":
+            continue
+        assert f"graphs/{f.name}" in doc, (
+            f"{f.name} is a graph module and design/graph.md does not name it")
+    assert "graph.py" in doc and "LEVEL 0" in doc
+
+
+def test_the_graph_doc_names_the_level_zero_chain_in_the_order_the_code_wires_it():
+    """a diagram that drifts from the wiring is worse than none: it is read as
+    authoritative and is wrong."""
+    from omicstra.graph import COMPUTE_CHAIN, STOP_AFTER
+
+    doc = GRAPH_DOC.read_text()
+    at = [doc.index(f"graphs/{n}.py") for n in COMPUTE_CHAIN]
+    assert at == sorted(at), (
+        f"design/graph.md lists the compute chain out of order; the code wires "
+        f"{list(COMPUTE_CHAIN)}")
+    assert "STOP_AFTER" in doc and "COMPUTE_CHAIN" in doc
+    assert "submitted" in doc, "the stop that matters must be stated"
+    assert all(s in doc for s in ("submitted",)) and STOP_AFTER[0] == "submitted"
+
+
+# --- the queue's name rule -------------------------------------------------
+def test_every_submitted_activity_name_has_a_body_a_worker_can_hold():
+    """the submitter names a body; the worker holds it. different processes.
+
+    `fn_name=` is a string crossing a scheduler, so nothing in the language
+    checks it. an arm whose name is absent from `shard_bodies()` submits runs
+    that sit on the queue until a worker picks one up, fails with a KeyError on
+    a name it never registered, and retries twice more.
+    """
+    from omicstra.dispatch.bodies import shard_bodies
+
+    served = set(shard_bodies())
+    submitted = {m for f in GRAPHS.glob("*.py")
+                 for m in re.findall(r'fn_name=["\']([^"\']+)["\']', f.read_text())}
+    assert submitted, "no arm submits anything - the regex has drifted"
+    assert submitted <= served, (
+        f"{sorted(submitted - served)} is submitted by a graph and served by no "
+        f"worker. add it to dispatch/bodies.py:shard_bodies")
 
 
 # --- the scope-doc rules ---------------------------------------------------

@@ -18,7 +18,6 @@ slice-diff against the cache.
 """
 from __future__ import annotations
 
-import functools
 import json
 import os
 import signal
@@ -243,44 +242,57 @@ def test_a_run_id_from_another_checkpointer_is_not_silently_served(tmp_path):
 # survive; temporal recovers because the history does. here the submitting process
 # does not die mid-shard - it never ran a shard at all. it exits at submission and
 # a worker it never met does the whole run.
-WORKER = r'''
-import sys, time
-from pathlib import Path
+
+# the stand-in encoder as a MODULE, because the worker under test is the shipped
+# entrypoint and the only hook it offers is `--preload`. that is the real shape
+# of the problem too: an encoder a cohort brought itself has to be importable in
+# the worker's process, which never spoke to the submitter.
+ENCODER_MODULE = r'''
+import time
+
 import numpy as np
 
-from omicstra.models.encoders import EncoderSpec, register as reg_encoder
+from omicstra.models.encoders import EncoderSpec, register
+
 
 class Slow:
     def embed_images(self, tiles, batch_size=32):
         time.sleep(2.5)
         return np.zeros((len(tiles), 4), dtype="float32")
 
-reg_encoder(EncoderSpec(name="slowfake", dim=4, role="primary", modality="he",
-                        unit="tile", trained_on="nothing - a test stand-in",
-                        extras=()), lambda: Slow())
 
-import asyncio
-from temporalio.client import Client
-from omicstra.dispatch.temporal import build_worker, register
-from omicstra.protocols.encode import he_shard_body
-from omicstra.settings import settings
-
-# the body is named, not passed. this process never spoke to the submitter.
-register("encode_he", he_shard_body)
-addr, out_dir, n = sys.argv[1], Path(sys.argv[2]), int(sys.argv[3])
-
-async def main():
-    client = await Client.connect(addr, namespace=settings.temporal_namespace)
-    async with build_worker(client, settings.temporal_task_queue):
-        deadline = time.time() + 120
-        while time.time() < deadline:
-            if len(list(out_dir.glob("*.npy"))) >= n:
-                return
-            await asyncio.sleep(0.2)
-
-asyncio.run(main())
-print("WORKED", flush=True)
+register(EncoderSpec(name="slowfake", dim=4, role="primary", modality="he",
+                     unit="tile", trained_on="nothing - a test stand-in",
+                     extras=()), lambda: Slow())
 '''
+
+
+def _serve(addr: str, root: Path, ck: Path, out_dir: Path, n: int, timeout: int = 240):
+    """`omicstra worker`, as its own process, holding the bodies by NAME.
+
+    the shipped entrypoint rather than a worker assembled in the test: what the
+    durable claim rests on is that the command an operator runs serves the queue,
+    and a test-local worker could pass while that command did not exist.
+
+    it is stopped with SIGTERM once the outputs have landed, so the graceful path
+    is part of the acceptance - a worker that only ever dies abruptly leaves
+    activities to time out and retry.
+    """
+    (root / "slowfake_encoder.py").write_text(ENCODER_MODULE)
+    env = dict(_env(root, ck, addr),
+               PYTHONPATH=os.pathsep.join([str(ROOT / "src"), str(root)]))
+    p = subprocess.Popen(
+        [sys.executable, "-m", "omicstra.cli", "worker", "--address", addr,
+         "--preload", "slowfake_encoder", "--max-seconds", str(timeout)],
+        env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    deadline = time.time() + timeout
+    while time.time() < deadline and p.poll() is None:
+        if len(list(out_dir.glob("*.npy"))) >= n:
+            break
+        time.sleep(0.2)
+    p.terminate()
+    out, err = p.communicate(timeout=60)
+    return p.returncode, out, err
 
 
 def test_the_durable_run_is_finished_by_a_worker_that_never_met_the_submitter(tmp_path):
@@ -314,21 +326,18 @@ def test_the_durable_run_is_finished_by_a_worker_that_never_met_the_submitter(tm
             assert start["report"]["durable"]["workflow_id"].startswith("omicstra-encode-")
             assert not list(out_dir.glob("*.npy")), "no worker existed; nothing may have run"
 
-            # 2. a worker in its own process, built from the package's helper and
+            # 2. a worker in its own process: the shipped `omicstra worker`,
             #    holding the body by NAME.
-            w = (root / "worker.py")
-            w.write_text(WORKER)
-            wr = await asyncio.to_thread(functools.partial(
-                subprocess.run, [sys.executable, str(w), addr, str(out_dir), str(len(SIDS))],
-                env=_env(root, ck, addr), capture_output=True,
-                text=True, timeout=240, check=False))
+            wr = await asyncio.to_thread(_serve, addr, root, ck, out_dir, len(SIDS))
 
             # 3. the handle still resolves, from a THIRD process
             st = await asyncio.to_thread(_run, root, ck, "status", rid, temporal=addr)
             return start, wr, _said(st.stdout, "STATUS")
 
-    _, wr, st = asyncio.run(main())
-    assert "WORKED" in wr.stdout, wr.stderr[-1500:]
+    _, (code, out, err), st = asyncio.run(main())
+    assert code == 0, err[-1500:]
+    assert "serving encode_he, encode_st" in out, out
+    assert "stopped." in out, "SIGTERM must shut the worker down gracefully"
     assert {f.stem for f in out_dir.glob("*.npy")} == set(SIDS)
     assert st["executor"] == "temporal"
     assert st["status"] == "complete" and st["missing"] == []

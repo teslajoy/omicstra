@@ -102,3 +102,26 @@ def bound_synthetic_cohort(synthetic_cohort):
         yield synthetic_cohort
     finally:
         settings.project_dir = before
+
+
+@pytest.fixture(autouse=True)
+def _runs_dir_is_never_the_repos(tmp_path, monkeypatch):
+    """no test writes into the repo's `runs/`.
+
+    every arm appends to `runs/{project_id}/records/decisions.jsonl` now, and
+    `settings.runs_dir` resolves under the PACKAGE repo root - so a test calling
+    a tool on the seed cohort wrote into the record a report reads. 42 rows
+    landed in `runs/synthetic/` and 5 in `runs/tnbc-92/` before this existed,
+    from tests that were otherwise careful with tmp_path.
+
+    autouse, because the leak is invisible: the files are git-ignored, nothing
+    fails, and the next report is simply wrong about who decided what. a test
+    that genuinely needs the real tree reads it by path rather than through
+    settings, which is what the artifact tests already do.
+    """
+    from omicstra.settings import settings
+
+    monkeypatch.setattr(settings, "runs_dir", tmp_path / "_runs")
+    # a SUBPROCESS inherits none of that, so it is told by environment too -
+    # the kill tests run the server in their own process.
+    monkeypatch.setenv("OMICSTRA_RUNS_DIR", str(tmp_path / "_runs"))

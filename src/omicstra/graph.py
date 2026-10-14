@@ -62,6 +62,13 @@ class OmicstraState(TypedDict, total=False):
     # discovery
     has_evidence: bool            # does the cohort hold ANY evidence
     has_evidence_for_task: bool   # does it hold evidence for the task asked
+    # ask | compute | refuse. NOT the same `arm` the gate subgraphs carry, which
+    # is the run handle's he | st | align | evaluate - two meanings, one key, and
+    # the key is shared with every subgraph BY NAME. a subgraph wired here
+    # therefore receives `compute` in a field the MCP would read as a handle arm,
+    # so `_runner_for` refuses an arm it does not know rather than defaulting to
+    # the H&E graph. the collision is named here because the names are published
+    # on both sides and renaming either would make two names for one idea.
     arm: Arm
     arm_reason: str
     # --- shared with subgraphs BY NAME ------------------------------------
@@ -93,7 +100,14 @@ class OmicstraState(TypedDict, total=False):
     samples: list[str] | None  # an explicit subset, or every ingested sample
     gates: list[dict]
     answers: dict
+    hypotheses: list[str]    # which hypotheses the evaluate stage returns a verdict on
+    # `report` is ONE key and every stage writes it, so the last writer wins.
+    # that is correct for a caller asking "where did this end" and useless for
+    # "what happened" - hence the accumulator below, written by a keeper node
+    # after each stage rather than by the stages themselves, which are subgraphs
+    # shared with the MCP and do not know they are in a chain.
     report: dict
+    stages: Annotated[list[dict], operator.add]
     # the reducer is why more than one node may append. without it the second
     # writer OVERWRITES the first - invisible until two nodes both write.
     records: Annotated[list[dict], operator.add]
@@ -267,6 +281,46 @@ def _halted(state: OmicstraState) -> str:
     return "halt" if state.get("halted") else "encode"
 
 
+# the stages of the compute arm, in the order their inputs allow. a stage is
+# wired only if it was injected, so a host without a tensor library still builds
+# the graph - the same discipline the encode slot has had since it existed.
+COMPUTE_CHAIN = ("eda", "encode", "st", "align", "evaluate")
+
+# a status that means the stage left work in flight, or could not run. the chain
+# STOPS on these rather than walking into a stage whose inputs do not exist yet.
+#
+# `submitted` is the one that matters and the reason this is not a straight
+# chain: an encode with compute=True returns at submission, so the embeddings a
+# later stage reads are not on disk when the next node would run. the run handle
+# is how the chain continues - the shards land, and a caller re-enters at the
+# stage that needs them.
+STOP_AFTER = ("submitted", "refused", "halted", "unavailable", "not_run")
+
+
+def _keeper(name: str):
+    """record a finished stage's report before the next one overwrites it.
+
+    `resolution` is the fallback because the routing subgraph states its outcome
+    there rather than in a report - so a chain that read only `report` logged the
+    one stage that had actually decided something as `unknown`.
+    """
+    def keep(state: OmicstraState) -> dict:
+        rep = dict(state.get("report") or {})
+        status = rep.get("status") or state.get("resolution") or "unknown"
+        return {"stages": [{"stage": name, "status": status, "report": rep}]}
+
+    keep.__name__ = f"after_{name}"
+    return keep
+
+
+def _continue(state: OmicstraState) -> str:
+    """go on, or stop here and say where."""
+    if state.get("halted"):
+        return "stop"
+    status = (state.get("report") or {}).get("status")
+    return "stop" if status in STOP_AFTER else "go"
+
+
 def make_checkpointer(spec: str | None = None):
     """`memory` or `sqlite:<path>`. the http path needs the second.
 
@@ -300,50 +354,82 @@ def make_checkpointer(spec: str | None = None):
 def build_omicstra_graph(checkpointer: Any = None,
                          eda: Any = None,
                          encode: Any = None,
-                         route: Any = None) -> Any:
+                         route: Any = None,
+                         st: Any = None,
+                         align: Any = None,
+                         evaluate: Any = None) -> Any:
     """the only graph a caller compiles.
 
-    `eda`, `encode` and `route` are injected compiled subgraphs so this file does
-    not import them at module scope - level 0 must stay importable in an
-    environment that has no encoder dependencies installed, which is the same
-    reason `pyproject` keeps them in an extra.
+    every subgraph is INJECTED so this file imports none of them at module
+    scope - level 0 must stay importable where no encoder dependency is
+    installed, which is the same reason `pyproject` keeps them in an extra.
 
-    the two arms take different subgraphs, and they are not interchangeable:
-    `eda` (and later `encode`) run the COMPUTE arm, for a cohort with no
-    evidence pack; `route` runs the ASK arm, for one that has it.
+    the two arms take different subgraphs, and they are not interchangeable.
+    `route` runs the ASK arm, for a cohort that has an evidence pack. the
+    COMPUTE arm is a chain, in the order each stage's inputs allow:
+
+        eda -> carry_counts -> encode -> st -> align -> evaluate
+
+    and it stops at the first stage that leaves work in flight or cannot run.
+    `submitted` is the usual stop: an encode with compute=True returns at
+    submission, so the embeddings the next stage reads are not on disk yet. the
+    run handle is how the chain continues. with compute=False the whole chain
+    walks and reports what WOULD run at every stage, which is what makes "ask
+    the three hypotheses" answerable in one call.
+
+    a stage absent from the arguments is absent from the graph. so this is also
+    how a caller runs a prefix of the chain deliberately.
 
     pass `checkpointer=InMemorySaver()` for a single session, or a durable saver
     when a review must survive a restart. passing None means no interrupt in any
-    subgraph can fire - that is a valid read-only configuration, not a default
-    to rely on.
+    subgraph can fire - a valid read-only configuration, not a default to rely
+    on.
     """
     g = StateGraph(OmicstraState)
     g.add_node("discover", discover)
+    g.add_edge(START, "discover")
 
-    if eda is not None:
-        g.add_node("eda", eda)            # a compiled subgraph, added as ONE node
-    if encode is not None:
-        g.add_node("encode", encode)
+    subs = {"eda": eda, "encode": encode, "st": st, "align": align,
+            "evaluate": evaluate}
+    chain = [n for n in COMPUTE_CHAIN if subs[n] is not None]
+    for name in chain:
+        g.add_node(name, subs[name])            # a compiled subgraph, as ONE node
+
     if route is not None:
         g.add_node("route", route)
 
-    g.add_edge(START, "discover")
+    # carry_counts is a node between two stages rather than a bare edge. the
+    # encode gate reads counts the inventory already measured, and something has
+    # to lift them out of the records the eda subgraph appended. putting that in
+    # the subgraph would make it re-read the inventory; an edge cannot hold code.
+    pre = {"encode": "carry_counts"} if {"eda", "encode"} <= set(chain) else {}
+    if pre:
+        g.add_node("carry_counts", carry_counts)
+
+    for i, name in enumerate(chain):
+        nxt = chain[i + 1] if i + 1 < len(chain) else None
+        if nxt is None:
+            g.add_edge(name, END)
+            continue
+        entry = pre.get(nxt, nxt)
+        # eda keeps the dedicated halt check it has always had: a refused cohort
+        # must not reach the encoder. every other junction uses the general rule,
+        # which also stops on a stage that only submitted.
+        if name == "eda" and entry == "carry_counts":
+            g.add_edge("eda", "carry_counts")
+            g.add_conditional_edges("carry_counts", _halted,
+                                    {"halt": END, "encode": "encode"})
+            continue
+        keep = f"after_{name}"
+        g.add_node(keep, _keeper(name))
+        g.add_edge(name, keep)
+        g.add_conditional_edges(keep, _continue, {"go": entry, "stop": END})
+        if entry != nxt:
+            g.add_edge(entry, nxt)
 
     targets: dict[str, str] = {}
-    if eda is not None:
-        targets["compute"] = "eda"
-    if encode is not None and eda is not None:
-        # a node between them, not a bare edge. the encode gate reads counts the
-        # inventory already measured, and something has to lift them out of the
-        # records the eda subgraph appended. putting that in the subgraph would
-        # make it re-read the inventory; putting it in the edge is not possible.
-        g.add_node("carry_counts", carry_counts)
-        g.add_edge("eda", "carry_counts")
-        g.add_conditional_edges("carry_counts", _halted,
-                                {"halt": END, "encode": "encode"})
-        g.add_edge("encode", END)
-    elif eda is not None:
-        g.add_edge("eda", END)
+    if chain:
+        targets["compute"] = chain[0]
 
     # the ASK arm resolves from a lookup table, but it is still a subgraph,
     # because resolving is not the whole job: a contraindicated method stops the
@@ -352,7 +438,20 @@ def build_omicstra_graph(checkpointer: Any = None,
     # pause enforces it.
     if route is not None:
         targets["ask"] = "route"
-        g.add_edge("route", END)
+        # and the ask arm continues INTO evaluate, which is where the first
+        # wiring of this chain was wrong: `evaluate` reads the artifacts the
+        # cohort's evidence pack cites, and a cohort with a pack takes the ask
+        # arm - so hanging it off the compute arm alone put the one stage that
+        # needs a pack on the one arm that is taken when there is none. it stays
+        # on both: terminal on the compute arm, where it refuses and names the
+        # missing pack, and terminal here, where it states the verdict.
+        if evaluate is not None:
+            g.add_node("after_route", _keeper("route"))
+            g.add_edge("route", "after_route")
+            g.add_conditional_edges("after_route", _continue,
+                                    {"go": "evaluate", "stop": END})
+        else:
+            g.add_edge("route", END)
 
     # refuse terminates at the router when there is one - it can report the
     # reason as a decision - and at END otherwise.

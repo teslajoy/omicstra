@@ -470,9 +470,6 @@ def main() -> None:
           port=int(os.environ.get("OMICSTRA_HTTP_PORT", "8000")))
 
 
-if __name__ == "__main__":
-    main()
-
 def _unit_counts(project_id: str | None) -> tuple[dict[str, int], dict]:
     """per-sample unit counts, and an honest statement of what they cover.
 
@@ -705,7 +702,8 @@ def _runner(arm: str = "he"):
 # the shape of the run_id.
 ARMS = {"he": "omicstra.graphs.encode:build_encode_graph",
         "st": "omicstra.graphs.st:build_st_graph",
-        "align": "omicstra.graphs.align:build_align_graph"}
+        "align": "omicstra.graphs.align:build_align_graph",
+        "evaluate": "omicstra.graphs.evaluate:build_evaluate_graph"}
 
 
 def _app_for(target: str, saver):
@@ -715,39 +713,83 @@ def _app_for(target: str, saver):
     return getattr(importlib.import_module(mod), fn)(checkpointer=saver)
 
 
+class NotAnArmHandle(ValueError):
+    """the thread exists and is not one of the arms'.
+
+    `arm` is shared by name with LEVEL 0, where it means ask | compute | refuse
+    rather than he | st | align | evaluate - two meanings, one key, published on
+    both sides. so a level-0 thread id handed to a resume carries `compute` in
+    the field this function reads, and the old `ARMS.get(arm, ARMS["he"])` would
+    have re-entered the H&E graph: a tile geometry resolved for a cohort nobody
+    asked about one, under someone else's handle. a refusal names it instead.
+    """
+
+
 def _runner_for(run_id: str):
     """the graph a handle actually belongs to, plus its state.
 
-    both arms share `EncodeState`, so either compiled graph can READ the
-    checkpoint; only the compute node differs. so: read with a default, find the
-    arm the run recorded, and rebuild if it is the other one. resuming an ST run
-    into the H&E node would re-enter a node that resolves a tile geometry for a
-    cohort that was never asked for one.
+    the arms share `EncodeState`, so any compiled graph can READ the checkpoint;
+    only the gates and the compute node differ. so: read with a default, find
+    the arm the run recorded, and rebuild if it is another one. resuming an ST
+    run into the H&E node would re-enter a node that resolves a tile geometry
+    for a cohort that was never asked for one.
     """
     app, spec = _runner()
     snap = app.get_state({"configurable": {"thread_id": run_id}})
     values = (snap.values if snap else None) or {}
     arm = values.get("arm", "he")
+    if arm not in ARMS:
+        raise NotAnArmHandle(
+            f"{run_id!r} records arm {arm!r}, which is not one of {sorted(ARMS)}. "
+            "a run handle belongs to one modality or stage arm; a thread from "
+            "level 0 carries its routing arm in the same field and is resumed "
+            "through the chain, not through an arm.")
     if arm != "he":
         from omicstra.graph import make_checkpointer
 
         saver, spec = make_checkpointer()
-        app = _app_for(ARMS.get(arm, ARMS["he"]), saver)
+        app = _app_for(ARMS[arm], saver)
         snap = app.get_state({"configurable": {"thread_id": run_id}})
     return app, spec, snap, arm
 
 
+def _persist(out: dict) -> int:
+    """the arms' records reach the cohort's ONE ledger. returns what landed.
+
+    there were two stores. the routing path appended to a file-backed
+    `RecordStore` at `runs/{id}/records/decisions.jsonl`; every gate arm wrote
+    plain dicts into the langgraph checkpoint, readable only through
+    `runs_record(run_id)` and only if you had the handle. so a cohort's ledger
+    said "N routing decisions" while the gates, the dispatches and the pins were
+    somewhere else, and the report - which takes a pack and a ledger - could
+    reach neither.
+
+    it is called from `_handle`, which is the one place every arm and every
+    resume passes through. appending is idempotent on `record_id`: the arms carry
+    their whole record list forward in state, so a resume hands over everything
+    the run has ever decided.
+    """
+    from omicstra.contracts.routing import ledger
+
+    recs = out.get("records") or []
+    if not recs:
+        return 0
+    return len(ledger(out.get("project_id")).append_new(recs))
+
+
 def _handle(app, run_id: str, out: dict) -> dict:
     """what a client gets back: the handle, and either a gate or a result."""
+    n_new = _persist(out)
     gates = [g for g in (out.get("gates") or []) if g.get("open")]
     interrupts = out.get("__interrupt__") or []
     if interrupts:
         v = interrupts[0].value
         return {"run_id": run_id, "status": "awaiting_answer", "gate": v,
+                "recorded": n_new,
                 "resume_with": "runs_resume(run_id, answers={<gate id>: <option>})"}
     return {"run_id": run_id, "status": out.get("report", {}).get("status", "unknown"),
             "report": out.get("report", {}), "open_gates": [g["id"] for g in gates],
-            "halted": bool(out.get("halted"))}
+            "recorded": n_new, "halted": bool(out.get("halted"))}
 
 
 @srv.tool(description=(
@@ -824,9 +866,9 @@ def st_encode(project_id: str | None = None, platform: str | None = None,
     "It also surfaces a computed verdict that disagrees with the one the cohort "
     "declares, and records which arms of the grid are in scope. Returns a run "
     "handle. compute=false (the default) resolves the grid from recorded "
-    "artifacts and reports it without training."))
+    "artifacts and reports it without training. Hypothesis verdicts are NOT "
+    "here - evaluate_run is the stage with the gates for them."))
 def align_run(project_id: str | None = None, compute: bool = False,
-              hypotheses: list[str] | None = None,
               run_id: str | None = None) -> dict:
     import uuid
 
@@ -835,10 +877,45 @@ def align_run(project_id: str | None = None, compute: bool = False,
     app, spec = _runner("align")
     rid = run_id or f"align-{uuid.uuid4().hex[:12]}"
     cfg = {"configurable": {"thread_id": rid}}
+    # no `hypotheses`. it was accepted here and silently ignored: the align graph
+    # resolves a grid and scores nothing, so naming a hypothesis changed no
+    # behaviour while implying the stage returned a verdict over it. the gates a
+    # verdict needs - scope, the bytes, what a failed guard does to the claim -
+    # are evaluate_run's.
     out = app.invoke({"project_id": project_id, "arm": "align",
                       "cohort": _load_cohort(project_id),
-                      "hypotheses": hypotheses or ["H1"],
                       "compute": compute}, cfg)
+    return {**_handle(app, rid, out), "checkpointer": spec}
+
+
+@srv.tool(description=(
+    "Return a VERDICT on H1 / H2 / H3 for a cohort, behind a run handle. Reads "
+    "the artifacts the cohort's evidence declaration names, runs the guards the "
+    "routing contract requires for each task family, and states per hypothesis "
+    "whether its numbers are biological, diagnostic, unguarded or not_run. It "
+    "recomputes no published number and calls no model. Three gates fire: which "
+    "hypotheses are in scope, the sha256 of every artifact read (a declared pin "
+    "that does not match is REFUSED, not asked), and what a required guard that "
+    "ran and failed does to the claim - demote to diagnostic, or halt. A cohort "
+    "with no curated evidence pack is refused: the pack records which metric "
+    "answers which task family, and generating that would invent the judgement "
+    "it exists to attribute."))
+def evaluate_run(project_id: str | None = None,
+                 hypotheses: list[str] | None = None,
+                 run_id: str | None = None) -> dict:
+    import uuid
+
+    from omicstra.graph import _load_cohort
+
+    app, spec = _runner("evaluate")
+    rid = run_id or f"eval-{uuid.uuid4().hex[:12]}"
+    cfg = {"configurable": {"thread_id": rid}}
+    out = app.invoke({"project_id": project_id, "arm": "evaluate",
+                      "cohort": _load_cohort(project_id),
+                      # absent means every hypothesis the contract declares a
+                      # family for. a named subset is recorded as the request,
+                      # because that is what the server observed.
+                      "hypotheses": list(hypotheses or [])}, cfg)
     return {**_handle(app, rid, out), "checkpointer": spec}
 
 
@@ -851,7 +928,14 @@ def runs_resume(run_id: str, answers: dict | None = None,
                 approve: bool = True) -> dict:
     from langgraph.types import Command
 
-    app, spec, snap, arm = _runner_for(run_id)
+    # a refusal, not a traceback: every tool on this surface answers. two
+    # read-path tools once raised through to a ToolError on a cohort whose gate
+    # had never run, and a handle from the wrong layer is the same shape of
+    # mistake on the caller's side.
+    try:
+        app, spec, snap, arm = _runner_for(run_id)
+    except NotAnArmHandle as e:
+        return {"run_id": run_id, "status": "refused", "arm": None, "why": str(e)}
     cfg = {"configurable": {"thread_id": run_id}}
 
     # a run past its gates whose thread died has no interrupt to resume. the
@@ -894,7 +978,10 @@ def runs_resume(run_id: str, answers: dict | None = None,
     "Progress is counted from the output files rather than held in memory, so "
     "this is true from any process and after a restart."))
 def runs_status(run_id: str) -> dict:
-    _, spec, snap, arm = _runner_for(run_id)
+    try:
+        _, spec, snap, arm = _runner_for(run_id)
+    except NotAnArmHandle as e:
+        return {"run_id": run_id, "status": "refused", "arm": None, "why": str(e)}
     if not snap or not snap.values:
         return {"run_id": run_id, "status": "unknown", "arm": None,
                 "why": "no checkpoint under this handle. a run_id from a server "
@@ -936,16 +1023,40 @@ def runs_status(run_id: str) -> dict:
 
 
 @srv.tool(description=(
-    "The decision record for one run: every gate answered, by whom, and the "
-    "declaration it resolved from. This is the run's half of the ledger."))
+    "The decision record for ONE run: every gate answered, by whom, and the "
+    "declaration it resolved from, read from that run's checkpoint. The cohort's "
+    "whole ledger is a different question and a different file - every arm "
+    "appends to runs/{project_id}/records/decisions.jsonl, which is what the "
+    "report reads; `ledger` below names it."))
 def runs_record(run_id: str) -> dict:
-    _, spec, snap, arm = _runner_for(run_id)
+    try:
+        _, spec, snap, arm = _runner_for(run_id)
+    except NotAnArmHandle as e:
+        return {"run_id": run_id, "records": [], "arm": None, "why": str(e)}
     if not snap or not snap.values:
         return {"run_id": run_id, "records": [], "arm": None,
                 "why": "no checkpoint under this handle"}
     v = snap.values
+    # the checkpoint is the RUN's state; the file is the cohort's record. they are
+    # two views and not two stores - every record here was appended there as it
+    # arrived, which is why the report can read a ledger without a handle.
+    from omicstra.contracts.routing import ledger
+
+    led = ledger(v.get("project_id"))
     return {"run_id": run_id, "checkpointer": spec, "arm": arm,
             "records": v.get("records") or [],
             "gates": v.get("gates") or [],
             "answers": v.get("answers") or {},
+            "ledger": str(led.path) if led.path else None,
+            "cohort_decisions": len(led.all()),
             "encoder": v.get("encoder"), "platform": v.get("platform")}
+
+
+# LAST in the file, and that is load-bearing. it sat above `_resources` and the
+# nine compute tools, so `python -m omicstra.mcp.server` called main() before
+# those decorators had run and served 9 of 18 tools - a client discovering half
+# a server, with nothing saying so. the README's documented command happened to
+# use `python -c "... serve()"`, which imports the whole module first and was
+# therefore correct by accident.
+if __name__ == "__main__":
+    main()

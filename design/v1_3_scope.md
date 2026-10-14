@@ -47,6 +47,361 @@ a third cohort. slurm. oauth. anything that makes the first cohort better.
 
 ---
 
+## the build order inside 1.3
+
+five items, in the order their dependencies allow. the state column is what has
+been demonstrated, not what has been written.
+
+| | | state |
+|:--|:--|:--|
+| A | `omicstra worker` - the process that serves the encode queue | **done** |
+| B | `evaluate_run` behind the run handle, and `hypotheses` leaves `align_run` | **done** |
+| C | one record store, and the records reach the report | **done** |
+| D | level 0 wires align and evaluate; `design/graph.md` is the route | **done** |
+| E | Bedrock, as a test rather than a build | **done** - 7 tool calls, 0 mismatches |
+
+### A, and what it closed
+
+submit-only was half a claim. `he_encode` and `st_encode` hand the shard list to
+the scheduler and return at submission, which is only durable if some process is
+polling - and until now that process existed solely inside the kill test, as a
+worker the test assembled itself. so the test could pass while the command an
+operator would run did not exist.
+
+`omicstra worker` is that command. it holds both activity bodies by name, needs
+no cohort and no project root, and stops gracefully on SIGTERM so the shard in
+flight reports rather than timing out into a retry. `--max-seconds` exists for a
+worker inside a job allocation with a wall clock, which is the ARC case.
+
+two rules came with it, because a name crossing a scheduler is checked by nothing
+in the language:
+
+```
+dispatch/bodies.py:shard_bodies()     the one name table. the submitter names a
+                                      body, a different process holds it
+test_rule_lints.py                    every fn_name= in graphs/ is a key in it.
+                                      an arm that forgets the line fails a test
+                                      rather than orphaning runs on a queue no
+                                      worker can serve
+```
+
+the acceptance is the existing durable test, with the shipped entrypoint in place
+of its inline worker: the submitter exits having encoded nothing, a worker it
+never met finishes all four shards, and the handle still resolves from a third
+process.
+
+still untested beyond localhost - the kill test runs a dev server in-process, and
+the `Temporal beyond localhost` line below is unchanged.
+
+---
+
+### B, and what it found
+
+`align_run` accepted a `hypotheses` list and ignored it. the align graph resolves
+a grid and scores nothing, so naming a hypothesis changed no behaviour while
+implying the stage had returned a verdict over it. the parameter is gone and the
+verdict has a stage of its own.
+
+`evaluate_run` is judge #2's surface. it reads the artifacts the cohort's
+`evidence_sources.json` names, runs the guards `routing_contract.json` requires
+per task family, and states one of four things per hypothesis. no model is called
+anywhere on the path, so `modelInsideServer: false` still holds.
+
+three gates, all declared in `compute_contract.json` under `stage: evaluate`:
+
+```
+hypothesis_scope   which hypotheses this run answers. a hypothesis whose every
+                   family is undeclared or declared unavailable is NOT a gate -
+                   nothing to choose - and is reported not_run with its families
+artifact_pinning   the sha256 of every cited artifact, and the hashes travel
+                   WITH the question. a declared pin that does not match is a
+                   REFUSAL: the pack's numbers were read from other bytes
+guard_failure      a required guard that RAN and failed. demote, do not discard
+```
+
+the verdict is computed BEFORE the gates, which is the opposite of the encode
+arm. `guard_failure` can only fire on a guard that ran, and the guards cost a few
+file reads rather than a training run, so there is nothing to protect by
+deferring.
+
+**four claim states, and the fourth is the finding.** `biological`,
+`diagnostic`, `not_run` - and `unguarded`, which had to be added because "no
+guard failed" was true of a hypothesis where no guard ran at all, and read as a
+clean bill of health for a number nothing checked. on the seed cohort:
+
+| | claim | why |
+|:--|:--|:--|
+| H1 | `unguarded` | `cross_subject_eval` needs a within-subject score to compare against; nothing in the declaration carries one |
+| H2 | `diagnostic` | H2-C's G3 ran on all 7 arms in `metrics_h2_ci.json` and **7 of 7 failed** - no arm suppresses patient identity below biology |
+| H3 | `unguarded` | the pathway gate needs each arm's ST features, which is per-arm cohort knowledge and is declared, never guessed. `evidence_sources.json#run_st_features` is the pointer and the seed cohort does not carry it |
+
+15 cited artifacts, all present, **none pinned**. so the pin gate asks on the one
+cohort that has a published grid, which is the right answer: the pins were never
+written down. answering `pin_these_bytes` records the 15 hashes as a PROPOSAL in
+the ledger - the package does not write a cohort's declaration, because a pin is
+a committed human act.
+
+two artifacts the pack's prose names and nothing locates: `biology.parquet` (it
+is per arm) and `perm_nulls.parquet` (a sibling). a bare filename is reported
+rather than resolved against whatever directory appeared nearby in the same
+sentence - that guess gets the shared file right and the per-arm one wrong.
+
+**two gaps the contract now states rather than hides.** it requires seven guards;
+this package implements six checks; the overlap is five.
+`routing_contract.json#guard_implementations` declares the map with a reason per
+guard: `raw_floor` is each task's `floor` field, computed by promote from the
+cohort's declared floor reader, and a guard that re-derived it would be a second
+answer to one question; `untrained_control` is an ARM of the grid, not a check
+over a number, and its absence from a rollup is what `coverage()` reports.
+
+### three things B did not close
+
+```
+the rollup coverage gaps     H2 drops B4_v3 and H3 drops R5_v3, which the
+                             verdict now REPORTS per hypothesis. closing them
+                             means scoring those arms, which is a compute run
+run_st_features              one declaration away from H3 being guarded rather
+                             than unguarded. it is the cohort's to write
+no reader for four families  cross_modal_retrieval, tissue_state_grouping,
+                             morphology_decode and pathway_discrimination report
+                             `no_reader`: promote computes their candidates from
+                             the same declaration, and what is missing is a
+                             CHECK over the number, not the number
+```
+
+---
+
+### C, and the three divergences it found
+
+there were two record stores. the routing path appended to a file-backed
+`RecordStore` at `runs/{id}/records/decisions.jsonl`; every gate arm wrote plain
+dicts into the langgraph checkpoint, readable only through `runs_record(run_id)`
+and only by a caller holding the handle. so a cohort's ledger said "N routing
+decisions" while the gates, the dispatches and the pins were elsewhere - and
+`report.py`, whose own first line is *"a pack and a ledger in, markdown out"*,
+read the pack and no ledger at all. `section_provenance` was already printing
+`len(records)`; nothing ever supplied the key.
+
+the arms' dicts could not be VALIDATED as Records, which is why nobody had tried:
+
+```
+actor      records.py said deterministic | model | human, and the gate nodes
+           have been writing `client` and `system` since the actor vocabulary
+           was closed. `actor_ratio()` initialised three keys and did
+           out[r.actor] += 1, so the first client record would have raised
+kind       no `dispatch`. handing N shards to an executor produces no artifact
+           and judges nothing, so it is neither a transform nor a diagnostic
+chosen     a str. a gate arm answers every open gate in ONE call, which is a
+           mapping, and flattening it loses which answer belonged to which gate
+```
+
+three divergences between a model and the only code writing to it, none of them
+caught, because nothing read both. that is the whole argument for one store.
+
+what now holds it: `records.coerce()` is the door - unknown keys land in
+`params`, which is the field that exists for them, and `record_id` is content
+addressed over the decision with the clock excluded, the same exclusions
+`stable_id()` already stated. `RecordStore.append_new()` is idempotent on that
+id, which matters because the arms carry their whole record list forward in
+state: without it a three-gate run resumed twice would read as nine decisions,
+and the actor ratio is a published number.
+
+`_persist` is called from `_handle`, the one place every arm and every resume
+passes through, so there is one sink rather than a call per node. the handle
+returns `recorded: N`.
+
+**two views, not two stores.** `runs_record(run_id)` still reads the run's
+checkpoint, because "what did THIS run decide" and "what has this cohort
+decided" are different questions - and it now also names the cohort's ledger and
+its size, so a reader is not left thinking the handle is the only way in.
+
+### what reading the real ledger then showed
+
+with the arms appending, the seed cohort's `decisions.jsonl` was opened and
+counted. 1,846 rows for seven decisions:
+
+```
+995  route::tissue_state_grouping     one decision
+775  route::cross_modal_retrieval     one decision
+ 20  route::subject_identity_suppression
+...
+```
+
+`routing.py:emit` called `append`, not `append_new`, so every invocation of the
+same question against the same pack wrote another row - and `record_id` is
+content addressed over the contract version, the pack version and the request
+precisely so that "two ledgers join on this id and either differ on outcome, or
+do not differ". it does not count calls. the actor ratio is a published number
+and cannot be a call counter, so the routing path appends the same way the arms
+do now. the existing rows are left where they are; they are a record.
+
+and two tests had been writing into the repo's own `runs/` - 42 rows under
+`synthetic/`, 5 under `tnbc-92/` - because `settings.runs_dir` resolves under the
+package repo root and a subprocess inherits it. invisible: the files are
+git-ignored, nothing failed, and the next report would simply have been wrong
+about who decided what. `tests/conftest.py` now points `runs_dir` at tmp for
+every test, by fixture and by environment variable so a subprocess gets it too.
+
+**one thing this leaves open.** `settings.runs_dir` resolving under the package
+repo root is right for this repo, where tnbc-92's `project.json` declares its
+data and runs at the root explicitly. for an INSTALLED server with no repo it
+puts a cohort's ledger next to site-packages, which is not where a cohort's
+record belongs. the fix is for `ledger()` to prefer the cohort's own declared
+runs root, and it is a path-resolution change with blast radius, so it is named
+here rather than made in passing.
+
+---
+
+### D, and where the wiring was wrong
+
+align and evaluate were built, tested and connected to nothing - the same thing
+that had happened to `graphs/encode.py` a release earlier, when the slot existed
+in `build_omicstra_graph` and no caller filled it. level 0 now takes all five
+stages and chains them:
+
+```
+discover --compute--> eda -> carry_counts -> encode -> st -> align ─┐
+         --ask-----> route ─────────────────────────────────────────┤
+                                                                    ▼
+                                                            evaluate -> END
+```
+
+**the chain stops at the first stage that leaves work in flight.** `submitted` is
+the usual reason and is why this is not a straight chain: an encode with
+`compute=True` returns at submission, so the embeddings the next stage reads are
+not on disk when the next node would run. walking on would have align report
+`unavailable` on a run that is working correctly. `graph.py:STOP_AFTER` is that
+list; the run handle is how the chain continues.
+
+**evaluate on the compute arm alone was wrong, and the first walk found it.**
+evaluate reads the artifacts the evidence pack cites, and a cohort WITH a pack
+takes the ASK arm - so the first wiring put the one stage that needs a pack on
+the one arm that is taken when there is none. the seed cohort walked, took `ask`,
+and reached END with no verdict. it is terminal on both arms now: the verdict on
+the ask arm, a named refusal on the compute arm.
+
+a second thing the walk found: the routing subgraph states its outcome in
+`resolution` rather than in a report, so the stage keeper logged the one stage
+that had actually decided something as `unknown`.
+
+`omicstra chain` is the caller that holds the whole thing, which is what the
+question *"can you ask it the three hypotheses and have it go through the chain"*
+was asking for:
+
+```
+omicstra chain --project-id tnbc-92 --task cross_modal_retrieval \
+  --answer artifact_pinning=evaluate_unpinned \
+  --answer guard_failure=report_as_diagnostic
+
+  arm: ask - cross_modal_retrieval has recorded evidence on this cohort
+  route        recommend
+  ended at: evaluated
+  H1     claims unguarded    guards ran 0, failed 0
+  H2     claims diagnostic   guards ran 9, failed 7
+  H3     claims unguarded    guards ran 0, failed 0
+```
+
+without `--answer` it stops at the gate and prints the options, because the
+system does not pick.
+
+**`design/graph.md` is the route**, one page, and a lint asserts every
+`graphs/*.py` appears on it in the order the code wires them. a diagram that
+drifts from the wiring is worse than none - it is read as authoritative and is
+wrong.
+
+### the one key that means two things
+
+`arm` is shared by name between level 0 and every subgraph:
+
+```
+level 0      ask | compute | refuse        which arm answers the question
+a subgraph   he | st | align | evaluate    which arm the RUN HANDLE belongs to
+```
+
+so a subgraph wired under level 0 receives `compute` in the field the MCP reads
+as a handle arm, and `ARMS.get(arm, ARMS["he"])` would have re-entered the H&E
+graph - a tile geometry resolved for a cohort nobody asked about one, under
+someone else's handle. `_runner_for` raises `NotAnArmHandle` now, and the three
+handle tools return it as a refusal rather than a traceback. both names are
+published on their own side, so this is named rather than renamed.
+
+---
+
+### E, and the bug it found before Bedrock was even called
+
+E is a test rather than a build, and it splits into a half that can run with no
+credentials at all and a half that needs a model client.
+
+**the half that runs here.** `modelInsideServer: false` is a claim in the
+registry entry, so it is now a test: no module in the package imports a model SDK
+(anthropic, boto3, langchain_aws, ... - langgraph and langchain-core are state
+machines and are not on the list), no model SDK is a declared or optional
+dependency, and both judges are deterministic by source. a claim like that is
+false the moment somebody imports an SDK to try something, which is why it is
+checked rather than trusted.
+
+**the half that needs a model client.** `scripts/probe_bedrock.py` starts the server
+over stdio, hands its own tool list to Bedrock's Converse API as a toolConfig,
+executes whatever tool the model asks for, and then calls the same tool with the
+same arguments IN PROCESS with no model anywhere - and diffs the two. the diff is
+the test: a difference means something on the server's path is not a lookup.
+`--dry-run` does everything except call Bedrock and passes here. boto3 is
+deliberately not a dependency of this package in any extra; a model client
+belongs to the client.
+
+**what the dry run found: `python -m omicstra.mcp.server` served 9 of 18 tools.**
+the `if __name__ == "__main__": main()` block sat in the MIDDLE of the module,
+above the resources and the nine compute tools, so running it as a module called
+`main()` before those decorators had run. a client discovered half a server and
+nothing said so. the README's documented command happens to be
+`python -c "from omicstra.mcp.server import serve; serve()"`, which imports the
+whole module first and was therefore correct by accident - which is why no test
+caught it: every other test imports `srv` and sees all 18.
+
+the guard is last in the file now, and two tests hold it there: one asserts the
+two start paths serve the same tool set, and one asserts the guard is the last
+thing in the module, so a tool appended after it fails a test rather than
+vanishing from the transport.
+
+**it ran**, on a Bedrock-backed client, twice - and the two runs took DIFFERENT
+paths through the surface, which is the interesting part: 7 tool calls then 5,
+and 0 mismatches both times.
+
+the model chose a different route through the surface each time and **every
+server answer was byte-identical to the same tool called in process with no model
+anywhere**. that is the claim `modelInsideServer: false` makes, tested rather
+than asserted: the model picked which tool to call, the server picked what the
+answer was.
+
+it also answered gates - `verdict_disagreement`, `artifact_pinning`,
+`guard_failure` - which is exactly the narrow job the registry entry describes,
+choosing among enumerated options. the answers are recorded `actor: client`,
+because a tool call is what the server saw.
+
+three things the probe found before Bedrock was even reached, and one after:
+
+```
+9 of 18 tools served     the __main__ guard sat in the MIDDLE of server.py, so
+                         `python -m omicstra.mcp.server` called main() before
+                         nine decorators had run. the README's documented command
+                         uses `python -c "... serve()"` and was correct by
+                         accident, which is why no test caught it
+an invented model id      `us.anthropic.claude-sonnet-5-20260514-v1:0` does not
+                         exist. list-inference-profiles is the authority, and the
+                         real id carries no date suffix
+temperature rejected      "`temperature` is deprecated for this model". dropped;
+                         what determinism this test rests on is the server's
+a 60-line ExceptionGroup  an invalid model id and a missing invoke permission
+                         read nothing alike and both arrived as the same wall of
+                         traceback. one line now, and an invalid id lists the
+                         profiles that are actually available
+```
+
+a scheduler run is still outstanding, and compute does not belong on a login
+node. that is the remaining half of the cluster line below.
+
+---
+
 ## step 6's remainder, split by who can close it
 
 | | check | what is missing | whose |
@@ -284,11 +639,12 @@ embedding extraction on genuinely new data    the second cohort ran 3 sections
                                               original-ST sections have never
                                               been embedded, and nothing has run
                                               on a cohort outside these two
-AWS / Bedrock                                 never attempted. the routing layer
-                                              holds no model, so a Bedrock-backed
-                                              client is a client-side swap in
-                                              principle - untested in fact
-ARC (the OHSU cluster)                        never attempted. COMPUTE_BACKEND
+AWS / Bedrock                                 RAN, both halves - see E above. a
+                                              second account or region is
+                                              untested.
+                                              see E above
+ARC (the OHSU cluster)                        nothing has run through the
+                                              scheduler. COMPUTE_BACKEND
                                               declares slurm and the durable
                                               executor works on Temporal locally;
                                               neither has run on ARC. the

@@ -48,7 +48,7 @@
       "closed_set": true,
       "why_client_is_not_human": "the pack cites gate answers, so 'a person decided this' must not appear on no evidence. a human confirmation of a client answer is a later and separate act, recorded where it can be attested - a commit, or a declaration carrying actor=human."
     },
-    "stage": "which protocol a gate belongs to. absent means `encode`, which is where gates existed first. `align` gates fire before the grid, and the first of them is the EDA constraint this repo opens with."
+    "stage": "which protocol a gate belongs to. absent means `encode`, which is where gates existed first. `align` gates fire before the grid, and the first of them is the EDA constraint this repo opens with. `evaluate` gates fire before a hypothesis verdict: its scope, the bytes its numbers came from, and what a failing guard does to the claim."
   },
   "gates": [
     {
@@ -209,6 +209,61 @@
       "forecloses": "a reduced grid is never a candidate for winner.json and its metrics are not comparable with a full run's. which arms ran has to be in the record, not in a shell history.",
       "reads": "the cohort's declared contrastive_runs and classical_runs. they live in project.json, not cohort.json - cohort.json holds the gate answers and the data declarations, project.json the run layout",
       "answer_kind": "value"
+    },
+
+    {
+      "id": "hypothesis_scope",
+      "when": "preflight",
+      "stage": "evaluate",
+      "question": "which hypotheses does this run return a verdict on?",
+      "options": [
+        "declared_scope",
+        "named_subset",
+        "halt"
+      ],
+      "default": null,
+      "pre_answerable_by": "cohort.json#hypothesis_scope",
+      "emits": "SelectionRecord",
+      "forecloses": "a hypothesis outside scope gets no verdict, and its rows are absent from the report rather than refused there. which hypotheses a verdict covers has to be in the record, because a reader cannot tell a hypothesis that was not asked from one that failed.",
+      "reads": "routing_contract.json#task_families, each of which declares the hypothesis it serves, against the task rows the cohort's evidence pack actually fills",
+      "note": "a hypothesis whose families are all unfillable on this cohort is NOT a gate - there is nothing to choose. it is reported not_run with the families named, the same discipline the EDA gate uses.",
+      "answer_kind": "value"
+    },
+    {
+      "id": "artifact_pinning",
+      "when": "preflight",
+      "stage": "evaluate",
+      "question": "the artifacts these numbers are read from are not pinned, so an edit to one of them would move a verdict with nothing saying so. pin the bytes this run saw, evaluate unpinned, or halt?",
+      "options": [
+        "declared_pins",
+        "pin_these_bytes",
+        "evaluate_unpinned",
+        "halt"
+      ],
+      "default": null,
+      "pre_answerable_by": "cohort.json#unpinned_artifact_policy",
+      "emits": "SelectionRecord",
+      "forecloses": "evaluating unpinned means the verdict names no bytes. it stays available - a grid still being written has nothing stable to pin - but the verdict then cannot be cited as reproducing anything, and says so.",
+      "reads": "the sha256 of every artifact the cohort's evidence_sources declaration names, against cohort.json#evidence_pins when the cohort declares them",
+      "note": "the PINS resolve this gate by comparison, the same way the computed verdict resolves verdict_disagreement - matching pins close it as `declared_pins`, and `unpinned_artifact_policy` is the separate policy field a cohort uses to pre-answer the case where it has declared no pins at all. pins that DIFFER are a refusal and not a question: the pack's numbers were read from other bytes, and no option here makes that evaluable.",
+      "answer_kind": "choice"
+    },
+    {
+      "id": "guard_failure",
+      "when": "preflight",
+      "stage": "evaluate",
+      "question": "a guard the contract requires for this hypothesis failed. the number is diagnostic rather than a biological claim. report it as diagnostic, or halt?",
+      "options": [
+        "report_as_diagnostic",
+        "halt"
+      ],
+      "default": null,
+      "pre_answerable_by": "cohort.json#guard_failure_policy",
+      "emits": "SelectionRecord",
+      "forecloses": "a diagnostic number travels with the verdict and may not be cited as a biological result. that caveat becomes part of the record rather than a reader's inference - which is the whole reason the guard exists.",
+      "reads": "routing_contract.json#task_families[].required_guards, run over the artifacts the pack cites. a required guard with no implementation is reported not_run and does not fire this gate",
+      "note": "demote, do not discard - G1's own rule. a failing guard is the RESULT here rather than an error: it says the number cannot carry the claim alone, and halting is offered because a caller may not want a diagnostic verdict at all.",
+      "answer_kind": "choice"
     }
   ],
   "summary": {
@@ -220,8 +275,12 @@
       "preflight": 3,
       "mid_run": 0
     },
+    "evaluate": {
+      "preflight": 3,
+      "mid_run": 0
+    },
     "note": "five of six can be asked, or declared, before a single unit is embedded. so an unattended run on a scheduler asks nothing until shards start failing - which is a narrower and more defensible reason for durable execution than 'people must be askable overnight'.",
-    "why_counted_per_stage": "the five-of-six argument is about ENCODE and is what justifies durable execution there. align's gates fire before a grid rather than before an embed, and the first of them is the admissibility constraint this repo opens with - a different question, counted separately.",
+    "why_counted_per_stage": "the five-of-six argument is about ENCODE and is what justifies durable execution there. align's gates fire before a grid rather than before an embed, and the first of them is the admissibility constraint this repo opens with - a different question, counted separately. evaluate's three fire before a VERDICT rather than before a compute, and none of them spends GPU time - what they protect is what a number is allowed to claim.",
     "what_durable_execution_actually_buys": [
       "waiting on a scheduled job without holding a compute allocation",
       "surviving the worker process dying mid-run - a checkpointer saves state BETWEEN nodes, never inside one, and an embedding run is one long node",

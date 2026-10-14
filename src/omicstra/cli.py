@@ -816,5 +816,209 @@ def selftest(project_id: str | None, project_dir: Path | None = None) -> None:
     raise SystemExit(1 if fails else 0)
 
 
+@main.command()
+@click.option("--address", default=None, metavar="HOST:PORT",
+              help="the scheduler. defaults to OMICSTRA_TEMPORAL_ADDRESS.")
+@click.option("--namespace", default=None, help="defaults to OMICSTRA_TEMPORAL_NAMESPACE.")
+@click.option("--task-queue", default=None, help="defaults to OMICSTRA_TEMPORAL_TASK_QUEUE.")
+@click.option("--preload", "preloads", multiple=True, metavar="MODULE",
+              help="import this module before polling, so an encoder it registers "
+                   "is resolvable here. repeatable.")
+@click.option("--max-seconds", default=None, type=int, metavar="N",
+              help="stop after N seconds, for a worker inside a job allocation "
+                   "with a wall clock. default: until signalled.")
+def worker(address, namespace, task_queue, preloads, max_seconds) -> None:
+    """serve the encode queue: hold the shard bodies, run what is submitted.
+
+    the other half of submit-only. `he_encode` and `st_encode` hand the shard
+    list to the scheduler and return, which is only durable if some process is
+    polling - this is that process. it needs no cohort, no project root and no
+    knowledge of the run: a shard carries its own geometry, gene axis, paths and
+    encoder name, and the bodies close over nothing.
+
+    it may be started before or after the submitter, outlive it, or run on
+    another machine. a shard is idempotent on its output file, so a worker
+    joining a run already in flight re-runs nothing that landed.
+
+    ONE shard at a time, and that is the workflow's shape rather than a limit
+    here: `EncodeWorkflow` awaits each activity in turn because a shard holds a
+    631M-parameter model and a decoded slide, so a second thread in this process
+    would be idle for one run and out of memory for two. scale by running more
+    workers.
+    """
+    import asyncio
+    import contextlib
+    import importlib
+    import signal
+
+    from omicstra.dispatch.bodies import shard_bodies
+
+    addr = address or settings.temporal_address
+    if not addr:
+        click.echo("no scheduler address. set OMICSTRA_TEMPORAL_ADDRESS or pass "
+                   "--address. without one the dispatcher runs shards in-process "
+                   "and needs no worker.")
+        raise SystemExit(2)
+    try:
+        from temporalio.client import Client
+
+        from omicstra.dispatch.temporal import build_worker, register
+    except ImportError as e:
+        # the actual error, not a guess at it. missing is the common case and
+        # the extra is the fix; a temporalio that is installed and broken reads
+        # differently, and an operator needs to be able to tell which they have.
+        click.echo(f"no durable backend here: {e}\n"
+                   "install it with: pip install 'omicstra[durable]'")
+        raise SystemExit(2) from None
+
+    # before connecting, so a missing encoder module fails here rather than on
+    # the first shard of a run that is already accepted - by which time the
+    # scheduler holds the run and three attempts are spent on an import.
+    for mod in preloads:
+        try:
+            importlib.import_module(mod)
+        except ImportError as e:
+            click.echo(f"--preload {mod}: {e}")
+            raise SystemExit(2) from None
+
+    bodies = shard_bodies()
+    for name, fn in bodies.items():
+        register(name, fn)
+
+    queue = task_queue or settings.temporal_task_queue
+    ns = namespace or settings.temporal_namespace
+
+    async def serve() -> None:
+        client = await Client.connect(addr, namespace=ns)
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            # graceful on purpose: the context manager below lets the shard in
+            # flight finish and report, so the scheduler sees a completed
+            # activity rather than a heartbeat timeout and a retry.
+            try:
+                loop.add_signal_handler(sig, stop.set)
+            except NotImplementedError:
+                # not a posix loop. --max-seconds is then the only way out, and
+                # an abrupt kill is still safe: the history holds the run and the
+                # shards are idempotent on their output files.
+                pass
+        async with build_worker(client, queue):
+            click.echo(f"polling {queue} at {addr} (namespace {ns}); "
+                       f"serving {', '.join(sorted(bodies))}")
+            if max_seconds is None:
+                await stop.wait()
+            else:
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), max_seconds)
+        click.echo("stopped.")
+
+    asyncio.run(serve())
+
+
+@main.command()
+@click.option("--project-dir", default=None, type=click.Path(path_type=Path))
+@click.option("--project-id", default=None)
+@click.option("--task", "task_id", default=None,
+              help="the task family being asked about. absent asks about the cohort.")
+@click.option("--hypotheses", default="H1,H2,H3",
+              help="which hypotheses the evaluate stage returns a verdict on.")
+@click.option("--compute", is_flag=True,
+              help="actually run. without it every stage reports what WOULD run.")
+@click.option("--answer", "answers", multiple=True, metavar="GATE=OPTION",
+              help="pre-answer a gate, so the chain does not pause on it. repeatable.")
+@click.option("--thread", default="cli-chain", help="the run handle for this walk.")
+def chain(project_dir, project_id, task_id, hypotheses, compute, answers, thread):
+    """walk the whole chain: eda -> encode -> st -> align -> evaluate.
+
+    LEVEL 0, with every stage injected. align and evaluate were built, tested
+    and reachable only one arm at a time through the MCP - the same thing that
+    had happened to encode a release earlier - so this is the caller that holds
+    the chain rather than a stage.
+
+    without `--compute` every stage RESOLVES: it reports what would run and what
+    it would read, and the walk reaches a verdict in one invocation. with
+    `--compute` it stops at the first stage that leaves work in flight, because
+    an encode returns at submission and the embeddings the next stage reads are
+    not on disk yet. the run handle is how it continues.
+
+    a gate with no declared answer pauses the walk. `--answer gate=option`
+    supplies one; it is recorded as having arrived through the surface, which is
+    what it did.
+    """
+    from langgraph.checkpoint.memory import InMemorySaver
+    from langgraph.types import Command
+
+    from omicstra.graph import build_omicstra_graph
+    from omicstra.graphs.align import build_align_graph
+    from omicstra.graphs.eda import build_eda_graph
+    from omicstra.graphs.encode import build_encode_graph
+    from omicstra.graphs.evaluate import build_evaluate_graph
+    from omicstra.graphs.route import build_route_graph
+    from omicstra.graphs.st import build_st_graph
+
+    if project_dir is not None:
+        settings.project_dir = project_dir.expanduser()
+
+    given: dict[str, str] = {}
+    for a in answers:
+        gid, _, opt = a.partition("=")
+        if not opt:
+            raise SystemExit(f"--answer wants GATE=OPTION, got {a!r}")
+        given[gid.strip()] = opt.strip()
+
+    app = build_omicstra_graph(checkpointer=InMemorySaver(),
+                               eda=build_eda_graph(checkpointer=None),
+                               encode=build_encode_graph(checkpointer=None),
+                               st=build_st_graph(checkpointer=None),
+                               align=build_align_graph(checkpointer=None),
+                               evaluate=build_evaluate_graph(checkpointer=None),
+                               route=build_route_graph(checkpointer=None))
+    cfg = {"configurable": {"thread_id": thread}}
+    hs = [h.strip() for h in hypotheses.split(",") if h.strip()]
+    out = app.invoke({"question": "", "task_id": task_id, "project_id": project_id,
+                      "hypotheses": hs, "compute": compute,
+                      "params": {}, "inventory_params": {}}, cfg)
+
+    # a gate the walk cannot answer pauses it. an answer supplied on the command
+    # line is passed once and the walk continues; one that was not is printed
+    # with its options, and the walk stops there rather than defaulting.
+    while "__interrupt__" in out:
+        v = out["__interrupt__"][0].value
+        gates = v.get("gates") or []
+        open_ids = [g["id"] for g in gates]
+        have = {g: given[g] for g in open_ids if g in given}
+        if not have:
+            click.echo(click.style(f"\npaused on {len(open_ids)} gate(s):", fg="yellow"))
+            for g in gates:
+                click.echo(f"  {g['id']}")
+                click.echo(f"      {g['question']}")
+                click.echo(f"      options: {', '.join(g['options'])}")
+                click.echo(click.style(f"      forecloses: {g['forecloses']}", dim=True))
+            click.echo("\nanswer with --answer gate=option. the system does not pick.")
+            break
+        out = app.invoke(Command(resume=have), cfg)
+
+    click.echo(f"\narm: {out.get('arm')} - {out.get('arm_reason', '')}")
+    stages = out.get("stages") or []
+    if stages:
+        click.echo("-" * 68)
+        for row in stages:
+            click.echo(f"  {row['stage']:<12} {row['status']}")
+    rep = out.get("report") or {}
+    if rep:
+        click.echo("-" * 68)
+        click.echo(f"  ended at: {rep.get('status')}")
+        for key in ("why", "note"):
+            if rep.get(key):
+                click.echo(click.style(f"      {rep[key]}", dim=True))
+        for h, d in sorted((rep.get("hypotheses") or {}).items()):
+            click.echo(f"  {h:<6} claims {d['claims']:<12} "
+                       f"guards ran {len(d['guards_ran'])}, "
+                       f"failed {len(d['guards_failed'])}")
+    if not compute and out.get("arm") == "compute":
+        click.echo("\nnothing ran - every stage resolved. pass --compute to execute.")
+
+
 if __name__ == "__main__":
     main()

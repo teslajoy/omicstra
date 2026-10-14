@@ -178,9 +178,15 @@ def test_a_handle_round_trips_to_its_own_arm(arm, tmp_path):
     import os
 
     from omicstra.mcp import server as S
+    from omicstra.settings import settings
 
     before = dict(os.environ)
     os.environ["OMICSTRA_CHECKPOINT"] = f"sqlite:{tmp_path / 'ck.sqlite'}"
+    # the ledger too. every arm appends to runs/{id}/records/decisions.jsonl
+    # now, and a test calling a tool on the SEED cohort would write into the
+    # record a report reads - five rows landed there before this line existed.
+    runs_before = settings.runs_dir
+    settings.runs_dir = tmp_path / "runs"
     try:
         if not (SEED / "eda_summary.json").is_file():
             pytest.skip("no seed cohort on this machine")
@@ -203,6 +209,11 @@ def test_a_handle_round_trips_to_its_own_arm(arm, tmp_path):
         other = {"encode": "preflight_align", "align": "preflight_encode"}[stage]
         steps = [d.get("step_id", "") for d in S.runs_record(rid)["records"]]
         assert other not in steps, f"{arm} recorded a row under {other}: {steps}"
+
+        # and the cohort's own ledger holds them, under this test's runs dir
+        led = tmp_path / "runs" / "tnbc-92" / "records" / "decisions.jsonl"
+        assert led.is_file(), "the arm's records did not reach the cohort ledger"
     finally:
         os.environ.clear()
         os.environ.update(before)
+        settings.runs_dir = runs_before

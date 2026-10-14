@@ -147,14 +147,20 @@ to do:
 - `src/omicstra/graph.py` — LEVEL 0. the only entry, the only checkpointer.
   `discover` picks the arm: ask when an evidence pack exists, compute when not
 - `src/omicstra/graphs/` — LEVEL 1. one per gate, each can `interrupt()`.
-  `eda.py`, `route.py`, `encode.py`, `promote.py` - promote is the gate that
-  asks for the pack's prose and refuses an edited number
+  `eda.py`, `route.py`, `encode.py`, `st.py`, `align.py`, `evaluate.py`,
+  `promote.py` - promote is the gate that asks for the pack's prose and refuses
+  an edited number; evaluate is the gate on what a number may CLAIM, and it
+  computes the verdict before the gates because `guard_failure` can only fire on
+  a guard that ran
 - `src/omicstra/report.py` — the report template: pack + ledger in, markdown out,
   no cohort in the renderer. `src/omicstra/run.py` — the whole chain, plus the
   diff that says it still reproduces the curated pack
 - `src/omicstra/protocols/` — LEVEL 2. order, applicability, authority, no maths.
   `inventory.py` (8 steps), `eda.py` (10 checks), `align.py` (4 stages,
-  resolve-only until v1.1), `evaluate.py` (6 guards, and the H1-H3 gates over the pinned artifacts the evidence pack cites)
+  resolve-only until v1.1), `evaluate.py` (6 guards, the H1-H3 gates over the
+  pinned artifacts the evidence pack cites, and `preflight_evaluate` - scope from
+  `routing_contract.json#task_families`, a sha256 per cited artifact, and a
+  claim of `biological` / `diagnostic` / `unguarded` / `not_run` per hypothesis)
 - `src/omicstra/measures/` — the maths. pure functions, no ctx, no order, no
   authority. callable from a notebook
 - `src/omicstra/contracts/` — reads a declaration, decides nothing
@@ -164,9 +170,11 @@ to do:
   name. `spec()` is metadata only and needs no tensor library; only `load()` does
 - `src/omicstra/adapters/canonical.py` — the package's input contract: .h5ad plus
   a coordinates table. no format-specific reader lives in the package
-- `src/omicstra/mcp/server.py` — 16 tools, 2 resources, stdio + http, zero model
+- `src/omicstra/mcp/server.py` — 18 tools, 2 resources, stdio + http, zero model
   calls. two compute agents (`he_encode`, `st_encode`), each with its own gate set,
-  plus `runs_status`/`runs_resume`/`runs_record` for the handle
+  plus `align_run` (resolves a grid) and `evaluate_run` (states a verdict on
+  H1/H2/H3 over the artifacts the pack cites), and
+  `runs_status`/`runs_resume`/`runs_record` for the handle
 - `scripts/` — the chain behind the published results, plus `ingest_<cohort>.py`.
   a cohort's native format is converted here, ONCE, and never inside the package
 - `configs/v3/` — R1_v3..R6_v3 run configs. these are cohort runs, not contracts;
@@ -201,9 +209,10 @@ handle survives the process, the ST port is exact against the Novae cache, and
 the EDA chain runs. the second cohort's evidence pack did NOT ship.
 
 **read `design/v1_3_scope.md` before starting anything.** it holds what 1.3 is,
-every open question with the measurement behind it, and the two decisions that
-are the human's rather than the agent's. 1.3 begins at step 4 - `align.run` /
-`evaluate.run` behind the same run handle.
+every open question with the measurement behind it, the build order A-E with what
+each one closed, and the decisions that are the human's rather than the agent's.
+`design/graph.md` is the companion: the route a question takes and which file
+owns each step, which is the question a session actually has first.
 
 the scope docs are the plan, one per release, each written before the work and
 corrected after it. `design/v1_1_scope.md`, `design/v1_2_scope.md`,
@@ -246,6 +255,8 @@ work lands via a branch and a PR      the template states the scope, because
 
 ## key docs
 
+- `design/graph.md` — **the route.** which file owns which step, one page.
+  read it before adding a graph; a lint asserts every `graphs/*.py` is on it
 - `design/v1_3_scope.md` — **the live plan.** start here
 - `design/v1_2_scope.md` — what shipped, and the nine package edits it cost
 - `README.md` — what + why

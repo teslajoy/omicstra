@@ -28,8 +28,19 @@ from typing import Any
 _DECLARATIONS = ("cohort", "platform", "project", "inventory", "eda")
 
 
-def gather(root: Path, pack_name: str = "routing_evidence.json") -> dict:
-    """read what a cohort has, skip what it does not. absence is not an error."""
+def gather(root: Path, pack_name: str = "routing_evidence.json",
+           ledger_path: Path | None = None) -> dict:
+    """read what a cohort has, skip what it does not. absence is not an error.
+
+    the LEDGER is read too, which it was not: this file's own first line says
+    "a pack and a ledger in", and for a while only the pack arrived. so a report
+    stated what a cohort measured and nothing about who decided what on the way -
+    which gates were answered, by which actor, on which executor.
+
+    `ledger_path` is for a caller that holds one elsewhere; by default it is the
+    cohort's own `runs/{id}/records/decisions.jsonl`, the same file the arms
+    append to.
+    """
     root = Path(root)
     files = {"cohort": "cohort.json", "platform": "platform.json",
              "project": "project.json", "inventory": "inventory.json",
@@ -42,7 +53,33 @@ def gather(root: Path, pack_name: str = "routing_evidence.json") -> dict:
                 out[key] = json.loads(p.read_text())
             except json.JSONDecodeError as e:
                 out.setdefault("unreadable", []).append({"file": name, "error": str(e)})
+
+    lp = Path(ledger_path) if ledger_path is not None else _ledger_path(root, out)
+    if lp is not None and lp.is_file():
+        from omicstra.records import RecordStore
+
+        store = RecordStore(lp)
+        out["records"] = [r.model_dump(mode="json") for r in store.all()]
+        out["actor_ratio"] = store.actor_ratio()
+        out["ledger"] = str(lp)
     return out
+
+
+def _ledger_path(root: Path, bundle: dict) -> Path | None:
+    """the cohort's own ledger, resolved the way the arms resolve it.
+
+    it is NOT under the project root. `runs/` is settings-resolved, and a cohort
+    whose declaration points its runs root outside its own directory keeps its
+    ledger there - so this asks settings rather than joining a path onto `root`.
+    """
+    from omicstra.settings import settings
+
+    pid = ((bundle.get("project") or {}).get("project_id")
+           or (bundle.get("cohort") or {}).get("project_id") or root.name)
+    try:
+        return settings.resolve(settings.runs_dir) / pid / "records" / "decisions.jsonl"
+    except (ValueError, OSError):
+        return None
 
 
 # --- small helpers ---------------------------------------------------------
@@ -236,8 +273,33 @@ def section_notes(b: dict) -> list[str]:
     return lines
 
 
+def section_decisions(b: dict) -> list[str]:
+    """the ledger. who decided what, and how much of it was a rule.
+
+    the reproducibility claim is a number rather than a claim: `actor_ratio` is
+    the count per actor, and `client` is deliberately not `human` - an answer
+    arrived through the surface and the server observed a tool call, not a
+    person.
+    """
+    lines = [_h(2, "7 · decisions")]
+    recs = b.get("records") or []
+    if not recs:
+        return lines + _absent("decisions", "this cohort's ledger is empty or absent")
+    ratio = b.get("actor_ratio") or {}
+    lines += _kv([("decisions", len(recs)),
+                  *[(f"by {a}", n) for a, n in ratio.items() if n],
+                  ("ledger", b.get("ledger"))])
+    rows = [[r.get("step_id"), r.get("kind"), r.get("status"), r.get("actor"),
+             (r.get("params") or {}).get("executor") or r.get("executor") or ""]
+            for r in recs[-20:]]
+    lines += ["", *_table(["step", "kind", "status", "actor", "executor"], rows)]
+    if len(recs) > 20:
+        lines += ["", f"*the last 20 of {len(recs)}. the ledger is the whole record.*"]
+    return lines
+
+
 def section_provenance(b: dict) -> list[str]:
-    lines = [_h(2, "7 · provenance")]
+    lines = [_h(2, "8 · provenance")]
     pack = b.get("pack") or {}
     prov = b.get("provenance") or {}
     lines += _kv([("pack version", pack.get("evidence_version")),
@@ -253,7 +315,8 @@ def section_provenance(b: dict) -> list[str]:
 
 
 SECTIONS = (section_cohort, section_admissibility, section_computed,
-            section_hypotheses, section_matrix, section_notes, section_provenance)
+            section_hypotheses, section_matrix, section_notes, section_decisions,
+            section_provenance)
 
 
 def render(bundle: dict, title: str = "evaluation report") -> str:

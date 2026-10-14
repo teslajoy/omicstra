@@ -217,6 +217,23 @@ different things:
 | in-process | the output files and the checkpoint. the thread does not; `runs_resume` re-dispatches what is missing |
 | Temporal | the workflow history. a worker that never met the submitting process finishes the run |
 
+On Temporal the submit returns at submission, so something has to be polling the
+queue. That is the other half of the claim and it ships as a command:
+
+```bash
+export OMICSTRA_TEMPORAL_ADDRESS=localhost:7233
+omicstra worker                       # until signalled
+omicstra worker --max-seconds 7200    # inside a job allocation with a wall clock
+```
+
+The worker needs no cohort, no project root and no knowledge of the run: a shard
+carries its own geometry, gene axis, paths and encoder name, and the activity
+bodies close over nothing. So it may be started before or after the submitter,
+outlive it, or run on another machine, and because a shard is idempotent on its
+output file a worker joining a run already in flight re-runs nothing that landed.
+An encoder a cohort brought itself is made resolvable there with
+`--preload <module>`.
+
 **check the vectors are the ones the published grid used**
 
 The 75 GB embedding cache is the oracle, and it is read, never written. A port
@@ -427,7 +444,7 @@ omicstra/
 │   · models/encoders.py             # the encoder registry, resolved by declared name.
 │   │                                #   spec() is metadata; only load() needs torch
 │   · agents/modality.py             # he / st / pathway agents - read recorded evidence
-│   · mcp/server.py                  # 16 tools, 2 resources, stdio + http. zero model calls
+│   · mcp/server.py                  # 18 tools, 2 resources, stdio + http. zero model calls
 │   · records.py  artifacts.py       # the record contract - inventory/eda_summary io
 │   · settings.py  cli.py            # 8 commands. settings imports nothing from omicstra
 │   · routing.py  eda.py  figures.py # resolve + ledger · gate · plots

@@ -385,6 +385,52 @@ def test_the_align_stage_opens_with_the_admissibility_constraint():
     assert issubclass(EdaGateMissing, Exception)
 
 
+def test_the_evaluate_stage_gates_what_a_number_may_claim():
+    """the last gate set, and the only one that protects a CLAIM rather than a
+    compute. its two refusals are refusals on purpose: no pack means there is
+    nothing to return a verdict over, and a drifted artifact cannot be made
+    evaluable by any answer a person could give.
+    """
+    ev = [g for g in GATES.values() if g.get("stage") == "evaluate"]
+    assert len(ev) == COMPUTE["summary"]["evaluate"]["preflight"] == 3
+    assert {g["id"] for g in ev} == {"hypothesis_scope", "artifact_pinning",
+                                     "guard_failure"}
+    for g in ev:
+        assert g["when"] == "preflight" and g["default"] is None
+        assert "halt" in g["options"]
+    # demote, do not discard - a failing guard has a reporting option
+    assert "report_as_diagnostic" in GATES["guard_failure"]["options"]
+    # the pin gate resolves by COMPARISON, so it carries the resolved option as
+    # well as the question's own answers
+    assert "declared_pins" in GATES["artifact_pinning"]["options"]
+
+    from omicstra.protocols.evaluate import ArtifactDrift, EvidencePackMissing
+    assert issubclass(EvidencePackMissing, Exception)
+    assert issubclass(ArtifactDrift, Exception)
+
+
+def test_every_contract_guard_declares_whether_it_is_implemented():
+    """the contract names seven required guards and the package implements six
+    checks. a required guard silently not run is the failure the guard library
+    exists to prevent, so the gap is declared with a reason per guard.
+    """
+    from omicstra.protocols.evaluate import guard_implementations, routing_contract
+
+    rc = routing_contract()
+    impl = guard_implementations()
+    assert set(impl["map"]) == set(rc["guards"]), \
+        "a guard the contract requires with nothing said about its implementation"
+    for name, key in impl["map"].items():
+        if key is None:
+            assert impl["unimplemented"][name], f"{name} unimplemented with no reason"
+        else:
+            from omicstra.protocols.evaluate import GUARDS
+            assert key in GUARDS, f"{name} claims {key}, which is not a guard"
+    # every family's required guards are names the contract defines
+    for f in rc["task_families"]:
+        assert set(f["required_guards"]) <= set(rc["guards"]), f["id"]
+
+
 @pytest.mark.parametrize("gid", sorted(GATES))
 def test_every_gate_has_a_closed_option_set_and_no_default(gid):
     """the model or the person picks from an enumerated set; nothing is free

@@ -23,8 +23,22 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 Status = Literal["pass", "fail", "not_run", "not_applicable", "error"]
-Actor = Literal["deterministic", "model", "human"]
-Kind = Literal["transform", "diagnostic", "gate", "selection"]
+# the CLOSED set, and it is the one compute_contract.json#gate_schema declares.
+# this read `deterministic | model | human` while the gate nodes were writing
+# `client` and `system`, so the records the compute arms emit could not be
+# validated as Records at all - which is why they lived in the checkpoint and
+# the routing ledger lived in a file, two stores for one claim.
+#
+# `client` is the distinction the actor ledger exists for: an answer arrived
+# through the surface, and the server observed a tool call rather than a person.
+# `model` is kept because a routing decision can be one a model mapped onto a
+# task_id; it is not a synonym for client.
+Actor = Literal["deterministic", "model", "human", "client", "system"]
+# `dispatch` joined the four when the compute arms started handing shards to an
+# executor: it produces no artifact yet and judges nothing, so it is neither a
+# transform nor a diagnostic, and calling it one of those would make the ledger
+# say something false about what happened.
+Kind = Literal["transform", "diagnostic", "gate", "selection", "dispatch"]
 
 
 def _now() -> str:
@@ -171,7 +185,11 @@ class SelectionRecord(Record):
     """
     kind: Literal["selection"] = "selection"
     candidates: list[Candidate] = Field(default_factory=list)
-    chosen: str | None = None
+    # ONE choice, or a mapping of gate id -> option. the router picks a method,
+    # which is one string; a gate arm answers every open gate in a single call,
+    # which is a mapping, and squeezing that into a string lost which answer
+    # belonged to which gate. `headline()` renders both.
+    chosen: str | dict[str, str] | None = None
     tie: bool = False
     # who is actually tied. `candidates` carries every method that was scored,
     # including ones that fell below the floor or were contraindicated, so it
@@ -198,10 +216,32 @@ class SelectionRecord(Record):
             src = self.tied or [c.name for c in self.candidates]
             names = " | ".join(dict.fromkeys(src))
             return f"{self.step_id}: tie between {names} — the system does not pick"
+        if isinstance(self.chosen, dict):
+            return (f"{self.step_id}: "
+                    + ", ".join(f"{k}={v}" for k, v in sorted(self.chosen.items())))
         return f"{self.step_id}: {self.chosen}"
 
 
-AnyRecord = TransformRecord | DiagnosticRecord | GateRecord | SelectionRecord
+class DispatchRecord(Record):
+    """handed N shards to an executor. no verdict, and no artifact yet.
+
+    `executor` is a FIELD and not a param because a resume reads it first:
+    re-dispatching a thread and re-attaching to a workflow are different
+    recoveries, and a ledger that buried the distinction in a params blob would
+    make the resume path guess.
+    """
+    kind: Literal["dispatch"] = "dispatch"
+    executor: str = ""
+    n_shards: int | None = None
+    n_pending: int | None = None
+
+    def headline(self) -> str:
+        n = "?" if self.n_shards is None else self.n_shards
+        return f"{self.step_id}: {n} shard(s) to {self.executor or 'an executor'}"
+
+
+AnyRecord = (TransformRecord | DiagnosticRecord | GateRecord | SelectionRecord
+             | DispatchRecord)
 
 
 _KINDS: dict[str, type[Record]] = {
@@ -209,7 +249,39 @@ _KINDS: dict[str, type[Record]] = {
     "diagnostic": DiagnosticRecord,
     "gate": GateRecord,
     "selection": SelectionRecord,
+    "dispatch": DispatchRecord,
 }
+
+_ACTORS: tuple[str, ...] = ("deterministic", "model", "human", "client", "system")
+_VOLATILE = ("started_at", "duration_s", "code_version", "record_id")
+
+
+def coerce(d: dict) -> Record:
+    """a graph node's record dict as a Record. the one store's door.
+
+    the gate nodes build plain dicts because a langgraph state value has to be
+    JSON, and they carry keys no Record declares - `executor`, `n_shards`,
+    `chosen`, `pins`. those are not noise and are not droppable: which executor
+    ran a shard is the first thing a resume needs. so they go to `params`, which
+    is the field that exists for exactly this, and the record validates.
+
+    `record_id` is content-addressed over the dict when absent, which is what
+    makes appending the same run's records twice - a resume re-entering a graph
+    carries the whole list forward - idempotent rather than duplicative.
+    """
+    cls = _KINDS.get(str(d.get("kind", "")), Record)
+    known = set(cls.model_fields)
+    core = {k: v for k, v in d.items() if k in known}
+    extra = {k: v for k, v in d.items() if k not in known}
+    if extra:
+        core["params"] = {**(core.get("params") or {}), **extra}
+    if not core.get("record_id"):
+        # the DECISION, not the clock - the same exclusions stable_id() states.
+        # an id over the whole dict would move on every call, and the id exists
+        # to answer whether two ledgers differ on an outcome.
+        core["record_id"] = stable_id({k: v for k, v in d.items()
+                                       if k not in _VOLATILE})
+    return cls.model_validate(core)
 
 
 class RecordStore:
@@ -243,6 +315,24 @@ class RecordStore:
                 fh.write(r.model_dump_json() + "\n")
         return r
 
+    def append_new(self, records) -> list[Record]:
+        """append the ones not already here, by record_id. returns what landed.
+
+        the arms carry their whole record list forward in the graph state, so a
+        resume hands the store everything the run has ever decided. without the
+        id check a three-gate run that was resumed twice would read as nine
+        decisions, and the actor ratio is a published number.
+        """
+        have = {r.record_id for r in self._records if r.record_id}
+        out = []
+        for d in records:
+            r = d if isinstance(d, Record) else coerce(d)
+            if r.record_id and r.record_id in have:
+                continue
+            have.add(r.record_id)
+            out.append(self.append(r))
+        return out
+
     def all(self) -> list[Record]:
         return list(self._records)
 
@@ -250,8 +340,14 @@ class RecordStore:
         return [r for r in self._records if r.kind == kind]
 
     def actor_ratio(self) -> dict[str, int]:
-        """the reproducibility claim as a number: N decisions, X deterministic, ..."""
-        out = {"deterministic": 0, "model": 0, "human": 0}
+        """the reproducibility claim as a number: N decisions, X deterministic, ...
+
+        every actor in the vocabulary, counted from the vocabulary rather than
+        from a literal: the three hardcoded keys raised KeyError the first time a
+        `client` record reached the store, which is the one actor the ledger was
+        extended to be able to say.
+        """
+        out = dict.fromkeys(_ACTORS, 0)
         for r in self._records:
             out[r.actor] += 1
         return out

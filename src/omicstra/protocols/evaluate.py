@@ -435,3 +435,508 @@ def coverage(summary: dict, declared_grid: list[str]) -> dict:
     return {"n_declared": len(declared_grid), "n_scored": len(have & set(declared_grid)),
             "missing": sorted(set(declared_grid) - have),
             "unexpected": sorted(have - set(declared_grid))}
+
+
+# --- the evaluate stage: scope, pins, and what a guard does to a claim -------
+#
+# LEVEL 2. order, applicability and authority: which hypotheses this cohort can
+# answer, which bytes the answer was read from, and which required guards ran.
+# the maths is above - the guards and the per-hypothesis gates - and nothing
+# here recomputes a published number. a number this stage cannot re-derive is
+# reported `not_run` with the input it is missing NAMED, which is the same
+# discipline the EDA gate uses and the reason this is worth having: a reader
+# cannot otherwise tell a hypothesis nobody asked from one that failed.
+import json as _json
+from pathlib import Path as _Path
+
+
+class EvidencePackMissing(RuntimeError):
+    """no curated pack, so there is nothing to return a verdict over.
+
+    a refusal and not a gate, the same shape as `EdaGateMissing`: the pack
+    records which metric answers which task family, and inventing that is
+    inventing the judgement the whole chain exists to attribute.
+    """
+
+
+class ArtifactDrift(RuntimeError):
+    """a cited artifact's bytes differ from the pin the cohort declared.
+
+    not a question. the pack's numbers were read from the pinned bytes, so a
+    verdict over these ones would be a verdict over a different measurement
+    wearing the pack's prose. no option at the gate makes that evaluable.
+    """
+
+
+def routing_contract() -> dict:
+    """the task families, their hypotheses and their required guards."""
+    return _json.loads(
+        (_Path(__file__).resolve().parents[1] / "configs" / "routing_contract.json"
+         ).read_text())
+
+
+def hypothesis_root(h: str) -> str:
+    """`H2-B.2` -> `H2`.
+
+    the contract names families at the sub-hypothesis a result actually tests -
+    H2-A is clustering, H2-C is confounder suppression, and they are different
+    claims. a caller asks about H1/H2/H3, which is how the proposal and
+    CLAUDE.md state them, so the two vocabularies meet here rather than in six
+    places.
+    """
+    return h.split("-", 1)[0].strip()
+
+
+def families(hypotheses: list[str] | tuple[str, ...] | None = None) -> list[dict]:
+    """the contract's task families, filtered to the hypotheses asked for."""
+    fams = routing_contract()["task_families"]
+    if hypotheses is None:
+        return list(fams)
+    want = {hypothesis_root(h) for h in hypotheses}
+    return [f for f in fams if hypothesis_root(f["hypothesis"]) in want]
+
+
+def guard_implementations() -> dict:
+    """which contract guard has a function here, declared rather than inferred.
+
+    the two vocabularies are not the same length: the contract names seven
+    required guards and this module implements six checks, and the overlap is
+    five. that gap is DECLARED in routing_contract.json#guard_implementations
+    with the reason per guard, because a required guard silently not run is
+    exactly the failure the guard library exists to prevent.
+    """
+    return routing_contract()["guard_implementations"]
+
+
+def guard_status(fams: list[dict]) -> list[dict]:
+    """per required guard across the families in scope: implemented, or why not."""
+    impl = guard_implementations()
+    out, seen = [], set()
+    for f in fams:
+        for name in f.get("required_guards", []):
+            if name in seen:
+                continue
+            seen.add(name)
+            key = impl["map"].get(name)
+            out.append({"guard": name, "required_by": f["id"],
+                        "implemented_as": key,
+                        "status": "implemented" if key else "not_implemented",
+                        "note": (routing_contract()["guards"][name] if key
+                                 else impl["unimplemented"][name])})
+    return sorted(out, key=lambda d: d["guard"])
+
+
+_PATH_KEYS = ("table", "ci_file")
+_PATH_RE = r"[\w./{}-]+\.(?:json|parquet)"
+
+
+def _tokens(task: dict) -> tuple[list[str], list[str]]:
+    """the artifact names a task declaration carries, structured and from prose.
+
+    two sources, because the declaration uses both: the keys a reader resolves
+    (`table`, `ci_file`, including inside a nested floor or reference reader),
+    and the `source` string, which is prose a person wrote and the only place
+    some artifacts appear at all.
+    """
+    import re
+
+    structured: list[str] = []
+    prose: list[str] = []
+
+    def walk(d):
+        for k, v in d.items():
+            if isinstance(v, dict):
+                walk(v)
+            elif k in _PATH_KEYS and isinstance(v, str):
+                structured.append(v)
+            elif k == "source" and isinstance(v, str):
+                prose.extend(re.findall(_PATH_RE, v))
+
+    walk(task)
+    return structured, prose
+
+
+def cited_paths(task: dict, runs: list[str]) -> list[str]:
+    """every artifact path a task declaration LOCATES, relative to the runs root.
+
+    a prose token counts only if it carries a directory. `metrics_h2_ci.json` on
+    its own names a file without saying where it is, and the two candidates on
+    the seed cohort are `eval/H2/metrics_h2_ci.json` and
+    `{run}/eval/biology.parquet` - one shared, one per arm. resolving a bare
+    name against whatever directory appeared nearby in the same sentence gets
+    the first right and the second wrong, so it is not resolved at all. those
+    names are returned by `named_without_location` and reported.
+
+    `{run}` is expanded over the declared grid: a per-run file is one artifact
+    per arm, and pinning the template would pin nothing.
+    """
+    structured, prose = _tokens(task)
+    out: list[str] = []
+    for p in structured + [t for t in prose if "/" in t]:
+        out += [p.replace("{run}", r) for r in runs] if "{run}" in p else [p]
+    # order-preserving dedupe: the same artifact is usually named by both a
+    # structured key and the prose, and a pin list with duplicates reads as more
+    # evidence than it is.
+    return list(dict.fromkeys(out))
+
+
+def named_without_location(task: dict) -> list[str]:
+    """artifacts the prose names but does not locate. pinnable once declared.
+
+    reported rather than guessed, and rather than dropped: a cited artifact
+    nobody can hash is a gap in what the verdict covers, and the cohort closes
+    it by naming the file in a structured key.
+    """
+    structured, prose = _tokens(task)
+    bare = {t for t in prose if "/" not in t}
+    located = {p.rsplit("/", 1)[-1] for p in structured + [t for t in prose if "/" in t]}
+    return sorted(bare - located)
+
+
+def _sha256(p: _Path) -> str:
+    import hashlib
+
+    h = hashlib.sha256()
+    with p.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def pin_state(sources: dict, root: _Path, declared: dict | None,
+              fams: list[dict]) -> dict:
+    """hash every artifact the families in scope cite, against the declared pins.
+
+    `absent` is not a failure of this function: a cohort whose grid is partly
+    unwritten cites files that do not exist yet, and the hypothesis those files
+    belong to is reported not_run naming them rather than refused here.
+    """
+    runs_root = (root / sources["runs_root"]).resolve()
+    runs = list(sources.get("runs") or [])
+    pins = dict(declared or {})
+    observed, absent, drifted, matched, unlocated = {}, [], [], [], set()
+    per_task: dict[str, list[str]] = {}
+    for f in fams:
+        task = (sources.get("tasks") or {}).get(f["id"])
+        if not task or "not_available" in task:
+            continue
+        per_task[f["id"]] = cited_paths(task, runs)
+        unlocated |= set(named_without_location(task))
+        for rel in per_task[f["id"]]:
+            if rel in observed or rel in absent:
+                continue
+            fp = runs_root / rel
+            if not fp.is_file():
+                absent.append(rel)
+                continue
+            observed[rel] = _sha256(fp)
+            if rel in pins:
+                (matched if pins[rel] == observed[rel] else drifted).append(rel)
+    return {"runs_root": str(runs_root), "observed": observed,
+            "cited_by_task": per_task,
+            "absent": sorted(absent), "matched": sorted(matched),
+            "drifted": sorted(drifted),
+            "n_declared_pins": len(pins),
+            # named by the prose, located by nothing. not a hash and not a
+            # silence - see named_without_location.
+            "named_without_location": sorted(unlocated),
+            "unpinned": sorted(set(observed) - set(pins))}
+
+
+def _pack(root: _Path) -> dict:
+    p = root / "routing_evidence.json"
+    if not p.is_file():
+        raise EvidencePackMissing(
+            f"no routing_evidence.json for this cohort ({root.name}), so there is "
+            "nothing to return a verdict over. the pack records which metric "
+            "answers which task family and which floor each is judged against; "
+            "that is curated, and generating it would be inventing the "
+            "judgements it exists to attribute.")
+    return _json.loads(p.read_text())
+
+
+def _sources(root: _Path) -> dict:
+    p = root / "evidence_sources.json"
+    if not p.is_file():
+        raise EvidencePackMissing(
+            f"no evidence_sources.json for this cohort ({root.name}). the pack may "
+            "state the numbers, but without the sources declaration nothing says "
+            "which artifact each was read from - so no pin, no guard input, and "
+            "no verdict this stage can stand behind.")
+    return _json.loads(p.read_text())
+
+
+def scope(fams: list[dict], pack: dict, sources: dict) -> dict:
+    """per hypothesis: which families are fillable on this cohort, and which not.
+
+    three states per family, and the difference between the last two is the
+    point: declared and filled, declared `not_available` with the cohort's own
+    reason, or named by the contract and absent from the pack entirely. a
+    hypothesis with no fillable family is not a question for a person - it is
+    reported not_run with its families named.
+    """
+    out: dict[str, dict] = {}
+    for f in fams:
+        h = hypothesis_root(f["hypothesis"])
+        row = out.setdefault(h, {"fillable": [], "not_available": [], "undeclared": []})
+        t_pack = (pack.get("tasks") or {}).get(f["id"])
+        t_src = (sources.get("tasks") or {}).get(f["id"])
+        if t_src is None and t_pack is None:
+            row["undeclared"].append(f["id"])
+        elif (t_src is not None and "not_available" in t_src) or \
+             (t_pack is not None and "not_available" in t_pack):
+            why = ((t_src or {}).get("not_available")
+                   or (t_pack or {}).get("not_available"))
+            row["not_available"].append({"task": f["id"], "why": why})
+        else:
+            row["fillable"].append(f["id"])
+    for h, row in out.items():
+        row["evaluable"] = bool(row["fillable"])
+    return out
+
+
+def preflight_evaluate(cohort: dict | None = None, project_id: str | None = None,
+                       *, hypotheses: list[str] | None = None,
+                       verdict: dict | None = None) -> list:
+    """the gates that fire before a hypothesis verdict.
+
+    deterministic and side-effect free apart from reading and hashing the
+    artifacts the cohort's declaration names - the same shape as
+    `preflight_align`, which reads the recorded EDA verdict. it measures nothing
+    and recomputes no published number.
+
+    raises rather than gates when the cohort has no pack or no sources
+    declaration, and when a declared pin does not match the bytes on disk. the
+    first two are "there is nothing to ask about"; the third is "no answer makes
+    this evaluable".
+    """
+    from omicstra.protocols.align import _declarations
+    from omicstra.protocols.encode import (
+        GateRequest,
+        _declared,
+        _resolve_option,
+        contract,
+    )
+    from omicstra.settings import settings
+
+    root = settings.project_root(project_id)
+    cohort = _declarations(project_id) if cohort is None else {
+        **_declarations(project_id), **cohort}
+    pack, sources = _pack(root), _sources(root)
+    fams = families(hypotheses)
+    sc = scope(fams, pack, sources)
+    # only the fillable families are hashed. hashing an artifact for a task the
+    # cohort has declared unavailable would report bytes nothing will read.
+    fillable = [f for f in fams
+                if f["id"] in sc[hypothesis_root(f["hypothesis"])]["fillable"]]
+    pins = pin_state(sources, root, cohort.get("evidence_pins"), fillable)
+    if pins["drifted"]:
+        raise ArtifactDrift(
+            f"{len(pins['drifted'])} cited artifact(s) differ from the pin this "
+            f"cohort declares: {pins['drifted'][:3]}. the pack's numbers were read "
+            "from the pinned bytes, so a verdict over these ones would carry the "
+            "pack's prose over a different measurement. re-pin deliberately, or "
+            "restore the artifacts.")
+
+    gates = {g["id"]: g for g in contract()["gates"] if g.get("stage") == "evaluate"}
+    guards = guard_status(fams)
+    out = []
+    for gid in ("hypothesis_scope", "artifact_pinning", "guard_failure"):
+        g, answer, src, observed = gates[gid], None, None, {}
+
+        if gid == "hypothesis_scope":
+            observed = {"requested": list(hypotheses) if hypotheses else "all declared",
+                        "per_hypothesis": sc,
+                        "evaluable": sorted(h for h, r in sc.items() if r["evaluable"]),
+                        "not_run": sorted(h for h, r in sc.items() if not r["evaluable"])}
+            if hypotheses:
+                # the caller NAMED them, which is the answer this gate asks for.
+                # recorded as the request rather than as a declaration: the
+                # server saw a tool call, not a person.
+                answer, src = "named_subset", "the request"
+        elif gid == "artifact_pinning":
+            observed = {k: pins[k] for k in
+                        ("runs_root", "absent", "matched", "drifted", "unpinned",
+                         "named_without_location", "n_declared_pins")}
+            # the hashes travel WITH the question. answering `pin_these_bytes`
+            # without seeing them would be pinning bytes sight unseen, and the
+            # record that answer writes is this map.
+            observed["sha256"] = pins["observed"]
+            observed["n_artifacts"] = len(pins["observed"])
+            if pins["observed"] and not pins["unpinned"]:
+                answer, src = "declared_pins", "cohort.json#evidence_pins"
+        else:
+            # a guard with no IMPLEMENTATION does not fire this gate and does not
+            # demote a number - it is reported not_run with the contract's own
+            # reason. what fires it is a guard that RAN and failed, which is why
+            # the verdict is computed before the gates rather than after them.
+            v = verdict if verdict is not None else verdicts(
+                project_id, hypotheses=hypotheses, root=root)
+            failed = sorted(f for r in v.values() for f in r["guards_failed"])
+            observed = {"required": guards,
+                        "n_implemented": sum(d["status"] == "implemented" for d in guards),
+                        "n_not_implemented": sum(d["status"] == "not_implemented"
+                                                 for d in guards),
+                        "failed": failed, "n_failed": len(failed)}
+            if not failed:
+                answer, src = "report_as_diagnostic", "no guard that ran has failed"
+
+        declared = _declared(cohort, g.get("pre_answerable_by"))
+        if declared is not None:
+            answer = _resolve_option(declared, tuple(g["options"]), gid,
+                                     g.get("answer_kind", "choice"))
+            src = g.get("pre_answerable_by")
+
+        out.append(GateRequest(
+            id=gid, when=g["when"], question=g["question"],
+            options=tuple(g["options"]), forecloses=g["forecloses"],
+            pre_answerable_by=g.get("pre_answerable_by"),
+            answer=answer, source=src, observed=observed or None))
+    return out
+
+
+# the per-family readers this package has. a family absent from here is reported
+# `no_reader`, not skipped: the hypothesis gates above exist for the two families
+# whose cited artifact carries everything the gate needs, and the others need an
+# input nothing in the cohort's declaration supplies. saying which is which is
+# the useful part - "H2 has no verdict" and "H2-A needs a label NMI nobody
+# measured" are different statements.
+def _h2c(task: dict, runs_root: _Path, **_) -> dict:
+    ci = _json.loads((runs_root / task["ci_file"]).read_text())
+    floor = (task.get("floor") or {})
+    return gate_h2c(ci, floor.get("value"), floor.get("basis"))
+
+
+def _h3_pathway(task: dict, runs_root: _Path, *, sources: dict, **_) -> dict:
+    st = sources.get("run_st_features")
+    if not st:
+        return {"status": "not_run",
+                "needs": "evidence_sources.json#run_st_features",
+                "note": ("G6 derives circularity from each arm's ST INPUT, not "
+                         "from the artifact's own view_clean column - the script "
+                         "hardcodes which arms are circular, so an arm added to "
+                         "the grid afterwards is silently marked clean. the "
+                         "features are per-arm cohort knowledge and are declared, "
+                         "never guessed.")}
+    import pandas as pd
+
+    rows = pd.read_parquet(runs_root / task["table"]).to_dict("records")
+    return gate_h3_pathway(rows, st, view=task.get("view", "z_he"),
+                           alpha=float(task.get("alpha", 0.05)))
+
+
+_READERS = {"subject_identity_suppression": _h2c, "pathway_transfer": _h3_pathway}
+
+
+def _rollup(runs_root: _Path, h: str, grid: list[str], pack: dict) -> dict:
+    """the eval.py rollup for a hypothesis: its coverage, and H3's split check.
+
+    DIAGNOSTIC on the seed cohort - no routed number is read from a rollup - so
+    it is reported beside the cited-artifact gates rather than as the verdict.
+    """
+    p = runs_root / "eval" / h / "summary.json"
+    if not p.is_file():
+        return {"status": "absent", "path": f"eval/{h}/summary.json"}
+    s = _json.loads(p.read_text())
+    out = {"status": "read", "path": f"eval/{h}/summary.json",
+           "coverage": coverage(s, grid)}
+    if h == "H3":
+        n = (pack.get("eval_scope") or {}).get("test_subjects")
+        out["split"] = (gate_h3(s, int(n)) if n is not None else
+                        {"status": "not_run",
+                         "needs": "routing_evidence.json#eval_scope.test_subjects"})
+    return out
+
+
+# a guard that did not RUN is not a guard that passed. the difference decides
+# what a verdict may claim, so it is counted rather than inferred from the
+# absence of a failure: "no guard failed" was true of a hypothesis where no
+# guard ran at all, and that read as a clean bill of health.
+_RAN = ("pass", "fail", "per_run", "as_recorded", "satisfied_by_design",
+        "flag_disagreement")
+
+
+def _guard_tally(gates: dict) -> dict:
+    """per hypothesis: which guards ran, which failed, which did not run and why.
+
+    G3 is per RUN rather than per guard - `gate_h2c` attaches it to each arm -
+    so a failure there is named with the arm. one arm failing a required guard
+    demotes the claim for that arm, and the verdict says which.
+    """
+    ran, failed, not_run = [], [], []
+    for tid, v in gates.items():
+        if not isinstance(v, dict):
+            continue
+        for g in v.get("guards") or []:
+            name = f"{tid}/{g['guard']}"
+            st = g.get("status")
+            if st in _RAN:
+                ran.append(name)
+            else:
+                not_run.append({"guard": name, "why": g.get("note") or st})
+            if st == "fail":
+                failed.append(name)
+        for rid, r in (v.get("runs") or {}).items():
+            if isinstance(r, dict) and r.get("G3"):
+                ran.append(f"{tid}/G3_bio_vs_confounder/{rid}")
+                if not r["G3"]["passed"]:
+                    failed.append(f"{tid}/G3_bio_vs_confounder/{rid}")
+    return {"guards_ran": sorted(set(ran)), "guards_failed": sorted(set(failed)),
+            "guards_not_run": not_run}
+
+
+def claims(row: dict) -> str:
+    """what a hypothesis's numbers are allowed to be called.
+
+    four states, and `unguarded` is the one that had to be added: a hypothesis
+    whose required guards all lack an input reports no failure, and "no guard
+    failed" then reads as a clean bill of health for a number nothing checked.
+    """
+    if not row.get("evaluable"):
+        return "not_run"
+    if row.get("guards_failed"):
+        return "diagnostic"
+    return "biological" if row.get("guards_ran") else "unguarded"
+
+
+def verdicts(project_id: str | None = None, *, hypotheses: list[str] | None = None,
+             root: _Path | None = None) -> dict:
+    """per hypothesis: the gates over its cited artifacts, and what did not run.
+
+    reads only. every number comes from an artifact the cohort's declaration
+    names, and a gate whose input is missing returns `not_run` with the input
+    named rather than a value computed from something else.
+    """
+    from omicstra.settings import settings
+
+    root = _Path(root) if root is not None else settings.project_root(project_id)
+    pack, sources = _pack(root), _sources(root)
+    fams = families(hypotheses)
+    sc = scope(fams, pack, sources)
+    runs_root = (root / sources["runs_root"]).resolve()
+    grid = list(sources.get("runs") or [])
+
+    out: dict[str, dict] = {}
+    for h, row in sc.items():
+        res: dict = {"evaluable": row["evaluable"], "families": row,
+                     "gates": {}, "rollup": _rollup(runs_root, h, grid, pack)}
+        for tid in row["fillable"]:
+            task = sources["tasks"][tid]
+            reader = _READERS.get(tid)
+            if reader is None:
+                res["gates"][tid] = {
+                    "status": "no_reader",
+                    "note": ("the package has no hypothesis gate for this family. "
+                             "promote computes its candidates and floor from the "
+                             "same declaration; what is missing here is a check "
+                             "over the number, not the number."),
+                    "cited": cited_paths(task, grid)[:4]}
+                continue
+            try:
+                res["gates"][tid] = reader(task, runs_root, sources=sources, pack=pack)
+            except (FileNotFoundError, KeyError) as e:
+                res["gates"][tid] = {"status": "unavailable",
+                                     "why": f"{type(e).__name__}: {e}"}
+        res.update(_guard_tally(res["gates"]))
+        out[h] = res
+    return out
