@@ -275,6 +275,36 @@ not     a per-pathway atlas. the deliverable is "spatial maps generated showing
 
 ---
 
+## untested, and listed so it is not mistaken for working
+
+```
+embedding extraction on genuinely new data    the second cohort ran 3 sections
+                                              of each arm. 3 is a smoke test, not
+                                              a cohort run. the 25 above-floor
+                                              original-ST sections have never
+                                              been embedded, and nothing has run
+                                              on a cohort outside these two
+AWS / Bedrock                                 never attempted. the routing layer
+                                              holds no model, so a Bedrock-backed
+                                              client is a client-side swap in
+                                              principle - untested in fact
+ARC (the OHSU cluster)                        never attempted. COMPUTE_BACKEND
+                                              declares slurm and the durable
+                                              executor works on Temporal locally;
+                                              neither has run on ARC. the
+                                              interpreter there is unknown, and
+                                              the clone verifier now pins the CI
+                                              matrix precisely because a local
+                                              interpreter drifted to 3.15
+Temporal beyond localhost                     the kill test runs a dev server
+                                              in-process. no remote cluster
+```
+
+these are listed rather than planned. each would change what the release can
+claim, and none is claimed now.
+
+---
+
 ## grant commitments outstanding, not release work
 
 ```
