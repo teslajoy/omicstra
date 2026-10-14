@@ -53,8 +53,11 @@ QUESTION = (
     "Use the tools. Do not guess a number."
 )
 
-# the model is the client's choice; this is a default, not a requirement.
-DEFAULT_MODEL = "us.anthropic.claude-sonnet-5-20260514-v1:0"
+# the model is the client's choice; this is a default, not a requirement. the
+# cross-region inference profile rather than a bare model id, because that is
+# what a Converse call in a region takes - and WITHOUT a date suffix, which an
+# invented id had: `list-inference-profiles` is the authority on what exists.
+DEFAULT_MODEL = "us.anthropic.claude-sonnet-5"
 
 
 async def _tools(session):
@@ -81,9 +84,39 @@ async def _call(session, name: str, args: dict):
 
 
 def _bedrock_turn(client, model: str, tool_config: dict, messages: list) -> dict:
+    """one Converse turn.
+
+    no `temperature`: the newer models reject it outright - "`temperature` is
+    deprecated for this model" - and a probe does not need it. what determinism
+    this test rests on is the SERVER's, which is a lookup table either way.
+    """
     return client.converse(modelId=model, messages=messages,
                            toolConfig=tool_config,
-                           inferenceConfig={"maxTokens": 2000, "temperature": 0})
+                           inferenceConfig={"maxTokens": 2000})
+
+
+def _explain(e, client, model: str) -> str:
+    """a Bedrock refusal as one line plus what to do, not a traceback.
+
+    the two that actually happen: a model id that does not exist in this region,
+    and a role without InvokeModel on the one that does. they read nothing alike
+    and both arrived as a sixty-line ExceptionGroup.
+    """
+    name = type(e).__name__
+    msg = str(getattr(e, "response", {}).get("Error", {}).get("Message", e))
+    if "model identifier is invalid" not in msg:
+        return f"{name}: {msg}"
+    try:
+        prof = client.meta.session.client("bedrock", region_name=client.meta.region_name)
+        ids = [p["inferenceProfileId"] for p in
+               prof.list_inference_profiles(maxResults=100)["inferenceProfileSummaries"]
+               if "anthropic" in p["inferenceProfileId"] and p["status"] == "ACTIVE"]
+    except Exception:                                   # noqa: BLE001
+        ids = []
+    return (f"{name}: {msg}\n"
+            f"this role sees these anthropic profiles in {client.meta.region_name}:\n  "
+            + ("\n  ".join(ids) if ids else "(could not list them)")
+            + "\npass one with --model.")
 
 
 def _in_process(name: str, args: dict):
@@ -134,8 +167,20 @@ async def _run(project_id: str, model: str, dry_run: bool, turns: int) -> int:
 
         client = boto3.client("bedrock-runtime")
         mismatches, calls = [], 0
+        # counted HERE because the role that invokes a model cannot necessarily
+        # read what it spent: cloudwatch:GetMetricStatistics and ce:GetCostAndUsage
+        # are separate grants, and this one has neither. every Converse response
+        # carries its own usage, so the probe totals its own bill.
+        spend = {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0, "turns": 0}
         for _ in range(turns):
-            resp = _bedrock_turn(client, model, tool_config, messages)
+            try:
+                resp = _bedrock_turn(client, model, tool_config, messages)
+            except client.exceptions.ClientError as e:
+                click.echo(click.style("\n" + _explain(e, client, model), fg="red"))
+                return 2
+            for k in ("inputTokens", "outputTokens", "totalTokens"):
+                spend[k] += (resp.get("usage") or {}).get(k, 0)
+            spend["turns"] += 1
             out = resp["output"]["message"]
             messages.append(out)
             uses = [c["toolUse"] for c in out["content"] if "toolUse" in c]
@@ -164,7 +209,9 @@ async def _run(project_id: str, model: str, dry_run: bool, turns: int) -> int:
                     "content": [{"text": json.dumps(served)[:20000]}]}})
             messages.append({"role": "user", "content": results})
 
-        click.echo(f"\n{calls} tool call(s), {len(mismatches)} mismatch(es)")
+        click.echo(f"\n{spend['turns']} model turn(s): {spend['inputTokens']} in + "
+                   f"{spend['outputTokens']} out = {spend['totalTokens']} tokens")
+        click.echo(f"{calls} tool call(s), {len(mismatches)} mismatch(es)")
         if mismatches:
             click.echo(json.dumps(mismatches, indent=1))
             click.echo("a mismatch means something on the server's path is not a "

@@ -58,7 +58,7 @@ been demonstrated, not what has been written.
 | B | `evaluate_run` behind the run handle, and `hypotheses` leaves `align_run` | **done** |
 | C | one record store, and the records reach the report | **done** |
 | D | level 0 wires align and evaluate; `design/graph.md` is the route | **done** |
-| E | Bedrock, as a test rather than a build | **prepared** - needs credentials |
+| E | Bedrock, as a test rather than a build | **done** - 7 tool calls, 0 mismatches |
 
 ### A, and what it closed
 
@@ -329,8 +329,8 @@ published on their own side, so this is named rather than renamed.
 
 ### E, and the bug it found before Bedrock was even called
 
-E is a test rather than a build, and it splits into a half that can run here and
-a half that needs an AWS account.
+E is a test rather than a build, and it splits into a half that can run with no
+credentials at all and a half that needs a model client.
 
 **the half that runs here.** `modelInsideServer: false` is a claim in the
 registry entry, so it is now a test: no module in the package imports a model SDK
@@ -340,7 +340,7 @@ dependency, and both judges are deterministic by source. a claim like that is
 false the moment somebody imports an SDK to try something, which is why it is
 checked rather than trusted.
 
-**the half that needs credentials.** `scripts/probe_bedrock.py` starts the server
+**the half that needs a model client.** `scripts/probe_bedrock.py` starts the server
 over stdio, hands its own tool list to Bedrock's Converse API as a toolConfig,
 executes whatever tool the model asks for, and then calls the same tool with the
 same arguments IN PROCESS with no model anywhere - and diffs the two. the diff is
@@ -363,18 +363,42 @@ two start paths serve the same tool set, and one asserts the guard is the last
 thing in the module, so a tool appended after it fails a test rather than
 vanishing from the transport.
 
-**what E still needs, and it is the user's:** an AWS account with Bedrock model
-access, and a region. then:
+**it ran**, on a Bedrock-backed client, twice - and the two runs took DIFFERENT
+paths through the surface, which is the interesting part: 7 tool calls then 5,
+and 0 mismatches both times.
+
+the model chose a different route through the surface each time and **every
+server answer was byte-identical to the same tool called in process with no model
+anywhere**. that is the claim `modelInsideServer: false` makes, tested rather
+than asserted: the model picked which tool to call, the server picked what the
+answer was.
+
+it also answered gates - `verdict_disagreement`, `artifact_pinning`,
+`guard_failure` - which is exactly the narrow job the registry entry describes,
+choosing among enumerated options. the answers are recorded `actor: client`,
+because a tool call is what the server saw.
+
+three things the probe found before Bedrock was even reached, and one after:
 
 ```
-pip install boto3 && aws configure
-python scripts/probe_bedrock.py --project-id tnbc-92
+9 of 18 tools served     the __main__ guard sat in the MIDDLE of server.py, so
+                         `python -m omicstra.mcp.server` called main() before
+                         nine decorators had run. the README's documented command
+                         uses `python -c "... serve()"` and was correct by
+                         accident, which is why no test caught it
+an invented model id      `us.anthropic.claude-sonnet-5-20260514-v1:0` does not
+                         exist. list-inference-profiles is the authority, and the
+                         real id carries no date suffix
+temperature rejected      "`temperature` is deprecated for this model". dropped;
+                         what determinism this test rests on is the server's
+a 60-line ExceptionGroup  an invalid model id and a missing invoke permission
+                         read nothing alike and both arrived as the same wall of
+                         traceback. one line now, and an invalid id lists the
+                         profiles that are actually available
 ```
 
-until that runs, `AWS / Bedrock` stays on the untested list below, and the claim
-is what it was: the routing layer holds no model, so a Bedrock-backed client is a
-client-side swap in principle - now with the server half proven and the client
-half prepared.
+a scheduler run is still outstanding, and compute does not belong on a login
+node. that is the remaining half of the cluster line below.
 
 ---
 
@@ -615,15 +639,12 @@ embedding extraction on genuinely new data    the second cohort ran 3 sections
                                               original-ST sections have never
                                               been embedded, and nothing has run
                                               on a cohort outside these two
-AWS / Bedrock                                 the SERVER half is proven: no
-                                              module imports a model SDK, no
-                                              extra can install one, and both
-                                              judges are deterministic by source.
-                                              the CLIENT half is prepared and has
-                                              never run - scripts/probe_bedrock.py
-                                              needs an account with model access.
+AWS / Bedrock                                 RAN, both halves - see E above. a
+                                              second account or region is
+                                              untested.
                                               see E above
-ARC (the OHSU cluster)                        never attempted. COMPUTE_BACKEND
+ARC (the OHSU cluster)                        nothing has run through the
+                                              scheduler. COMPUTE_BACKEND
                                               declares slurm and the durable
                                               executor works on Temporal locally;
                                               neither has run on ARC. the
