@@ -25,6 +25,21 @@ BRANCH="$(git -C "$REPO" rev-parse --abbrev-ref HEAD)"
 echo "==> cloning $BRANCH (working tree is NOT used - commit first)"
 git clone -q --depth 1 --single-branch --branch "$BRANCH" "file://$REPO" "$WORK/clone"
 
+# whether CI will ever SEE this branch. the workflow lists its push branches
+# explicitly, that list went stale once (v1.2, while the work was on v1.3-*), and
+# a pushed branch then got no run at all with nothing saying so. a local green is
+# not evidence; a local green nobody will ever check against CI is less.
+COVERED=0
+while IFS= read -r pat; do
+  case "$BRANCH" in $pat) COVERED=1 ;; esac
+done <<EOF
+$(sed -n 's/^    branches: \[\(.*\)\]$/\1/p' "$REPO/.github/workflows/release.yml" \
+  | tr ',' '\n' | tr -d ' "')
+EOF
+if [ "$COVERED" -eq 0 ]; then
+  echo "    NOTE: no push trigger matches '$BRANCH' - CI runs on a PR only." >&2
+fi
+
 echo "==> what a clone actually carries"
 printf '    data/inputs/          %s\n' "$([ -d "$WORK/clone/data/inputs" ] && echo present || echo absent)"
 printf '    canonical parquet     %s\n' \

@@ -127,6 +127,25 @@
     "off_diagonal_specificity": "detecting a signal and attributing it to the right source are different claims. a method with high off-diagonal similarity does the first and not the second",
     "untrained_control": "include an untrained projection. a signal an untrained projection preserves was in the encoder, not created by training"
   },
+  "guard_implementations": {
+      "note": "the contract NAMES seven required guards; protocols/evaluate.py implements six checks; the overlap is five. the gap is declared here rather than discovered, because a required guard that silently does not run is the one failure the guard library exists to prevent.",
+      "map": {
+        "label_granularity": "G1",
+        "cross_subject_eval": "G2",
+        "paired_subject_z": "G3",
+        "off_diagonal_specificity": "G4",
+        "circularity_view": "G6",
+        "raw_floor": null,
+        "untrained_control": null
+      },
+      "unimplemented": {
+        "raw_floor": "the comparison is each task's `floor` field, computed by promote from the cohort's declared floor reader. there is no guard function and there should not be: a guard that re-derived the floor would be a second answer to one question, and the two could disagree.",
+        "untrained_control": "an ARM of the grid, not a check over a number - B4_v3 is that arm on the seed cohort. its absence from a scored rollup is a coverage fact, and coverage() reports it per rollup."
+      },
+      "implemented_and_required_by_no_family": {
+        "G5_noise_floor": "applies to a reported statistic that carries its own permutation null, which is a property of an artifact rather than of a task family. it runs where an artifact supplies the null - gate_h3_pathway reads it as recorded - and is not_run where none does."
+      }
+    },
   "evidence_contract": {
     "note": "what {project_root}/routing_evidence.json must supply for a cohort to be routable. a missing task family is not routed - it escalates.",
     "required_per_task": [

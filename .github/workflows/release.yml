@@ -8,15 +8,21 @@
 # workflow_dispatch, so the release path is exercised continuously rather than
 # discovered on tag day. publish is the only step gated on a tag.
 #
-# the working branch is listed alongside main because work lands there for weeks
-# before it merges, and a branch CI never sees is verified on one laptop against
-# one interpreter. publish stays safe: it is gated on `refs/tags/v`, and a push
-# to a branch does not match that.
+# the working branches are listed alongside main because work lands there for
+# weeks before it merges, and a branch CI never sees is verified on one laptop
+# against one interpreter. publish stays safe: it is gated on `refs/tags/v`, and
+# a push to a branch does not match that.
+#
+# a GLOB for the release line, because the explicit list went stale: `v1.2` was
+# right for a release and silently covered nothing once the work moved to
+# `v1.3-*` branches, so a pushed branch got no CI at all and nothing said so.
+# `scripts/verify_like_ci.sh` now warns when the current branch matches nothing
+# here.
 name: release
 
 on:
   push:
-    branches: [main, v1.2]
+    branches: [main, v1.2, "v1.3-*"]
     tags: ["v*"]
   pull_request:
   workflow_dispatch:

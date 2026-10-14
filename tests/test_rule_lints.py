@@ -44,8 +44,9 @@ def test_every_graph_module_is_a_gate_or_declares_why_not():
 
 @pytest.mark.parametrize("mod,fn", [
     ("encode", "build_encode_graph"), ("st", "build_st_graph"),
-    ("align", "build_align_graph"), ("eda", "build_eda_graph"),
-    ("route", "build_route_graph"), ("promote", "build_promote_graph"),
+    ("align", "build_align_graph"), ("evaluate", "build_evaluate_graph"),
+    ("eda", "build_eda_graph"), ("route", "build_route_graph"),
+    ("promote", "build_promote_graph"),
 ])
 def test_every_graph_can_reach_an_interrupt(mod, fn):
     """the second half of the level rule: anything that can interrupt gets its

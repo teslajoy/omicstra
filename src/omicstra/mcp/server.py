@@ -705,7 +705,8 @@ def _runner(arm: str = "he"):
 # the shape of the run_id.
 ARMS = {"he": "omicstra.graphs.encode:build_encode_graph",
         "st": "omicstra.graphs.st:build_st_graph",
-        "align": "omicstra.graphs.align:build_align_graph"}
+        "align": "omicstra.graphs.align:build_align_graph",
+        "evaluate": "omicstra.graphs.evaluate:build_evaluate_graph"}
 
 
 def _app_for(target: str, saver):
@@ -824,9 +825,9 @@ def st_encode(project_id: str | None = None, platform: str | None = None,
     "It also surfaces a computed verdict that disagrees with the one the cohort "
     "declares, and records which arms of the grid are in scope. Returns a run "
     "handle. compute=false (the default) resolves the grid from recorded "
-    "artifacts and reports it without training."))
+    "artifacts and reports it without training. Hypothesis verdicts are NOT "
+    "here - evaluate_run is the stage with the gates for them."))
 def align_run(project_id: str | None = None, compute: bool = False,
-              hypotheses: list[str] | None = None,
               run_id: str | None = None) -> dict:
     import uuid
 
@@ -835,10 +836,45 @@ def align_run(project_id: str | None = None, compute: bool = False,
     app, spec = _runner("align")
     rid = run_id or f"align-{uuid.uuid4().hex[:12]}"
     cfg = {"configurable": {"thread_id": rid}}
+    # no `hypotheses`. it was accepted here and silently ignored: the align graph
+    # resolves a grid and scores nothing, so naming a hypothesis changed no
+    # behaviour while implying the stage returned a verdict over it. the gates a
+    # verdict needs - scope, the bytes, what a failed guard does to the claim -
+    # are evaluate_run's.
     out = app.invoke({"project_id": project_id, "arm": "align",
                       "cohort": _load_cohort(project_id),
-                      "hypotheses": hypotheses or ["H1"],
                       "compute": compute}, cfg)
+    return {**_handle(app, rid, out), "checkpointer": spec}
+
+
+@srv.tool(description=(
+    "Return a VERDICT on H1 / H2 / H3 for a cohort, behind a run handle. Reads "
+    "the artifacts the cohort's evidence declaration names, runs the guards the "
+    "routing contract requires for each task family, and states per hypothesis "
+    "whether its numbers are biological, diagnostic, unguarded or not_run. It "
+    "recomputes no published number and calls no model. Three gates fire: which "
+    "hypotheses are in scope, the sha256 of every artifact read (a declared pin "
+    "that does not match is REFUSED, not asked), and what a required guard that "
+    "ran and failed does to the claim - demote to diagnostic, or halt. A cohort "
+    "with no curated evidence pack is refused: the pack records which metric "
+    "answers which task family, and generating that would invent the judgement "
+    "it exists to attribute."))
+def evaluate_run(project_id: str | None = None,
+                 hypotheses: list[str] | None = None,
+                 run_id: str | None = None) -> dict:
+    import uuid
+
+    from omicstra.graph import _load_cohort
+
+    app, spec = _runner("evaluate")
+    rid = run_id or f"eval-{uuid.uuid4().hex[:12]}"
+    cfg = {"configurable": {"thread_id": rid}}
+    out = app.invoke({"project_id": project_id, "arm": "evaluate",
+                      "cohort": _load_cohort(project_id),
+                      # absent means every hypothesis the contract declares a
+                      # family for. a named subset is recorded as the request,
+                      # because that is what the server observed.
+                      "hypotheses": list(hypotheses or [])}, cfg)
     return {**_handle(app, rid, out), "checkpointer": spec}
 
 

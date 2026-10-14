@@ -55,7 +55,7 @@ been demonstrated, not what has been written.
 | | | state |
 |:--|:--|:--|
 | A | `omicstra worker` - the process that serves the encode queue | **done** |
-| B | `evaluate_run` behind the run handle, and `hypotheses` leaves `align_run` | |
+| B | `evaluate_run` behind the run handle, and `hypotheses` leaves `align_run` | **done** |
 | C | one record store, and the records reach the report | |
 | D | level 0 wires align and evaluate; `design/graph.md` is the route | |
 | E | Bedrock, as a test rather than a build | |
@@ -92,6 +92,82 @@ process.
 
 still untested beyond localhost - the kill test runs a dev server in-process, and
 the `Temporal beyond localhost` line below is unchanged.
+
+---
+
+### B, and what it found
+
+`align_run` accepted a `hypotheses` list and ignored it. the align graph resolves
+a grid and scores nothing, so naming a hypothesis changed no behaviour while
+implying the stage had returned a verdict over it. the parameter is gone and the
+verdict has a stage of its own.
+
+`evaluate_run` is judge #2's surface. it reads the artifacts the cohort's
+`evidence_sources.json` names, runs the guards `routing_contract.json` requires
+per task family, and states one of four things per hypothesis. no model is called
+anywhere on the path, so `modelInsideServer: false` still holds.
+
+three gates, all declared in `compute_contract.json` under `stage: evaluate`:
+
+```
+hypothesis_scope   which hypotheses this run answers. a hypothesis whose every
+                   family is undeclared or declared unavailable is NOT a gate -
+                   nothing to choose - and is reported not_run with its families
+artifact_pinning   the sha256 of every cited artifact, and the hashes travel
+                   WITH the question. a declared pin that does not match is a
+                   REFUSAL: the pack's numbers were read from other bytes
+guard_failure      a required guard that RAN and failed. demote, do not discard
+```
+
+the verdict is computed BEFORE the gates, which is the opposite of the encode
+arm. `guard_failure` can only fire on a guard that ran, and the guards cost a few
+file reads rather than a training run, so there is nothing to protect by
+deferring.
+
+**four claim states, and the fourth is the finding.** `biological`,
+`diagnostic`, `not_run` - and `unguarded`, which had to be added because "no
+guard failed" was true of a hypothesis where no guard ran at all, and read as a
+clean bill of health for a number nothing checked. on the seed cohort:
+
+| | claim | why |
+|:--|:--|:--|
+| H1 | `unguarded` | `cross_subject_eval` needs a within-subject score to compare against; nothing in the declaration carries one |
+| H2 | `diagnostic` | H2-C's G3 ran on all 7 arms in `metrics_h2_ci.json` and **7 of 7 failed** - no arm suppresses patient identity below biology |
+| H3 | `unguarded` | the pathway gate needs each arm's ST features, which is per-arm cohort knowledge and is declared, never guessed. `evidence_sources.json#run_st_features` is the pointer and the seed cohort does not carry it |
+
+15 cited artifacts, all present, **none pinned**. so the pin gate asks on the one
+cohort that has a published grid, which is the right answer: the pins were never
+written down. answering `pin_these_bytes` records the 15 hashes as a PROPOSAL in
+the ledger - the package does not write a cohort's declaration, because a pin is
+a committed human act.
+
+two artifacts the pack's prose names and nothing locates: `biology.parquet` (it
+is per arm) and `perm_nulls.parquet` (a sibling). a bare filename is reported
+rather than resolved against whatever directory appeared nearby in the same
+sentence - that guess gets the shared file right and the per-arm one wrong.
+
+**two gaps the contract now states rather than hides.** it requires seven guards;
+this package implements six checks; the overlap is five.
+`routing_contract.json#guard_implementations` declares the map with a reason per
+guard: `raw_floor` is each task's `floor` field, computed by promote from the
+cohort's declared floor reader, and a guard that re-derived it would be a second
+answer to one question; `untrained_control` is an ARM of the grid, not a check
+over a number, and its absence from a rollup is what `coverage()` reports.
+
+### three things B did not close
+
+```
+the rollup coverage gaps     H2 drops B4_v3 and H3 drops R5_v3, which the
+                             verdict now REPORTS per hypothesis. closing them
+                             means scoring those arms, which is a compute run
+run_st_features              one declaration away from H3 being guarded rather
+                             than unguarded. it is the cohort's to write
+no reader for four families  cross_modal_retrieval, tissue_state_grouping,
+                             morphology_decode and pathway_discrimination report
+                             `no_reader`: promote computes their candidates from
+                             the same declaration, and what is missing is a
+                             CHECK over the number, not the number
+```
 
 ---
 
