@@ -83,7 +83,7 @@ def judge(state: RouteState) -> dict:
                   else "refuse" if rec.contraindicated
                   else "escalate" if rec.escalated
                   else "tie" if rec.tie else "recommend")
-    ledger(state.get("project_id")).append(rec)
+    ledger(state.get("project_id")).append_new([rec])
     return {"decision": rec.model_dump(), "resolution": resolution}
 
 
@@ -125,7 +125,7 @@ def override_node(state: RouteState) -> dict:
                   project_id=state.get("project_id"), log=False)
     for m in state.get("modality", []):
         rec.caveats.append(f"{m['step_id'].split('::')[0]}: {m['decision']}")
-    ledger(state.get("project_id")).append(rec)
+    ledger(state.get("project_id")).append_new([rec])
     return {"decision": rec.model_dump(), "resolution": "override_ack"}
 
 

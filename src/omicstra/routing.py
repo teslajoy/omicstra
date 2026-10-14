@@ -145,7 +145,14 @@ def resolve(task_id: str, question: str = "", proposed_method: str | None = None
         r = SelectionRecord(step_id=f"route::{task_id or '?'}", record_id=rid,
                             params=params, **kw)
         if log:
-            ledger(project_id).append(r)
+            # append_NEW, not append. `rid` is content addressed over the
+            # contract version, the pack version and the request - which is the
+            # whole point of stable_id: "two ledgers join on this id and either
+            # differ on outcome, or do not differ". so routing the same question
+            # against the same pack is the SAME decision, and appending it again
+            # was writing 995 rows for one of them. the ratio in the report is a
+            # published number; it cannot be a call counter.
+            ledger(project_id).append_new([r])
         return r
 
     if not evidence:

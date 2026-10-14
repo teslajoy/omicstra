@@ -215,6 +215,41 @@ checkpoint, because "what did THIS run decide" and "what has this cohort
 decided" are different questions - and it now also names the cohort's ledger and
 its size, so a reader is not left thinking the handle is the only way in.
 
+### what reading the real ledger then showed
+
+with the arms appending, the seed cohort's `decisions.jsonl` was opened and
+counted. 1,846 rows for seven decisions:
+
+```
+995  route::tissue_state_grouping     one decision
+775  route::cross_modal_retrieval     one decision
+ 20  route::subject_identity_suppression
+...
+```
+
+`routing.py:emit` called `append`, not `append_new`, so every invocation of the
+same question against the same pack wrote another row - and `record_id` is
+content addressed over the contract version, the pack version and the request
+precisely so that "two ledgers join on this id and either differ on outcome, or
+do not differ". it does not count calls. the actor ratio is a published number
+and cannot be a call counter, so the routing path appends the same way the arms
+do now. the existing rows are left where they are; they are a record.
+
+and two tests had been writing into the repo's own `runs/` - 42 rows under
+`synthetic/`, 5 under `tnbc-92/` - because `settings.runs_dir` resolves under the
+package repo root and a subprocess inherits it. invisible: the files are
+git-ignored, nothing failed, and the next report would simply have been wrong
+about who decided what. `tests/conftest.py` now points `runs_dir` at tmp for
+every test, by fixture and by environment variable so a subprocess gets it too.
+
+**one thing this leaves open.** `settings.runs_dir` resolving under the package
+repo root is right for this repo, where tnbc-92's `project.json` declares its
+data and runs at the root explicitly. for an INSTALLED server with no repo it
+puts a cohort's ledger next to site-packages, which is not where a cohort's
+record belongs. the fix is for `ledger()` to prefer the cohort's own declared
+runs root, and it is a path-resolution change with blast radius, so it is named
+here rather than made in passing.
+
 ---
 
 ### D, and where the wiring was wrong
