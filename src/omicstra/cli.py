@@ -916,5 +916,109 @@ def worker(address, namespace, task_queue, preloads, max_seconds) -> None:
     asyncio.run(serve())
 
 
+@main.command()
+@click.option("--project-dir", default=None, type=click.Path(path_type=Path))
+@click.option("--project-id", default=None)
+@click.option("--task", "task_id", default=None,
+              help="the task family being asked about. absent asks about the cohort.")
+@click.option("--hypotheses", default="H1,H2,H3",
+              help="which hypotheses the evaluate stage returns a verdict on.")
+@click.option("--compute", is_flag=True,
+              help="actually run. without it every stage reports what WOULD run.")
+@click.option("--answer", "answers", multiple=True, metavar="GATE=OPTION",
+              help="pre-answer a gate, so the chain does not pause on it. repeatable.")
+@click.option("--thread", default="cli-chain", help="the run handle for this walk.")
+def chain(project_dir, project_id, task_id, hypotheses, compute, answers, thread):
+    """walk the whole chain: eda -> encode -> st -> align -> evaluate.
+
+    LEVEL 0, with every stage injected. align and evaluate were built, tested
+    and reachable only one arm at a time through the MCP - the same thing that
+    had happened to encode a release earlier - so this is the caller that holds
+    the chain rather than a stage.
+
+    without `--compute` every stage RESOLVES: it reports what would run and what
+    it would read, and the walk reaches a verdict in one invocation. with
+    `--compute` it stops at the first stage that leaves work in flight, because
+    an encode returns at submission and the embeddings the next stage reads are
+    not on disk yet. the run handle is how it continues.
+
+    a gate with no declared answer pauses the walk. `--answer gate=option`
+    supplies one; it is recorded as having arrived through the surface, which is
+    what it did.
+    """
+    from langgraph.checkpoint.memory import InMemorySaver
+    from langgraph.types import Command
+
+    from omicstra.graph import build_omicstra_graph
+    from omicstra.graphs.align import build_align_graph
+    from omicstra.graphs.eda import build_eda_graph
+    from omicstra.graphs.encode import build_encode_graph
+    from omicstra.graphs.evaluate import build_evaluate_graph
+    from omicstra.graphs.route import build_route_graph
+    from omicstra.graphs.st import build_st_graph
+
+    if project_dir is not None:
+        settings.project_dir = project_dir.expanduser()
+
+    given: dict[str, str] = {}
+    for a in answers:
+        gid, _, opt = a.partition("=")
+        if not opt:
+            raise SystemExit(f"--answer wants GATE=OPTION, got {a!r}")
+        given[gid.strip()] = opt.strip()
+
+    app = build_omicstra_graph(checkpointer=InMemorySaver(),
+                               eda=build_eda_graph(checkpointer=None),
+                               encode=build_encode_graph(checkpointer=None),
+                               st=build_st_graph(checkpointer=None),
+                               align=build_align_graph(checkpointer=None),
+                               evaluate=build_evaluate_graph(checkpointer=None),
+                               route=build_route_graph(checkpointer=None))
+    cfg = {"configurable": {"thread_id": thread}}
+    hs = [h.strip() for h in hypotheses.split(",") if h.strip()]
+    out = app.invoke({"question": "", "task_id": task_id, "project_id": project_id,
+                      "hypotheses": hs, "compute": compute,
+                      "params": {}, "inventory_params": {}}, cfg)
+
+    # a gate the walk cannot answer pauses it. an answer supplied on the command
+    # line is passed once and the walk continues; one that was not is printed
+    # with its options, and the walk stops there rather than defaulting.
+    while "__interrupt__" in out:
+        v = out["__interrupt__"][0].value
+        gates = v.get("gates") or []
+        open_ids = [g["id"] for g in gates]
+        have = {g: given[g] for g in open_ids if g in given}
+        if not have:
+            click.echo(click.style(f"\npaused on {len(open_ids)} gate(s):", fg="yellow"))
+            for g in gates:
+                click.echo(f"  {g['id']}")
+                click.echo(f"      {g['question']}")
+                click.echo(f"      options: {', '.join(g['options'])}")
+                click.echo(click.style(f"      forecloses: {g['forecloses']}", dim=True))
+            click.echo("\nanswer with --answer gate=option. the system does not pick.")
+            break
+        out = app.invoke(Command(resume=have), cfg)
+
+    click.echo(f"\narm: {out.get('arm')} - {out.get('arm_reason', '')}")
+    stages = out.get("stages") or []
+    if stages:
+        click.echo("-" * 68)
+        for row in stages:
+            click.echo(f"  {row['stage']:<12} {row['status']}")
+    rep = out.get("report") or {}
+    if rep:
+        click.echo("-" * 68)
+        click.echo(f"  ended at: {rep.get('status')}")
+        for key in ("why", "note"):
+            if rep.get(key):
+                click.echo(click.style(f"      {rep[key]}", dim=True))
+        for h, d in sorted((rep.get("hypotheses") or {}).items()):
+            click.echo(f"  {h:<6} claims {d['claims']:<12} "
+                       f"guards ran {len(d['guards_ran'])}, "
+                       f"failed {len(d['guards_failed'])}")
+    if not compute and out.get("arm") == "compute":
+        click.echo("\nnothing ran - every stage resolved. pass --compute to execute.")
+
+
 if __name__ == "__main__":
     main()

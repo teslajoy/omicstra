@@ -716,24 +716,42 @@ def _app_for(target: str, saver):
     return getattr(importlib.import_module(mod), fn)(checkpointer=saver)
 
 
+class NotAnArmHandle(ValueError):
+    """the thread exists and is not one of the arms'.
+
+    `arm` is shared by name with LEVEL 0, where it means ask | compute | refuse
+    rather than he | st | align | evaluate - two meanings, one key, published on
+    both sides. so a level-0 thread id handed to a resume carries `compute` in
+    the field this function reads, and the old `ARMS.get(arm, ARMS["he"])` would
+    have re-entered the H&E graph: a tile geometry resolved for a cohort nobody
+    asked about one, under someone else's handle. a refusal names it instead.
+    """
+
+
 def _runner_for(run_id: str):
     """the graph a handle actually belongs to, plus its state.
 
-    both arms share `EncodeState`, so either compiled graph can READ the
-    checkpoint; only the compute node differs. so: read with a default, find the
-    arm the run recorded, and rebuild if it is the other one. resuming an ST run
-    into the H&E node would re-enter a node that resolves a tile geometry for a
-    cohort that was never asked for one.
+    the arms share `EncodeState`, so any compiled graph can READ the checkpoint;
+    only the gates and the compute node differ. so: read with a default, find
+    the arm the run recorded, and rebuild if it is another one. resuming an ST
+    run into the H&E node would re-enter a node that resolves a tile geometry
+    for a cohort that was never asked for one.
     """
     app, spec = _runner()
     snap = app.get_state({"configurable": {"thread_id": run_id}})
     values = (snap.values if snap else None) or {}
     arm = values.get("arm", "he")
+    if arm not in ARMS:
+        raise NotAnArmHandle(
+            f"{run_id!r} records arm {arm!r}, which is not one of {sorted(ARMS)}. "
+            "a run handle belongs to one modality or stage arm; a thread from "
+            "level 0 carries its routing arm in the same field and is resumed "
+            "through the chain, not through an arm.")
     if arm != "he":
         from omicstra.graph import make_checkpointer
 
         saver, spec = make_checkpointer()
-        app = _app_for(ARMS.get(arm, ARMS["he"]), saver)
+        app = _app_for(ARMS[arm], saver)
         snap = app.get_state({"configurable": {"thread_id": run_id}})
     return app, spec, snap, arm
 
@@ -913,7 +931,14 @@ def runs_resume(run_id: str, answers: dict | None = None,
                 approve: bool = True) -> dict:
     from langgraph.types import Command
 
-    app, spec, snap, arm = _runner_for(run_id)
+    # a refusal, not a traceback: every tool on this surface answers. two
+    # read-path tools once raised through to a ToolError on a cohort whose gate
+    # had never run, and a handle from the wrong layer is the same shape of
+    # mistake on the caller's side.
+    try:
+        app, spec, snap, arm = _runner_for(run_id)
+    except NotAnArmHandle as e:
+        return {"run_id": run_id, "status": "refused", "arm": None, "why": str(e)}
     cfg = {"configurable": {"thread_id": run_id}}
 
     # a run past its gates whose thread died has no interrupt to resume. the
@@ -956,7 +981,10 @@ def runs_resume(run_id: str, answers: dict | None = None,
     "Progress is counted from the output files rather than held in memory, so "
     "this is true from any process and after a restart."))
 def runs_status(run_id: str) -> dict:
-    _, spec, snap, arm = _runner_for(run_id)
+    try:
+        _, spec, snap, arm = _runner_for(run_id)
+    except NotAnArmHandle as e:
+        return {"run_id": run_id, "status": "refused", "arm": None, "why": str(e)}
     if not snap or not snap.values:
         return {"run_id": run_id, "status": "unknown", "arm": None,
                 "why": "no checkpoint under this handle. a run_id from a server "
@@ -1004,7 +1032,10 @@ def runs_status(run_id: str) -> dict:
     "appends to runs/{project_id}/records/decisions.jsonl, which is what the "
     "report reads; `ledger` below names it."))
 def runs_record(run_id: str) -> dict:
-    _, spec, snap, arm = _runner_for(run_id)
+    try:
+        _, spec, snap, arm = _runner_for(run_id)
+    except NotAnArmHandle as e:
+        return {"run_id": run_id, "records": [], "arm": None, "why": str(e)}
     if not snap or not snap.values:
         return {"run_id": run_id, "records": [], "arm": None,
                 "why": "no checkpoint under this handle"}

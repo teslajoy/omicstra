@@ -209,9 +209,10 @@ handle survives the process, the ST port is exact against the Novae cache, and
 the EDA chain runs. the second cohort's evidence pack did NOT ship.
 
 **read `design/v1_3_scope.md` before starting anything.** it holds what 1.3 is,
-every open question with the measurement behind it, and the two decisions that
-are the human's rather than the agent's. 1.3 begins at step 4 - `align.run` /
-`evaluate.run` behind the same run handle.
+every open question with the measurement behind it, the build order A-E with what
+each one closed, and the decisions that are the human's rather than the agent's.
+`design/graph.md` is the companion: the route a question takes and which file
+owns each step, which is the question a session actually has first.
 
 the scope docs are the plan, one per release, each written before the work and
 corrected after it. `design/v1_1_scope.md`, `design/v1_2_scope.md`,
@@ -254,6 +255,8 @@ work lands via a branch and a PR      the template states the scope, because
 
 ## key docs
 
+- `design/graph.md` — **the route.** which file owns which step, one page.
+  read it before adding a graph; a lint asserts every `graphs/*.py` is on it
 - `design/v1_3_scope.md` — **the live plan.** start here
 - `design/v1_2_scope.md` — what shipped, and the nine package edits it cost
 - `README.md` — what + why

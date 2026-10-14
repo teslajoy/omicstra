@@ -57,7 +57,7 @@ been demonstrated, not what has been written.
 | A | `omicstra worker` - the process that serves the encode queue | **done** |
 | B | `evaluate_run` behind the run handle, and `hypotheses` leaves `align_run` | **done** |
 | C | one record store, and the records reach the report | **done** |
-| D | level 0 wires align and evaluate; `design/graph.md` is the route | |
+| D | level 0 wires align and evaluate; `design/graph.md` is the route | **done** |
 | E | Bedrock, as a test rather than a build | |
 
 ### A, and what it closed
@@ -214,6 +214,81 @@ returns `recorded: N`.
 checkpoint, because "what did THIS run decide" and "what has this cohort
 decided" are different questions - and it now also names the cohort's ledger and
 its size, so a reader is not left thinking the handle is the only way in.
+
+---
+
+### D, and where the wiring was wrong
+
+align and evaluate were built, tested and connected to nothing - the same thing
+that had happened to `graphs/encode.py` a release earlier, when the slot existed
+in `build_omicstra_graph` and no caller filled it. level 0 now takes all five
+stages and chains them:
+
+```
+discover --compute--> eda -> carry_counts -> encode -> st -> align ─┐
+         --ask-----> route ─────────────────────────────────────────┤
+                                                                    ▼
+                                                            evaluate -> END
+```
+
+**the chain stops at the first stage that leaves work in flight.** `submitted` is
+the usual reason and is why this is not a straight chain: an encode with
+`compute=True` returns at submission, so the embeddings the next stage reads are
+not on disk when the next node would run. walking on would have align report
+`unavailable` on a run that is working correctly. `graph.py:STOP_AFTER` is that
+list; the run handle is how the chain continues.
+
+**evaluate on the compute arm alone was wrong, and the first walk found it.**
+evaluate reads the artifacts the evidence pack cites, and a cohort WITH a pack
+takes the ASK arm - so the first wiring put the one stage that needs a pack on
+the one arm that is taken when there is none. the seed cohort walked, took `ask`,
+and reached END with no verdict. it is terminal on both arms now: the verdict on
+the ask arm, a named refusal on the compute arm.
+
+a second thing the walk found: the routing subgraph states its outcome in
+`resolution` rather than in a report, so the stage keeper logged the one stage
+that had actually decided something as `unknown`.
+
+`omicstra chain` is the caller that holds the whole thing, which is what the
+question *"can you ask it the three hypotheses and have it go through the chain"*
+was asking for:
+
+```
+omicstra chain --project-id tnbc-92 --task cross_modal_retrieval \
+  --answer artifact_pinning=evaluate_unpinned \
+  --answer guard_failure=report_as_diagnostic
+
+  arm: ask - cross_modal_retrieval has recorded evidence on this cohort
+  route        recommend
+  ended at: evaluated
+  H1     claims unguarded    guards ran 0, failed 0
+  H2     claims diagnostic   guards ran 9, failed 7
+  H3     claims unguarded    guards ran 0, failed 0
+```
+
+without `--answer` it stops at the gate and prints the options, because the
+system does not pick.
+
+**`design/graph.md` is the route**, one page, and a lint asserts every
+`graphs/*.py` appears on it in the order the code wires them. a diagram that
+drifts from the wiring is worse than none - it is read as authoritative and is
+wrong.
+
+### the one key that means two things
+
+`arm` is shared by name between level 0 and every subgraph:
+
+```
+level 0      ask | compute | refuse        which arm answers the question
+a subgraph   he | st | align | evaluate    which arm the RUN HANDLE belongs to
+```
+
+so a subgraph wired under level 0 receives `compute` in the field the MCP reads
+as a handle arm, and `ARMS.get(arm, ARMS["he"])` would have re-entered the H&E
+graph - a tile geometry resolved for a cohort nobody asked about one, under
+someone else's handle. `_runner_for` raises `NotAnArmHandle` now, and the three
+handle tools return it as a refusal rather than a traceback. both names are
+published on their own side, so this is named rather than renamed.
 
 ---
 
