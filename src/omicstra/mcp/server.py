@@ -738,17 +738,43 @@ def _runner_for(run_id: str):
     return app, spec, snap, arm
 
 
+def _persist(out: dict) -> int:
+    """the arms' records reach the cohort's ONE ledger. returns what landed.
+
+    there were two stores. the routing path appended to a file-backed
+    `RecordStore` at `runs/{id}/records/decisions.jsonl`; every gate arm wrote
+    plain dicts into the langgraph checkpoint, readable only through
+    `runs_record(run_id)` and only if you had the handle. so a cohort's ledger
+    said "N routing decisions" while the gates, the dispatches and the pins were
+    somewhere else, and the report - which takes a pack and a ledger - could
+    reach neither.
+
+    it is called from `_handle`, which is the one place every arm and every
+    resume passes through. appending is idempotent on `record_id`: the arms carry
+    their whole record list forward in state, so a resume hands over everything
+    the run has ever decided.
+    """
+    from omicstra.contracts.routing import ledger
+
+    recs = out.get("records") or []
+    if not recs:
+        return 0
+    return len(ledger(out.get("project_id")).append_new(recs))
+
+
 def _handle(app, run_id: str, out: dict) -> dict:
     """what a client gets back: the handle, and either a gate or a result."""
+    n_new = _persist(out)
     gates = [g for g in (out.get("gates") or []) if g.get("open")]
     interrupts = out.get("__interrupt__") or []
     if interrupts:
         v = interrupts[0].value
         return {"run_id": run_id, "status": "awaiting_answer", "gate": v,
+                "recorded": n_new,
                 "resume_with": "runs_resume(run_id, answers={<gate id>: <option>})"}
     return {"run_id": run_id, "status": out.get("report", {}).get("status", "unknown"),
             "report": out.get("report", {}), "open_gates": [g["id"] for g in gates],
-            "halted": bool(out.get("halted"))}
+            "recorded": n_new, "halted": bool(out.get("halted"))}
 
 
 @srv.tool(description=(
@@ -972,16 +998,27 @@ def runs_status(run_id: str) -> dict:
 
 
 @srv.tool(description=(
-    "The decision record for one run: every gate answered, by whom, and the "
-    "declaration it resolved from. This is the run's half of the ledger."))
+    "The decision record for ONE run: every gate answered, by whom, and the "
+    "declaration it resolved from, read from that run's checkpoint. The cohort's "
+    "whole ledger is a different question and a different file - every arm "
+    "appends to runs/{project_id}/records/decisions.jsonl, which is what the "
+    "report reads; `ledger` below names it."))
 def runs_record(run_id: str) -> dict:
     _, spec, snap, arm = _runner_for(run_id)
     if not snap or not snap.values:
         return {"run_id": run_id, "records": [], "arm": None,
                 "why": "no checkpoint under this handle"}
     v = snap.values
+    # the checkpoint is the RUN's state; the file is the cohort's record. they are
+    # two views and not two stores - every record here was appended there as it
+    # arrived, which is why the report can read a ledger without a handle.
+    from omicstra.contracts.routing import ledger
+
+    led = ledger(v.get("project_id"))
     return {"run_id": run_id, "checkpointer": spec, "arm": arm,
             "records": v.get("records") or [],
             "gates": v.get("gates") or [],
             "answers": v.get("answers") or {},
+            "ledger": str(led.path) if led.path else None,
+            "cohort_decisions": len(led.all()),
             "encoder": v.get("encoder"), "platform": v.get("platform")}

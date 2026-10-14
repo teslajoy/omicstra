@@ -56,7 +56,7 @@ been demonstrated, not what has been written.
 |:--|:--|:--|
 | A | `omicstra worker` - the process that serves the encode queue | **done** |
 | B | `evaluate_run` behind the run handle, and `hypotheses` leaves `align_run` | **done** |
-| C | one record store, and the records reach the report | |
+| C | one record store, and the records reach the report | **done** |
 | D | level 0 wires align and evaluate; `design/graph.md` is the route | |
 | E | Bedrock, as a test rather than a build | |
 
@@ -168,6 +168,52 @@ no reader for four families  cross_modal_retrieval, tissue_state_grouping,
                              the same declaration, and what is missing is a
                              CHECK over the number, not the number
 ```
+
+---
+
+### C, and the three divergences it found
+
+there were two record stores. the routing path appended to a file-backed
+`RecordStore` at `runs/{id}/records/decisions.jsonl`; every gate arm wrote plain
+dicts into the langgraph checkpoint, readable only through `runs_record(run_id)`
+and only by a caller holding the handle. so a cohort's ledger said "N routing
+decisions" while the gates, the dispatches and the pins were elsewhere - and
+`report.py`, whose own first line is *"a pack and a ledger in, markdown out"*,
+read the pack and no ledger at all. `section_provenance` was already printing
+`len(records)`; nothing ever supplied the key.
+
+the arms' dicts could not be VALIDATED as Records, which is why nobody had tried:
+
+```
+actor      records.py said deterministic | model | human, and the gate nodes
+           have been writing `client` and `system` since the actor vocabulary
+           was closed. `actor_ratio()` initialised three keys and did
+           out[r.actor] += 1, so the first client record would have raised
+kind       no `dispatch`. handing N shards to an executor produces no artifact
+           and judges nothing, so it is neither a transform nor a diagnostic
+chosen     a str. a gate arm answers every open gate in ONE call, which is a
+           mapping, and flattening it loses which answer belonged to which gate
+```
+
+three divergences between a model and the only code writing to it, none of them
+caught, because nothing read both. that is the whole argument for one store.
+
+what now holds it: `records.coerce()` is the door - unknown keys land in
+`params`, which is the field that exists for them, and `record_id` is content
+addressed over the decision with the clock excluded, the same exclusions
+`stable_id()` already stated. `RecordStore.append_new()` is idempotent on that
+id, which matters because the arms carry their whole record list forward in
+state: without it a three-gate run resumed twice would read as nine decisions,
+and the actor ratio is a published number.
+
+`_persist` is called from `_handle`, the one place every arm and every resume
+passes through, so there is one sink rather than a call per node. the handle
+returns `recorded: N`.
+
+**two views, not two stores.** `runs_record(run_id)` still reads the run's
+checkpoint, because "what did THIS run decide" and "what has this cohort
+decided" are different questions - and it now also names the cohort's ledger and
+its size, so a reader is not left thinking the handle is the only way in.
 
 ---
 

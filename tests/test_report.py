@@ -29,10 +29,13 @@ SYNTHETIC = {
 def test_a_two_method_cohort_renders_through_the_same_code():
     md = render(SYNTHETIC, "two-method report")
     for heading in ("1 · cohort", "4 · per question", "5 · the matrix",
-                    "6 · caveats and notes", "7 · provenance"):
+                    "6 · caveats and notes", "7 · decisions", "8 · provenance"):
         assert heading in md
     assert "m1" in md and "0.9" in md
     assert "a person wrote this" in md
+    # the ledger reaches the report. this file's own first line says "a pack and
+    # a ledger in", and for a while only the pack arrived.
+    assert "align" in md and "deterministic" in md
 
 
 def test_the_seed_cohort_renders_through_the_same_code():
