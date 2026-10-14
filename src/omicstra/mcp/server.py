@@ -38,7 +38,22 @@ srv = MCPServer("omicstra")
     "one, and advisory checks are reported but never change a verdict. Reads "
     "committed artifacts only."))
 def check_eda_gate(project_id: str | None = None) -> dict:
-    r = run_gate(project_id)
+    # an unrun gate is an ANSWER, not an error. raising sent a client a ToolError
+    # carrying a good message through the wrong channel: a model driving this gets
+    # a failure it cannot act on instead of a verdict it can.
+    try:
+        r = run_gate(project_id)
+    except (FileNotFoundError, ValueError) as e:
+        return {"project_id": _bound_id(project_id), "verdict": "not_run",
+                "declared_verdict": None, "agrees_with_declared": None,
+                "summary": {"passed": 0, "failed": 0, "not_run": 0,
+                            "not_applicable": 0, "escalated": 0},
+                "checks": [], "violations": [], "cautions": [], "advisories": [],
+                "escalations": [],
+                "why": str(e),
+                "next": ("run the EDA chain for this cohort - `omicstra eda` - then "
+                         "ask again. nothing downstream may run past an unrun gate, "
+                         "which is this project's first constraint.")}
     return {
         "project_id": r.project_id,
         "verdict": r.verdict,
@@ -89,7 +104,14 @@ def describe_encoder_fit(project_id: str | None = None) -> dict:
     "that must never enter a feature vector."))
 def describe_data_structure(project_id: str | None = None) -> dict:
     cfg = ProjectConfig.load(project_id)
-    s = load_summary(project_id)
+    # the summary supplies two extras. it used to be read unconditionally, so
+    # "what is this data, as declared" - the first question a new cohort owner
+    # asks - failed outright on a cohort whose EDA gate had never run, for two
+    # fields that are not declarations.
+    try:
+        s = load_summary(project_id)
+    except (FileNotFoundError, ValueError):
+        s = {}
     return {
         "project_id": cfg.project_id,
         "project_dir": str(cfg.project_dir),

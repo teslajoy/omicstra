@@ -173,3 +173,34 @@ def test_no_cohort_name_or_run_id_appears_in_package_CODE():
                                      f"in {node.value[:48]!r}")
     assert not offenders, (
         "a cohort name or run id reached package code:\n  " + "\n  ".join(offenders))
+
+
+# --- a new cohort gets answers, not tracebacks ------------------------------
+def test_the_read_path_answers_a_cohort_whose_gate_has_never_run(tmp_path):
+    """an unrun gate is an ANSWER. raising sends a client a ToolError carrying a
+    good message through the wrong channel - a model driving this gets a failure
+    it cannot act on instead of a verdict it can.
+
+    `describe_data_structure` was worse: a DECLARATIONS tool that hard-failed on
+    an EDA artifact it reads for two optional extras.
+    """
+    import json
+
+    from omicstra.settings import settings
+
+    (tmp_path / "project.json").write_text(json.dumps(
+        {"project_id": tmp_path.name, "platform": "none", "k_neighbors": 6,
+         "seed": 42, "split": "patient", "encoders": [], "supervision": ""}))
+    before = settings.project_dir
+    settings.project_dir = tmp_path
+    try:
+        from omicstra.mcp import server as S
+
+        d = S.describe_data_structure()
+        assert d["project_id"] and "platform" in d, "declarations must still answer"
+
+        g = S.check_eda_gate()
+        assert g["verdict"] == "not_run"
+        assert g["why"] and g["next"], "a refusal must say what is missing and what next"
+    finally:
+        settings.project_dir = before
