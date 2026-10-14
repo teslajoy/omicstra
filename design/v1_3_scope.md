@@ -47,6 +47,54 @@ a third cohort. slurm. oauth. anything that makes the first cohort better.
 
 ---
 
+## the build order inside 1.3
+
+five items, in the order their dependencies allow. the state column is what has
+been demonstrated, not what has been written.
+
+| | | state |
+|:--|:--|:--|
+| A | `omicstra worker` - the process that serves the encode queue | **done** |
+| B | `evaluate_run` behind the run handle, and `hypotheses` leaves `align_run` | |
+| C | one record store, and the records reach the report | |
+| D | level 0 wires align and evaluate; `design/graph.md` is the route | |
+| E | Bedrock, as a test rather than a build | |
+
+### A, and what it closed
+
+submit-only was half a claim. `he_encode` and `st_encode` hand the shard list to
+the scheduler and return at submission, which is only durable if some process is
+polling - and until now that process existed solely inside the kill test, as a
+worker the test assembled itself. so the test could pass while the command an
+operator would run did not exist.
+
+`omicstra worker` is that command. it holds both activity bodies by name, needs
+no cohort and no project root, and stops gracefully on SIGTERM so the shard in
+flight reports rather than timing out into a retry. `--max-seconds` exists for a
+worker inside a job allocation with a wall clock, which is the ARC case.
+
+two rules came with it, because a name crossing a scheduler is checked by nothing
+in the language:
+
+```
+dispatch/bodies.py:shard_bodies()     the one name table. the submitter names a
+                                      body, a different process holds it
+test_rule_lints.py                    every fn_name= in graphs/ is a key in it.
+                                      an arm that forgets the line fails a test
+                                      rather than orphaning runs on a queue no
+                                      worker can serve
+```
+
+the acceptance is the existing durable test, with the shipped entrypoint in place
+of its inline worker: the submitter exits having encoded nothing, a worker it
+never met finishes all four shards, and the handle still resolves from a third
+process.
+
+still untested beyond localhost - the kill test runs a dev server in-process, and
+the `Temporal beyond localhost` line below is unchanged.
+
+---
+
 ## step 6's remainder, split by who can close it
 
 | | check | what is missing | whose |

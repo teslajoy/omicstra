@@ -816,5 +816,105 @@ def selftest(project_id: str | None, project_dir: Path | None = None) -> None:
     raise SystemExit(1 if fails else 0)
 
 
+@main.command()
+@click.option("--address", default=None, metavar="HOST:PORT",
+              help="the scheduler. defaults to OMICSTRA_TEMPORAL_ADDRESS.")
+@click.option("--namespace", default=None, help="defaults to OMICSTRA_TEMPORAL_NAMESPACE.")
+@click.option("--task-queue", default=None, help="defaults to OMICSTRA_TEMPORAL_TASK_QUEUE.")
+@click.option("--preload", "preloads", multiple=True, metavar="MODULE",
+              help="import this module before polling, so an encoder it registers "
+                   "is resolvable here. repeatable.")
+@click.option("--max-seconds", default=None, type=int, metavar="N",
+              help="stop after N seconds, for a worker inside a job allocation "
+                   "with a wall clock. default: until signalled.")
+def worker(address, namespace, task_queue, preloads, max_seconds) -> None:
+    """serve the encode queue: hold the shard bodies, run what is submitted.
+
+    the other half of submit-only. `he_encode` and `st_encode` hand the shard
+    list to the scheduler and return, which is only durable if some process is
+    polling - this is that process. it needs no cohort, no project root and no
+    knowledge of the run: a shard carries its own geometry, gene axis, paths and
+    encoder name, and the bodies close over nothing.
+
+    it may be started before or after the submitter, outlive it, or run on
+    another machine. a shard is idempotent on its output file, so a worker
+    joining a run already in flight re-runs nothing that landed.
+
+    ONE shard at a time, and that is the workflow's shape rather than a limit
+    here: `EncodeWorkflow` awaits each activity in turn because a shard holds a
+    631M-parameter model and a decoded slide, so a second thread in this process
+    would be idle for one run and out of memory for two. scale by running more
+    workers.
+    """
+    import asyncio
+    import contextlib
+    import importlib
+    import signal
+
+    from omicstra.dispatch.bodies import shard_bodies
+
+    addr = address or settings.temporal_address
+    if not addr:
+        click.echo("no scheduler address. set OMICSTRA_TEMPORAL_ADDRESS or pass "
+                   "--address. without one the dispatcher runs shards in-process "
+                   "and needs no worker.")
+        raise SystemExit(2)
+    try:
+        from temporalio.client import Client
+
+        from omicstra.dispatch.temporal import build_worker, register
+    except ImportError as e:
+        # the actual error, not a guess at it. missing is the common case and
+        # the extra is the fix; a temporalio that is installed and broken reads
+        # differently, and an operator needs to be able to tell which they have.
+        click.echo(f"no durable backend here: {e}\n"
+                   "install it with: pip install 'omicstra[durable]'")
+        raise SystemExit(2) from None
+
+    # before connecting, so a missing encoder module fails here rather than on
+    # the first shard of a run that is already accepted - by which time the
+    # scheduler holds the run and three attempts are spent on an import.
+    for mod in preloads:
+        try:
+            importlib.import_module(mod)
+        except ImportError as e:
+            click.echo(f"--preload {mod}: {e}")
+            raise SystemExit(2) from None
+
+    bodies = shard_bodies()
+    for name, fn in bodies.items():
+        register(name, fn)
+
+    queue = task_queue or settings.temporal_task_queue
+    ns = namespace or settings.temporal_namespace
+
+    async def serve() -> None:
+        client = await Client.connect(addr, namespace=ns)
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            # graceful on purpose: the context manager below lets the shard in
+            # flight finish and report, so the scheduler sees a completed
+            # activity rather than a heartbeat timeout and a retry.
+            try:
+                loop.add_signal_handler(sig, stop.set)
+            except NotImplementedError:
+                # not a posix loop. --max-seconds is then the only way out, and
+                # an abrupt kill is still safe: the history holds the run and the
+                # shards are idempotent on their output files.
+                pass
+        async with build_worker(client, queue):
+            click.echo(f"polling {queue} at {addr} (namespace {ns}); "
+                       f"serving {', '.join(sorted(bodies))}")
+            if max_seconds is None:
+                await stop.wait()
+            else:
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), max_seconds)
+        click.echo("stopped.")
+
+    asyncio.run(serve())
+
+
 if __name__ == "__main__":
     main()

@@ -106,6 +106,26 @@ def test_no_shared_gate_helper_hardcodes_a_step_id():
                 f"parameter - a shared helper cannot name one stage")
 
 
+# --- the queue's name rule -------------------------------------------------
+def test_every_submitted_activity_name_has_a_body_a_worker_can_hold():
+    """the submitter names a body; the worker holds it. different processes.
+
+    `fn_name=` is a string crossing a scheduler, so nothing in the language
+    checks it. an arm whose name is absent from `shard_bodies()` submits runs
+    that sit on the queue until a worker picks one up, fails with a KeyError on
+    a name it never registered, and retries twice more.
+    """
+    from omicstra.dispatch.bodies import shard_bodies
+
+    served = set(shard_bodies())
+    submitted = {m for f in GRAPHS.glob("*.py")
+                 for m in re.findall(r'fn_name=["\']([^"\']+)["\']', f.read_text())}
+    assert submitted, "no arm submits anything - the regex has drifted"
+    assert submitted <= served, (
+        f"{sorted(submitted - served)} is submitted by a graph and served by no "
+        f"worker. add it to dispatch/bodies.py:shard_bodies")
+
+
 # --- the scope-doc rules ---------------------------------------------------
 SCOPES = sorted((ROOT / "design").glob("v1_*_scope.md"))
 
