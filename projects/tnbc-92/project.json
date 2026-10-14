@@ -63,11 +63,13 @@
       "../../data/embeddings/novae_niche_full",
       "../../data/embeddings/niches_v3",
       "../../data/embeddings/gpath2vec",
+      "../../data/embeddings/biological_signals",
       "../../runs/tnbc-92_v3",
       "../../runs/tnbc-92/eval/H3/pathway_cca/dag_full"
     ],
     "regenerable": "virchow2_* and novae_* could be recomputed at cost - about 5.8 hours for the H&E arm. the gpath2vec v1 build could NOT: its inputs were superseded and renamed _v1_legacy.",
     "runs_note": "the finished run grid is an oracle too: the evidence pack cites its eval/ artifacts and the acceptance pins are diffed against them. a rerun is staged into a fresh out_root (protocols/align.stage_grid) and scores there.",
-    "v1_note": "the last path is v1, not v3. pathway_discrimination is the one task row whose artifact is v1 - the v3 DAG decomposition is deferred - so the file it cites needs the same protection as the v3 grid. only runs/tnbc-92_v3 was covered, and the pack cited outside it."
+    "v1_note": "the last path is v1, not v3. pathway_discrimination is the one task row whose artifact is v1 - the v3 DAG decomposition is deferred - so the file it cites needs the same protection as the v3 grid. only runs/tnbc-92_v3 was covered, and the pack cited outside it.",
+    "pathway_oracle_note": "biological_signals was absent from this list until 2026-10-13 while holding the WHOLE pathway oracle: niche_madmean_genesets.json and its TF subset, the Fisher results and sig rows, both AUCell parquets, and niche_counts_cache_genes.npy - the 41,414-symbol universe every AUCell score is ranked against. a port writing there would have been diffed against its own output and passed. the gpath2vec directory downstream of it was protected; its inputs were not."
   }
 }
