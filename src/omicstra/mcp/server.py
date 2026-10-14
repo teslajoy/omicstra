@@ -470,9 +470,6 @@ def main() -> None:
           port=int(os.environ.get("OMICSTRA_HTTP_PORT", "8000")))
 
 
-if __name__ == "__main__":
-    main()
-
 def _unit_counts(project_id: str | None) -> tuple[dict[str, int], dict]:
     """per-sample unit counts, and an honest statement of what they cover.
 
@@ -1053,3 +1050,13 @@ def runs_record(run_id: str) -> dict:
             "ledger": str(led.path) if led.path else None,
             "cohort_decisions": len(led.all()),
             "encoder": v.get("encoder"), "platform": v.get("platform")}
+
+
+# LAST in the file, and that is load-bearing. it sat above `_resources` and the
+# nine compute tools, so `python -m omicstra.mcp.server` called main() before
+# those decorators had run and served 9 of 18 tools - a client discovering half
+# a server, with nothing saying so. the README's documented command happened to
+# use `python -c "... serve()"`, which imports the whole module first and was
+# therefore correct by accident.
+if __name__ == "__main__":
+    main()
