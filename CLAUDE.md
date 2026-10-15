@@ -258,9 +258,10 @@ work lands via a branch and a PR      the template states the scope, because
   read it before adding a graph; a lint asserts every `graphs/*.py` is on it
 - `design/v1_3_scope.md` — **the live plan.** start here
 - `design/v1_2_scope.md` — what shipped, and the nine package edits it cost
-- `EVALUATION.md` — **what each test proves, and the condition under which
-  it proves it.** cohort-free: the test and its condition generalise, the
-  threshold never does. read it before adding a metric or reading one
+- `EVALUATION.md` — **what each test proves, and the condition under which it
+  proves it.** cohort-free. §8 splits thresholds three ways: a statistical
+  standard travels, a null-derived cut is re-derived per cohort, and a bar
+  somebody eyeballed must escalate. read it before adding a metric or reading one
 - `README.md` — what + why
 - `CLAUDE.md` — dev guidance (this file)
 - `EDA.md` — gate checks before pipeline work

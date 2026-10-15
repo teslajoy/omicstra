@@ -3,8 +3,9 @@
 what each test proves, and the condition under which it proves it.
 
 a catalogue, not a protocol. every row is stated for any cohort and any pair of
-modalities, because the thing that generalises is the test and its condition,
-never the threshold. a cohort inherits the form and derives its own numbers.
+modalities. the test and its condition transfer unchanged; a threshold transfers
+or does not depending on WHICH KIND it is, which is the distinction section 8
+makes and which this document is wrong without.
 
 the form is always the same:
 
@@ -240,6 +241,59 @@ INSTEAD READS   a missing arm is a gap in a comparison, not an absence of
                 signal - and the arm most often missing is the control
 ```
 
+
+---
+
+## 8 · thresholds — three kinds, and only one of them is free
+
+a threshold is not one thing, and treating it as one is how a criterion with no
+external basis ends up travelling to a cohort it was never derived on.
+
+### a statistical standard
+
+```
+EXAMPLES        a significance level; a multiple-testing correction applied
+                across a declared family; a confidence-interval coverage; a
+                |z| cut implied by one of those
+TRANSFERS       YES. these are conventions about error rates, not about tissue,
+                and they are the field's, not a cohort's
+STILL DECLARE   which level, which correction, and over WHICH FAMILY. the family
+                is the part that silently changes between cohorts: the same
+                correction over a different number of tests is a different test
+```
+
+### a cut derived from this cohort's own null
+
+```
+EXAMPLES        a permutation null; a bootstrap interval; an empirical p; a
+                floor read from the raw un-aligned modality on these units
+TRANSFERS       the METHOD transfers, the NUMBER does not. a new cohort
+                re-derives it from its own data, which is what makes it
+                principled rather than inherited
+STILL DECLARE   the null's construction - what is permuted, at what level, how
+                many times - because that, not the resulting number, is the
+                thing a reader has to be able to reproduce
+```
+
+### a bar somebody chose by looking
+
+```
+EXAMPLES        a magnitude cut on a raw statistic; a count of markers that must
+                clear it; any "> x" whose x has no citation and no null behind it
+TRANSFERS       NO. it encodes the cohort it was chosen on, and it will be
+                roughly right on similar tissue and silently wrong on different
+                tissue
+STILL DECLARE   that it IS one. mark it calibrated-here, and have the gate
+                ESCALATE on a new cohort rather than reuse it. a calibrated bar
+                that is honest about being calibrated is usable; one that is not
+                is the most portable kind of error in this field
+```
+
+**the test to apply to your own criterion:** can you name the external basis, or
+the null it came from? if neither, it is the third kind, whatever it looks like.
+a magnitude bar in the position where the literature uses a corrected p is the
+common case, and the tell is that the null was computed and then discarded.
+
 ---
 
 ## the rule that binds them
@@ -250,10 +304,9 @@ method. so a result is reported as a cell - a value, whether the method is
 admissible for THAT question, and why - and a value with no admissibility beside
 it is an invitation to compare things that are not comparable.
 
-**a threshold does not generalise; the test does.** a new cohort inherits every
-form above and none of the numbers. where a criterion was calibrated rather than
-derived, it is marked as such and the gate escalates on a new cohort instead of
-reusing it.
+**a threshold transfers according to its kind - see section 8.** a new cohort
+inherits every form above; which numbers come with it depends on whether each
+threshold is a standard, a null-derived cut, or a bar somebody eyeballed.
 
 **a guard that did not run is not a guard that passed.** a hypothesis whose
 required guards all lacked an input reports no failure, and that reads as a clean

@@ -116,8 +116,10 @@ port.
 ```
 
 What each test proves and the condition under which it proves it is
-[`EVALUATION.md`](EVALUATION.md) - stated for any cohort, because the thing that
-generalises is the test and its condition, never the threshold.
+[`EVALUATION.md`](EVALUATION.md) - stated for any cohort. the test and its
+condition transfer unchanged; whether a threshold travels with them depends on
+whether it is a statistical standard, a cut derived from this cohort's own null,
+or a bar somebody chose by looking.
 
 
 ## analysis pipeline
