@@ -940,3 +940,107 @@ def verdicts(project_id: str | None = None, *, hypotheses: list[str] | None = No
         res.update(_guard_tally(res["gates"]))
         out[h] = res
     return out
+
+
+# --- admissibility: a cell is a value AND whether it may be compared ---------
+#
+# the matrix was question x WINNER - one row per question, the ranked value of
+# whichever method came first. so a reader saw ten numbers per question with
+# nothing marking the inadmissible ones, which is an invitation to compare cells
+# that are not comparable.
+#
+# three sources already decide admissibility and none of them reached a cell:
+# the contract's required guards, the pack's task-scoped contraindications, and
+# the task's own floor. this reads all three and decides nothing itself.
+
+_ADMISSIBLE = "admissible"
+_CONTRA = "contraindicated"
+_BELOW = "below_floor"
+
+
+def contraindication(pack: dict, task_id: str, method: str) -> dict | None:
+    """the pack's contraindication for THIS method on THIS question, if any.
+
+    task-scoped by construction: a method may be contraindicated for one
+    question and the right answer to another, and the pack records the exception
+    explicitly. `does_not_apply_to` is honoured so an exception is not silently
+    overridden by the method name alone.
+    """
+    for c in pack.get("contraindications") or []:
+        if c.get("method") != method:
+            continue
+        if task_id in (c.get("does_not_apply_to") or []):
+            return None
+        if task_id in (c.get("applies_to") or []):
+            return c
+    return None
+
+
+def cell(pack: dict, task_id: str, candidate: dict) -> dict:
+    """one matrix cell: the value, whether it may be compared, and why not.
+
+    ordered by what FORECLOSES most. a contraindicated method is not ranked at
+    all - the reason stands where its number would. a method below the floor has
+    not answered the question, whatever its rank, because every hypothesis here
+    is stated comparatively against a baseline.
+
+    whether the HYPOTHESIS was guarded is not a property of a cell and is not
+    decided here - it caveats every cell of the question equally, so it rides on
+    the question row.
+    """
+    task = (pack.get("tasks") or {}).get(task_id) or {}
+    mid, value = candidate.get("id"), candidate.get("value")
+
+    c = contraindication(pack, task_id, mid)
+    if c is not None:
+        return {"method": mid, "value": value, "status": _CONTRA, "rankable": False,
+                "why": c.get("statement") or "contraindicated for this question",
+                "evidence": c.get("evidence")}
+
+    floor = task.get("floor") or {}
+    fv = floor.get("value")
+    if fv is not None and isinstance(value, (int, float)):
+        beats = value > fv if task.get("higher_is_better", True) else value < fv
+        if not beats:
+            return {"method": mid, "value": value, "status": _BELOW, "rankable": False,
+                    "why": (f"does not beat the {floor.get('id')} floor of {fv}. every "
+                            "hypothesis here is comparative, so a method that does not "
+                            "beat its baseline has not answered the question"),
+                    "evidence": floor.get("basis")}
+
+    return {"method": mid, "value": value, "status": _ADMISSIBLE, "rankable": True,
+            "why": "", "evidence": None}
+
+
+def _hypothesis_of(task_id: str) -> str:
+    for f in routing_contract()["task_families"]:
+        if f["id"] == task_id:
+            return hypothesis_root(f["hypothesis"])
+    return "?"
+
+
+def matrix(pack: dict, claims: dict[str, str] | None = None) -> dict:
+    """question x METHOD, every cell carrying its admissibility.
+
+    the pack states which methods were scored per question; this says which of
+    them may be compared. a question whose pack row is `not_available` keeps its
+    own reason rather than producing empty cells.
+    """
+    out: dict[str, dict] = {}
+    for task_id, t in (pack.get("tasks") or {}).items():
+        if "not_available" in t:
+            out[task_id] = {"status": "not_available", "why": t["not_available"],
+                            "cells": []}
+            continue
+        cells = [cell(pack, task_id, c) for c in (t.get("candidates") or [])]
+        h = _hypothesis_of(task_id)
+        out[task_id] = {
+            "status": "scored" if cells else "no_candidates",
+            "hypothesis": h,
+            # the hypothesis's claim caveats every cell of this question equally
+            "claim": (claims or {}).get(h),
+            "floor": t.get("floor"),
+            "n_rankable": sum(c["rankable"] for c in cells),
+            "n_cells": len(cells),
+            "cells": cells}
+    return out

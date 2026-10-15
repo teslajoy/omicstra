@@ -279,28 +279,62 @@ def section_hypotheses(b: dict) -> list[str]:
 
 
 def section_matrix(b: dict) -> list[str]:
-    """question x method: the routable answer per family, from the pack."""
+    """question x METHOD, every cell carrying whether it may be compared.
+
+    this was question x WINNER - one row per question, the top value. so a reader
+    saw a ranked list per question with nothing marking the cells that are not
+    comparable: a method contraindicated for that question, or one that does not
+    beat the baseline the hypothesis is stated against. the admissibility is
+    computed in `protocols.evaluate`; nothing is decided here.
+    """
     lines = [_h(2, "6 · the matrix")]
-    tasks = ((b.get("pack") or {}).get("tasks") or {})
-    if not tasks:
+    pack = b.get("pack") or {}
+    if not (pack.get("tasks") or {}):
         return lines + _absent("matrix", "no pack")
-    rows = []
-    for task_id, t in tasks.items():
-        # a pack written before promote existed carries evidence but no outcome.
-        # the renderer says which is missing rather than deriving it: computing
-        # an outcome here would make this a second source for the decision.
-        outcome = t.get("outcome") or "not_derived"
-        if outcome == "not_available":
-            rows.append([task_id, outcome, "-", "-", (t.get("why") or "")[:60]])
+
+    from omicstra.protocols.evaluate import matrix
+
+    claims = {r["step_id"].split("::")[-1]: r.get("result")
+              for r in (b.get("records") or [])
+              if str(r.get("step_id", "")).startswith("verdict::")}
+    m = matrix(pack, claims)
+
+    mark = {"admissible": "", "contraindicated": "✗ contraindicated",
+            "below_floor": "✗ below floor"}
+    for task_id, row in m.items():
+        if row["status"] != "scored":
+            lines += ["", _h(3, task_id),
+                      *_absent(task_id, row.get("why") or "no candidates recorded")]
             continue
-        answer = t.get("winner") or ", ".join(t.get("tied", [])) or "-"
-        best = (t.get("candidates") or [{}])[0]
-        note = t.get("refusal") or ("no outcome recorded - run promote to derive it"
-                                    if outcome == "not_derived" else "")
-        rows.append([task_id, outcome, answer, best.get("value"), note[:60]])
-    lines += _table(["question", "outcome", "method", "value", "note"], rows)
-    lines += ["", ("*outcome vocabulary is the routing contract's: recommend, tie, "
-                   "refuse, not_available. a refusal is an answer.*")]
+        head = f"{task_id} · {row['hypothesis']}"
+        if row.get("claim") and row["claim"] != "biological":
+            head += f" · {row['claim']}"
+        lines += ["", _h(3, head)]
+        # the pack's OUTCOME is reported, never derived here: a renderer that
+        # computed one would be a second source for the decision, and two
+        # sources for one decision is how two reports disagree.
+        t = (pack.get("tasks") or {})[task_id]
+        outcome = t.get("outcome") or "not_derived"
+        f = row.get("floor") or {}
+        lines += _kv([("outcome", outcome),
+                      ("leads", t.get("winner") or ", ".join(t.get("tied", [])) or None),
+                      ("floor", f"{f.get('id')} = {f.get('value')}" if f else None),
+                      ("comparable", f"{row['n_rankable']} of {row['n_cells']}")])
+        if outcome == "not_derived":
+            lines += ["", "*no outcome recorded - run promote to derive it.*"]
+        lines += ["", *_table(
+            ["method", "value", "admissible", "why not"],
+            [[c["method"], c["value"], mark.get(c["status"], c["status"]) or "yes",
+              (c["why"] or "")[:72]] for c in row["cells"]])]
+        if row.get("claim") in ("diagnostic", "unguarded", "not_run"):
+            lines += ["", (f"*{row['hypothesis']} is `{row['claim']}` on this cohort, "
+                           "so every cell above inherits that caveat equally.*")]
+
+    lines += ["", ("*a cell is a value AND whether it may be compared. a "
+                   "contraindicated method is not ranked - the reason stands where "
+                   "its number would. a method below the floor has not answered the "
+                   "question, whatever its rank, because every hypothesis here is "
+                   "stated against a baseline.*")]
     return lines
 
 
