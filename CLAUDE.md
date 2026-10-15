@@ -120,7 +120,7 @@ metrics.
 | orchestration | LangGraph StateGraph |
 | routing | Claude Sonnet 4.6 |
 | synthesis | Claude Opus 4.6 |
-| tracing | the committed decision ledger. LangSmith opt-in via env, not a dependency |
+| tracing | the committed decision ledger (always local). LangSmith opt-in via env, refused on a cohort the contract says may not leave the host |
 | H&E encoder | Virchow2 1280d |
 | ST encoder | Novae GNN 64d (novae_latent) |
 | pathway embeddings | gpath2vec |

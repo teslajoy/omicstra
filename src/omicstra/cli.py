@@ -956,9 +956,16 @@ def chain(project_dir, project_id, task_id, hypotheses, compute, answers, thread
     from omicstra.graphs.evaluate import build_evaluate_graph
     from omicstra.graphs.route import build_route_graph
     from omicstra.graphs.st import build_st_graph
+    from omicstra.tracing import assert_may_trace
 
     if project_dir is not None:
         settings.project_dir = project_dir.expanduser()
+
+    # before the walk, not after: external tracing captures the run, so a check
+    # at the end would fire once the content had already been sent.
+    from omicstra.graph import _load_cohort
+
+    assert_may_trace(_load_cohort(project_id), project_id)
 
     given: dict[str, str] = {}
     for a in answers:

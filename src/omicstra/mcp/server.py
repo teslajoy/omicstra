@@ -803,9 +803,14 @@ def he_encode(project_id: str | None = None, platform: str | None = None,
     import uuid
 
     from omicstra.graph import _load_cohort
+    from omicstra.tracing import assert_may_trace
 
     app, spec = _runner("he")
     rid = run_id or f"he-{uuid.uuid4().hex[:12]}"
+    cohort = _load_cohort(project_id)
+    # BEFORE the graph runs: external tracing sends node inputs to a third
+    # party, and node inputs are cohort content.
+    assert_may_trace(cohort, project_id)
     cfg = {"configurable": {"thread_id": rid}}
     # the counts the INVENTORY recorded. without them the floor gate sees no
     # samples and stays silent, which reads as a pass - the failure
@@ -813,7 +818,7 @@ def he_encode(project_id: str | None = None, platform: str | None = None,
     # hid it by declaring an answer, so the gate never needed to measure.
     counts, coverage = _unit_counts(project_id)
     out = app.invoke({"project_id": project_id, "encoder": encoder, "arm": "he",
-                      "cohort": _load_cohort(project_id), "platform": platform,
+                      "cohort": cohort, "platform": platform,
                       "unit_counts": counts or None,
                       "samples": samples, "compute": compute}, cfg)
     return {**_handle(app, rid, out), "checkpointer": spec,
@@ -837,9 +842,14 @@ def st_encode(project_id: str | None = None, platform: str | None = None,
     import uuid
 
     from omicstra.graph import _load_cohort
+    from omicstra.tracing import assert_may_trace
 
     app, spec = _runner("st")
     rid = run_id or f"st-{uuid.uuid4().hex[:12]}"
+    cohort = _load_cohort(project_id)
+    # BEFORE the graph runs: external tracing sends node inputs to a third
+    # party, and node inputs are cohort content.
+    assert_may_trace(cohort, project_id)
     cfg = {"configurable": {"thread_id": rid}}
     # the counts the INVENTORY recorded. without them the floor gate sees no
     # samples and stays silent, which reads as a pass - the failure
@@ -847,7 +857,7 @@ def st_encode(project_id: str | None = None, platform: str | None = None,
     # hid it by declaring an answer, so the gate never needed to measure.
     counts, coverage = _unit_counts(project_id)
     out = app.invoke({"project_id": project_id, "encoder": encoder, "arm": "st",
-                      "cohort": _load_cohort(project_id), "platform": platform,
+                      "cohort": cohort, "platform": platform,
                       "unit_counts": counts or None,
                       "samples": samples, "compute": compute}, cfg)
     return {**_handle(app, rid, out), "checkpointer": spec,
@@ -873,9 +883,14 @@ def align_run(project_id: str | None = None, compute: bool = False,
     import uuid
 
     from omicstra.graph import _load_cohort
+    from omicstra.tracing import assert_may_trace
 
     app, spec = _runner("align")
     rid = run_id or f"align-{uuid.uuid4().hex[:12]}"
+    cohort = _load_cohort(project_id)
+    # BEFORE the graph runs: external tracing sends node inputs to a third
+    # party, and node inputs are cohort content.
+    assert_may_trace(cohort, project_id)
     cfg = {"configurable": {"thread_id": rid}}
     # no `hypotheses`. it was accepted here and silently ignored: the align graph
     # resolves a grid and scores nothing, so naming a hypothesis changed no
@@ -883,7 +898,7 @@ def align_run(project_id: str | None = None, compute: bool = False,
     # verdict needs - scope, the bytes, what a failed guard does to the claim -
     # are evaluate_run's.
     out = app.invoke({"project_id": project_id, "arm": "align",
-                      "cohort": _load_cohort(project_id),
+                      "cohort": cohort,
                       "compute": compute}, cfg)
     return {**_handle(app, rid, out), "checkpointer": spec}
 
@@ -906,12 +921,17 @@ def evaluate_run(project_id: str | None = None,
     import uuid
 
     from omicstra.graph import _load_cohort
+    from omicstra.tracing import assert_may_trace
 
     app, spec = _runner("evaluate")
     rid = run_id or f"eval-{uuid.uuid4().hex[:12]}"
+    cohort = _load_cohort(project_id)
+    # BEFORE the graph runs: external tracing sends node inputs to a third
+    # party, and node inputs are cohort content.
+    assert_may_trace(cohort, project_id)
     cfg = {"configurable": {"thread_id": rid}}
     out = app.invoke({"project_id": project_id, "arm": "evaluate",
-                      "cohort": _load_cohort(project_id),
+                      "cohort": cohort,
                       # absent means every hypothesis the contract declares a
                       # family for. a named subset is recorded as the request,
                       # because that is what the server observed.

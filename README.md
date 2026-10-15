@@ -306,6 +306,47 @@ different things:
 | in-process | the output files and the checkpoint. the thread does not; `runs_resume` re-dispatches what is missing |
 | Temporal | the workflow history. a worker that never met the submitting process finishes the run |
 
+**two traces, and only one of them is free**
+
+```
+the LEDGER      who decided what, on what authority, over which bytes.
+                committed, citable, always on, and it never leaves the machine.
+                `runs_record` is one run's; `runs_trace` is that run as a
+                timeline; the report reads the cohort's
+LANGSMITH       what a node received, how long it took, where it stalled.
+                richer, and it sends node inputs and outputs to a third party
+```
+
+LangSmith is **opt-in through the environment and is not a dependency** - it
+ships transitively with LangGraph, which instruments itself from two variables,
+so turning it on takes no code:
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=...
+```
+
+That is exactly why there is a guard. Node inputs are cohort content, and
+`data_contract.json#data_classification` declares per cohort whether content
+`may_leave_host`. A cohort declared `restricted` - the **default**, so forgetting
+to declare fails closed - refuses to run with external tracing on, rather than
+quietly sending it. The classification is a person's statement at `omicstra init`
+and is never inferred from paths or content.
+
+There is a third state, and the SDK provides it: mask the payloads before
+anything is sent, and a restricted cohort can be traced for **structure** -
+spans, timings, errors, which node stalled - without its content leaving.
+
+```bash
+export LANGSMITH_HIDE_INPUTS=true LANGSMITH_HIDE_OUTPUTS=true
+```
+
+Both are required; hiding one and sending the other sends the content. What
+still leaves is run names, timings, token counts and error strings - step ids
+like `preflight_encode` are the package's vocabulary, not a cohort's - and a
+project id would travel in metadata, which `LANGSMITH_HIDE_METADATA` masks in
+turn.
+
 On Temporal the submit returns at submission, so something has to be polling the
 queue. That is the other half of the claim and it ships as a command:
 
