@@ -5,23 +5,31 @@ not designed here. `design/analysis_pipeline_steps.md` §5 documents the variabl
 -gene chain; `scripts/niche_aucell.py` is the other one, and §5 does not mention
 it - so a port of "§5" alone would have silently dropped a chain still in use.
 
-    NICHE_AGGREGATE_STEPS   MT filter · k from the declaration · assemble the
-                            niche. the only part the two genuinely share
+    NICHE_MEMBERSHIP_STEPS  MT filter · k from the declaration · which spots
+                            form a niche. the only part the two genuinely
+                            share, and it does NOT aggregate - aggregation is
+                            where they fork
 
     VARIABLE_GENE_STEPS     per-spot log1p(CPM 1e6) -> MAD/mean per gene ACROSS
                             the spots -> top percentile of the non-zero -> a
                             gene SET per niche. that set is gpath2vec's input;
                             enrichment, graph and embedding are the encoder's
 
-    AUCELL_STEPS            SUM the spots -> normalize_total(1e4) -> log1p ->
-                            AUCell over a declared universe
+    AUCELL_STEPS            SUM the spots into one profile -> normalize_total
+                            (1e4) -> log1p -> AUCell over a declared universe
 
-the two normalisations are not interchangeable and the difference is the point.
-the variable-gene chain normalises PER SPOT before aggregating, because MAD/mean
-needs the spots as several observations of one niche. the AUCell chain sums the
-spots first and normalises the result. same counts, different unit of
-normalisation, different meaning - and `enrichment_method` on the encoder was
-never the real fork, which sits here, upstream.
+THE FORK IS AGGREGATION, one step earlier than normalisation and two earlier
+than any `enrichment_method` flag. one chain collapses the spots of a niche into
+a single profile before doing anything else; the other never collapses them at
+all, because MAD/mean needs them as several observations of one niche.
+
+and the AUCell chain takes NO variable-gene filter. that is not a preference -
+AUCell scores a pathway as an AUC over a ranking of ALL genes, so the gene
+universe IS the denominator. restricting the input to a per-niche foreground
+would change what every AUC is computed against, and since each niche picks its
+own foreground the scores would stop being comparable between niches. a
+mad-restricted variant exists as its own exploratory artifact and is kept
+separate for exactly this reason.
 
 every threshold is DECLARED. `top_percentile`, the minimum foreground and
 background sizes, the UMI floors - absent is a refusal with a reason, never a
@@ -102,8 +110,13 @@ def mito_filter(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                 ), {"gene_keep": keep}
 
 
-def niche_assemble(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
-    """the unit: a centre spot and its k neighbours.
+def niche_membership(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """WHICH spots form a niche. it does not aggregate them.
+
+    the two chains diverge at aggregation, so this stops at membership: one
+    chain sums these spots into a single profile, the other keeps them apart as
+    several observations of one niche. collapsing here would hand both chains
+    the same row and silently make one of them impossible.
 
     k comes from the cohort DECLARATION. "7 spots" is one platform's number -
     k=6 plus a centre - and MODALITY_TEMPLATE.md is explicit that a new cohort
@@ -111,16 +124,16 @@ def niche_assemble(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     """
     k = _declared(ctx, "k_neighbors")
     if k is None:
-        return _missing("niche_assemble", "k_neighbors",
+        return _missing("niche_membership", "k_neighbors",
                         "the niche width is a property of the platform's "
                         "lattice, measured per cohort"), {}
     members = ctx.get("niche_members")
     if members is None:
-        raise PathwayInputMissing("niche_assemble needs `niche_members`")
+        raise PathwayInputMissing("niche_membership needs `niche_members`")
 
     width = int(k) + 1
     full = sum(1 for m in members.values() if len(m) == width)
-    return _rec("niche_assemble", "pass",
+    return _rec("niche_membership", "pass",
                 f"{full} of {len(members)} niches have the full {width} spots",
                 "an incomplete niche is kept and counted, not dropped here - "
                 "the qc step decides on declared thresholds",
@@ -132,10 +145,10 @@ def niche_assemble(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                 ), {"spots_per_niche": width}
 
 
-NICHE_AGGREGATE_STEPS: list[Step] = [
+NICHE_MEMBERSHIP_STEPS: list[Step] = [
     Step(id="mito_filter", fn=mito_filter, produces=frozenset({"gene_keep"}),
          params_space=("pattern",)),
-    Step(id="niche_assemble", fn=niche_assemble,
+    Step(id="niche_membership", fn=niche_membership,
          produces=frozenset({"niche"}), requires=frozenset({"gene_keep"}),
          params_space=("k_neighbors",)),
 ]

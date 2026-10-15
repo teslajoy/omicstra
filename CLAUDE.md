@@ -248,6 +248,43 @@ a test guards on what it NEEDS        not on a committed record. ingest.json is
                                       fails in every clone
 work lands via a branch and a PR      the template states the scope, because
                                       tests catch correctness and not altitude
+read the ANALYSIS LOGIC before        a doc describes what a chain was; the
+  porting it                          script is what it IS. every port that
+                                      started from prose was wrong - see below
+```
+
+### reading the analysis before building it
+
+a design doc, a notebook's markdown and a docstring are all DOWNSTREAM of the
+code that produced the artifacts, and every one of them has been stale here.
+before porting any analysis step, in this order:
+
+```
+1  the artifact's own provenance      run_provenance.json names its INPUTS, and
+                                      the input is often not what a function
+                                      signature suggests
+2  the script that wrote it           committed code beats committed prose. a
+                                      notebook's markdown describes what was
+                                      TRIED; the script is what shipped
+3  the parameters, measured           read the numbers out of the artifact or
+                                      the provenance, never from a sentence
+4  then the design doc                to find what it does NOT cover - which is
+                                      how a whole second chain stayed invisible
+```
+
+what this has caught, each time only after the wrong thing was nearly built:
+
+```
+a second chain, undocumented     niche_aucell.py normalises differently and
+                                 analysis_pipeline_steps.md does not mention it
+the seam one step earlier        the published build's input is per-niche gene
+                                 SETS, not the matrix the CLI signature takes
+a method error in the prose      "AUCell on the variable-gene-filtered profile"
+                                 - AUCell is an AUC over a ranking of ALL genes,
+                                 so a per-unit filter changes the denominator
+                                 and the scores stop being comparable
+three variants, one documented   v1 connectivity/top-200, v3 MAD-mean/top-25%,
+                                 and AUCell - all committed, all live
 ```
 
 ---

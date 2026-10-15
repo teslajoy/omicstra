@@ -229,6 +229,29 @@ INSTEAD READS   a magnitude bar is a cohort-calibrated choice and does not
                 transfer to a new cohort
 ```
 
+### a rank-based score has a denominator, and filtering changes it
+
+```
+TEST            a rank-based enrichment score (AUC over the ranking of all
+                measured features in a unit) against a declared gene set
+PROVES          relative pathway activity, comparably ACROSS units
+ONLY IF         every unit is ranked over the SAME feature universe
+INSTEAD READS   restrict the input per unit - to its variable features, its
+                detected features, its top-N - and each unit is scored against
+                a different denominator. the scores stop being comparable
+                between units, which is the one thing they were for
+```
+
+the tempting version of this error is filtering to "the interesting genes"
+first. it feels like noise reduction and it silently makes every unit's score
+incomparable to every other unit's, because each unit chose its own filter.
+
+a selection-based test is the opposite and wants the filter: a hypergeometric
+or Fisher enrichment asks whether a CHOSEN set is over-represented against a
+stated background, so the selection is the question rather than a corruption of
+it. the two cannot share a preprocessing path, and a pipeline that gives them
+one has broken the rank-based half.
+
 ---
 
 ## 7 · coverage — is the comparison complete
