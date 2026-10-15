@@ -206,3 +206,34 @@ def test_a_graph_run_emits_spans_per_node(bound_synthetic_cohort):
 
     assert "LangGraph" in seen, "the graph itself is not traced"
     assert "gates" in seen, "a NODE is not traced, so a trace would show one span"
+
+
+def test_the_guard_does_not_clear_a_cache_that_is_not_ours(monkeypatch):
+    """the first fix for the stale-cache fail-open called `cache_clear()`, which
+    works and evicts the SDK's whole environment cache as a side effect of a
+    read-only query. `__wrapped__` is the same logic without the cache, so the
+    SDK's own cache is left exactly as it was found.
+    """
+    from langsmith import utils
+
+    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    utils.get_env_var("TRACING")                  # prime it
+    monkeypatch.setenv("LANGSMITH_TRACING", "false")
+    assert utils.get_env_var("TRACING") == "true", "precondition: the cache is warm"
+
+    assert enabled() is False, "the guard reads the truth, not the cache"
+    assert utils.get_env_var("TRACING") == "true", "and left the cache untouched"
+
+
+def test_tracing_enabled_without_an_env_var_is_still_caught(monkeypatch):
+    """tracing can be switched on through a context var or a global fallback,
+    not only the environment. reimplementing the env read would miss those,
+    which is the same fail-open in a different place.
+    """
+    import langsmith.utils as u
+
+    monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
+    monkeypatch.delenv("LANGCHAIN_TRACING_V2", raising=False)
+    assert enabled() is False
+    monkeypatch.setattr(u, "tracing_is_enabled", lambda *a, **k: True)
+    assert enabled() is True, "the SDK's own answer must be honoured"

@@ -57,14 +57,21 @@ def enabled() -> bool:
     except ModuleNotFoundError:          # no SDK, nothing can be sent
         return False
     try:
-        # the SDK CACHES its environment lookup, so a process that imported it
-        # before the variable was set reports tracing off while tracing is on.
-        # that is the fail-open this guard exists to prevent, and it is the
-        # reason this asks the SDK and then clears rather than trusting either
-        # a cache or a reimplementation of the variable names.
-        if hasattr(utils.get_env_var, "cache_clear"):
-            utils.get_env_var.cache_clear()
-        return bool(utils.tracing_is_enabled())
+        # ask the SDK first. `tracing_is_enabled` checks context vars, a current
+        # run tree and a global fallback as well as the environment, and tracing
+        # can be switched on through any of them - reimplementing it would miss
+        # those paths, which is the same fail-open in a different place.
+        if bool(utils.tracing_is_enabled()):
+            return True
+        # then the environment UNCACHED. the SDK's env lookup is lru_cached, so a
+        # process that imported it before the variable was set is served a stale
+        # `off` while tracing is on. `__wrapped__` is the SDK's own logic without
+        # the cache, so this neither reimplements the variable names nor clears a
+        # cache that is not ours to clear.
+        raw = getattr(utils.get_env_var, "__wrapped__", None)
+        if raw is None:
+            return False
+        return raw("TRACING_V2", default=raw("TRACING", default="")) == "true"
     except Exception:                    # noqa: BLE001 - unreadable means off
         return False
 
@@ -82,10 +89,11 @@ def payloads_hidden() -> bool:
     except ModuleNotFoundError:
         return False
     try:
-        if hasattr(utils.get_env_var, "cache_clear"):
-            utils.get_env_var.cache_clear()
-        return all(utils.get_env_var(k) == "true"
-                   for k in ("HIDE_INPUTS", "HIDE_OUTPUTS"))
+        # UNCACHED, and deliberately not the cached reading: a stale `true` here
+        # would permit tracing a cohort whose payloads are in fact being sent,
+        # so this one must read the truth rather than the fastest answer.
+        raw = getattr(utils.get_env_var, "__wrapped__", utils.get_env_var)
+        return all(raw(k) == "true" for k in ("HIDE_INPUTS", "HIDE_OUTPUTS"))
     except Exception:                    # noqa: BLE001
         return False
 
