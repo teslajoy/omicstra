@@ -242,13 +242,39 @@ git-ignored, nothing failed, and the next report would simply have been wrong
 about who decided what. `tests/conftest.py` now points `runs_dir` at tmp for
 every test, by fixture and by environment variable so a subprocess gets it too.
 
-**one thing this leaves open.** `settings.runs_dir` resolving under the package
-repo root is right for this repo, where tnbc-92's `project.json` declares its
-data and runs at the root explicitly. for an INSTALLED server with no repo it
-puts a cohort's ledger next to site-packages, which is not where a cohort's
-record belongs. the fix is for `ledger()` to prefer the cohort's own declared
-runs root, and it is a path-resolution change with blast radius, so it is named
-here rather than made in passing.
+### TODO · a cohort has no declared WRITE root
+
+`settings.runs_dir` resolves under the PACKAGE repo root. that is right for this
+repo, where the seed cohort's `project.json` declares its data and runs at the
+root explicitly, and wrong for an installed server with no repo: it puts a
+cohort's ledger next to site-packages. four call sites read it - `ledger()`,
+`report.py:_ledger_path`, `figures.py`, and the `decisions` CLI command.
+
+**the obvious fix is itself a bug, which is why this is written down.** the first
+version of this entry said "have `ledger()` prefer the cohort's own declared runs
+root". but `project.json#runs_dir` points at the PUBLISHED GRID - the seed cohort
+declares `../../runs/tnbc-92_v3`, which `read_only_inputs` lists under
+`policy: refuse_writes`. aiming the server's one writable artifact at the oracle
+every port is verified against would be refused by the dispatcher, correctly.
+
+so `runs_dir` means **where the finished grid is read from**, and what is missing
+is a separate **where this server may write**. the two have been conflated
+because on this repo they coincide under the root.
+
+```
+1  a declared write root, optional: project.json#work_dir
+2  undeclared falls back to today's behaviour, so nothing moves and no
+   existing ledger orphans
+3  the four call sites above
+4  REFUSE a work root that falls inside a declared read-only path.
+   `_refuse_protected` and `assert_writable` already exist; this is the part
+   that makes the fix worth more than moving a path
+5  tests: resolution with and without the declaration, and the refusal
+```
+
+half a day, low risk. **land it before anything that writes new per-cohort
+artifacts**, so that work targets the right root rather than needing a migration
+afterwards.
 
 ---
 
