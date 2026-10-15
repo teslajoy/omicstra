@@ -72,6 +72,16 @@ class Settings(BaseSettings):
     # project_dir is unset, which is the fixture path, not the shipped path.
     projects_dir: Path = Path("projects")
 
+    # a STUDY groups projects, the way GDC/Gen3 nests project under program.
+    # `program` is NOT reused: routing_contract.json already spends that word on
+    # a biological abstraction level - pathway questions are `level: program` -
+    # and the router's vocabulary should not have to share it with a directory.
+    #
+    # a project id may be flat (`tnbc-92`) or study-qualified
+    # (`bforepc/tnbc-92`). flat keeps resolving, so nothing on disk has to move
+    # for this to exist.
+    studies_dir: Path = Path("studies")
+
     # the closed set lives in configs/data_contract.json#compute_backend, not
     # here. it was a comment on this line and a cohort drifted outside it.
     compute_backend: str = "in_process"
@@ -178,7 +188,51 @@ class Settings(BaseSettings):
                 "no cohort selected: set OMICSTRA_PROJECT_DIR (or --project-dir), "
                 "pass a project_id, or provide projects/registry.json with a default"
             )
-        return self.resolve(self.projects_dir) / pid
+        return self._resolve_project(pid)
+
+    def _resolve_project(self, pid: str) -> Path:
+        """a project id, flat or study-qualified, as a directory.
+
+        `a/b` is study `a`, project `b`. a flat id resolves as it always has,
+        and then - if exactly one study holds a project of that name - as that.
+        the second lookup is what lets a flat id keep working after the files
+        move under a study, and it REFUSES on ambiguity rather than picking:
+        two studies with a project of the same name is precisely the "served
+        another cohort's data" failure the boundary exists to stop.
+        """
+        if "/" in pid:
+            study, _, project = pid.partition("/")
+            return self.resolve(self.studies_dir) / study / "projects" / project
+
+        flat = self.resolve(self.projects_dir) / pid
+        if flat.is_dir():
+            return flat
+
+        studies = self.resolve(self.studies_dir)
+        found = sorted(p for p in studies.glob(f"*/projects/{pid}")
+                       if p.is_dir()) if studies.is_dir() else []
+        if len(found) > 1:
+            raise ValueError(
+                f"project_id={pid!r} exists under {len(found)} studies "
+                f"({', '.join(p.parents[1].name for p in found)}). qualify it as "
+                "<study>/<project> - the boundary refuses rather than picking one.")
+        return found[0] if found else flat
+
+    def study_root(self, project_id: str | None = None) -> Path | None:
+        """the study directory a project belongs to, or None if it is flat.
+
+        a project belongs to exactly one study, which is Gen3's rule and what a
+        path can express. a project in two studies would be a DECLARATION, not a
+        directory, and nothing here would represent it.
+        """
+        root = self.project_root(project_id)
+        studies = self.resolve(self.studies_dir)
+        # UNDER the studies root, not merely named `projects` - a flat cohort
+        # sits in `projects/`, whose parent is the repo, and reading that as a
+        # study would hand every flat cohort the whole tree as its parent.
+        if not (root.parent.name == "projects" and studies in root.parents):
+            return None
+        return root.parent.parent
 
 
 settings = Settings()
