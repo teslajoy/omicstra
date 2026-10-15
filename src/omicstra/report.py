@@ -77,7 +77,7 @@ def _ledger_path(root: Path, bundle: dict) -> Path | None:
     pid = ((bundle.get("project") or {}).get("project_id")
            or (bundle.get("cohort") or {}).get("project_id") or root.name)
     try:
-        return settings.resolve(settings.runs_dir) / pid / "records" / "decisions.jsonl"
+        return settings.work_root(pid) / "records" / "decisions.jsonl"
     except (ValueError, OSError):
         return None
 

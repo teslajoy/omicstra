@@ -276,6 +276,23 @@ half a day, low risk. **land it before anything that writes new per-cohort
 artifacts**, so that work targets the right root rather than needing a migration
 afterwards.
 
+**DONE.** `settings.work_root` resolves `project.json#work_dir`, falling back to
+the historical path so nothing on disk moved, and `assert_work_root_writable`
+refuses a work root inside a declared oracle. all four writers go through it, and
+a test asserts no module resolves `runs_dir` directly any more.
+
+### TODO found while doing it · a malformed declaration protects nothing
+
+`dispatch.read_only_inputs` catches every exception from `ProjectConfig.load`
+and returns `[]`, with the comment "undeclared is fine". undeclared IS fine - a
+cohort with no published results has no oracle - but the same branch swallows a
+cohort whose `project.json` is present and UNPARSEABLE, and that cohort then has
+no write protection at all while appearing to have declared some.
+
+the two cases need telling apart: absent file -> no oracle; present but
+malformed -> refuse, because a typo in a declaration must not silently remove a
+guard. pre-existing, and not folded into the work-root change.
+
 ---
 
 ### D, and where the wiring was wrong

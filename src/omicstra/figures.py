@@ -55,7 +55,7 @@ LEAD, MUTED, BAD, RULE = "#4A5D7E", "#AAAAAA", "#B5544F", "#2E7D5B"
 
 
 def evidence_dir(project_id: str | None = None) -> Path:
-    p = settings.resolve(settings.runs_dir) / (project_id or "unrouted") / "figures"
+    p = settings.work_root(project_id) / "figures"
     p.mkdir(parents=True, exist_ok=True)
     return p
 

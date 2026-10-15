@@ -55,6 +55,11 @@ class ProjectConfig(BaseModel):
 
     niches_dir: str = ""
     runs_dir: str = ""
+    # where this server may WRITE for this cohort: ledger, figures, checkpoints.
+    # a DIFFERENT question from `runs_dir`, which points at the finished grid and
+    # is usually declared read-only. absent falls back to the historical path, so
+    # declaring nothing moves nothing. see `settings.work_root`.
+    work_dir: str = ""
 
     # artifacts that PRODUCED the published results. every port in this repo is
     # verified by diffing against them, so writing into one does not merely lose

@@ -39,11 +39,12 @@ def load_routing_evidence(project_id: str | None = None) -> dict:
 
 
 def ledger(project_id: str | None = None) -> RecordStore:
-    """the file-backed decision ledger for a cohort."""
-    try:
-        pid = project_id or settings.project_root(project_id).name
-    except ValueError:
-        pid = "unrouted"
-    return RecordStore(settings.resolve(settings.runs_dir) / pid / "records" / "decisions.jsonl")
+    """the file-backed decision ledger for a cohort.
+
+    under the cohort's WORK root, which is where this server may write - a
+    different question from where the finished grid is read. see
+    `settings.work_root`.
+    """
+    return RecordStore(settings.work_root(project_id) / "records" / "decisions.jsonl")
 
 

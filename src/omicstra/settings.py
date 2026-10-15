@@ -108,6 +108,48 @@ class Settings(BaseSettings):
                 pass
         return root.name
 
+    def work_root(self, project_id: str | None = None) -> Path:
+        """where this server may WRITE for a cohort: ledger, figures, checkpoints.
+
+        a DIFFERENT question from where the finished grid is read, and the two
+        were conflated because on a source checkout they sit side by side.
+        `project.json#runs_dir` points at the published grid, which a cohort
+        declares read-only - aiming the one thing the server writes at the one
+        thing it must never write.
+
+        resolution, in order:
+
+            project.json#work_dir       relative to the cohort, or absolute
+            runs_dir / {project_id}     the historical path, so nothing on disk
+                                        moves for a cohort that declares nothing
+
+        the fallback resolves under `repo_root`, which is right for a source
+        checkout and wrong for an installed server with no checkout - it would
+        put a cohort's ledger beside site-packages. declaring `work_dir` is how
+        a deployment fixes that, and the default keeps every existing ledger
+        exactly where it is.
+        """
+        import json as _json
+
+        root = None
+        try:
+            root = self.project_root(project_id)
+        except (ValueError, OSError):
+            pass
+
+        if root is not None:
+            cfg = root / "project.json"
+            try:
+                declared = _json.loads(cfg.read_text()).get("work_dir") or ""
+            except (OSError, ValueError):
+                declared = ""
+            if declared:
+                p = Path(declared).expanduser()
+                return p if p.is_absolute() else (root / p).resolve()
+
+        pid = project_id or (root.name if root is not None else None) or "unrouted"
+        return self.resolve(self.runs_dir) / pid
+
     def project_root(self, project_id: str | None = None) -> Path:
         """the one cohort directory this call may read.
 

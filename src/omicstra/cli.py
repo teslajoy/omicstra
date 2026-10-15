@@ -638,7 +638,7 @@ def report(project_dir: Path | None, project_id: str | None, out: Path | None,
         bundle["pack"] = p
         bundle["provenance"] = provenance(p)
 
-    ledger = settings.resolve(settings.runs_dir) / root.name / "records"
+    ledger = settings.work_root(project_id) / "records"
     jsonl = ledger / "decisions.jsonl"
     if jsonl.is_file():
         bundle["records"] = [json.loads(ln) for ln in jsonl.read_text().splitlines() if ln.strip()]
