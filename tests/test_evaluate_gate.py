@@ -287,7 +287,9 @@ def test_an_undeclared_family_reads_differently_from_one_declared_unavailable():
     assert sc["H1"]["evaluable"] is True
 
 
-# --- a cell is a value AND whether it may be compared ----------------------
+# --- a matrix entry is a value AND whether it may be compared --------------
+# "cell" throughout means a cell of the TABLE - one question crossed with one
+# method. nothing in this module is a biological cell.
 PACK = {
     "contraindications": [{
         "method": "M_bad", "applies_to": ["q_one"], "does_not_apply_to": ["q_two"],
@@ -316,38 +318,38 @@ def test_a_contraindication_is_task_scoped_and_its_exception_is_honoured():
     assert contraindication(PACK, "q_one", "M_good") is None
 
 
-def test_a_contraindicated_cell_is_not_ranked_and_the_reason_stands_in_its_place():
-    from omicstra.protocols.evaluate import cell
+def test_a_contraindicated_entry_is_not_ranked_and_the_reason_takes_its_place():
+    from omicstra.protocols.evaluate import matrix_cell
 
-    c = cell(PACK, "q_one", {"id": "M_bad", "value": 0.8})
+    c = matrix_cell(PACK, "q_one", {"id": "M_bad", "value": 0.8})
     assert c["status"] == "contraindicated" and c["rankable"] is False
     assert "amplifies" in c["why"] and c["evidence"]
     # and it IS rankable on the question the pack exempts
-    assert cell(PACK, "q_two", {"id": "M_bad", "value": 0.8})["rankable"] is True
+    assert matrix_cell(PACK, "q_two", {"id": "M_bad", "value": 0.8})["rankable"] is True
 
 
 def test_a_method_below_the_floor_has_not_answered_the_question():
     """every hypothesis here is stated comparatively against a baseline, so a
     value that does not beat it is not a weak answer - it is not an answer."""
-    from omicstra.protocols.evaluate import cell
+    from omicstra.protocols.evaluate import matrix_cell
 
-    c = cell(PACK, "q_one", {"id": "M_weak", "value": 0.4})
+    c = matrix_cell(PACK, "q_one", {"id": "M_weak", "value": 0.4})
     assert c["status"] == "below_floor" and c["rankable"] is False
     assert "comparative" in c["why"]
-    assert cell(PACK, "q_one", {"id": "M_good", "value": 0.9})["status"] == "admissible"
+    assert matrix_cell(PACK, "q_one", {"id": "M_good", "value": 0.9})["status"] == "admissible"
 
 
 def test_lower_is_better_flips_the_floor_comparison():
     pack = {"tasks": {"q": {"higher_is_better": False,
                             "floor": {"id": "raw", "value": 0.5},
                             "candidates": []}}}
-    from omicstra.protocols.evaluate import cell
+    from omicstra.protocols.evaluate import matrix_cell
 
-    assert cell(pack, "q", {"id": "m", "value": 0.4})["status"] == "admissible"
-    assert cell(pack, "q", {"id": "m", "value": 0.6})["status"] == "below_floor"
+    assert matrix_cell(pack, "q", {"id": "m", "value": 0.4})["status"] == "admissible"
+    assert matrix_cell(pack, "q", {"id": "m", "value": 0.6})["status"] == "below_floor"
 
 
-def test_the_hypothesis_claim_rides_on_the_question_not_the_cell():
+def test_the_hypothesis_claim_rides_on_the_question_not_the_entry():
     """whether the hypothesis was guarded caveats every cell of a question
     equally, so repeating it per cell says the same thing n times."""
     from omicstra.protocols.evaluate import matrix

@@ -108,7 +108,8 @@ on the path. `pip install omicstra` still resolves to 1.2.0.
         └──────────────────────────────────────────────────────────┘
                        ▼
         THE MATRIX · question × method
-        a cell = value + admissibility + why
+        each entry (one question × one method, not a biological cell)
+        = value + admissibility + why
           ✓ admissible   ✗ contraindicated   ◌ unguarded   — not applicable
                        ▼
         PROMOTE AGENT   ▣ computes every number

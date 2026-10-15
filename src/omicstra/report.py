@@ -282,10 +282,11 @@ def section_matrix(b: dict) -> list[str]:
     """question x METHOD, every cell carrying whether it may be compared.
 
     this was question x WINNER - one row per question, the top value. so a reader
-    saw a ranked list per question with nothing marking the cells that are not
+    saw a ranked list per question with nothing marking the entries that are not
     comparable: a method contraindicated for that question, or one that does not
-    beat the baseline the hypothesis is stated against. the admissibility is
-    computed in `protocols.evaluate`; nothing is decided here.
+    beat the baseline the hypothesis is stated against. "cell" here is a cell of
+    the TABLE, never a biological one. the admissibility is computed in
+    `protocols.evaluate`; nothing is decided here.
     """
     lines = [_h(2, "6 · the matrix")]
     pack = b.get("pack") or {}
@@ -330,8 +331,9 @@ def section_matrix(b: dict) -> list[str]:
             lines += ["", (f"*{row['hypothesis']} is `{row['claim']}` on this cohort, "
                            "so every cell above inherits that caveat equally.*")]
 
-    lines += ["", ("*a cell is a value AND whether it may be compared. a "
-                   "contraindicated method is not ranked - the reason stands where "
+    lines += ["", ("*each entry above - one question crossed with one method, not "
+                   "a biological cell - is a value AND whether it may be compared. "
+                   "a contraindicated method is not ranked; the reason stands where "
                    "its number would. a method below the floor has not answered the "
                    "question, whatever its rank, because every hypothesis here is "
                    "stated against a baseline.*")]

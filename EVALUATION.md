@@ -300,9 +300,11 @@ common case, and the tell is that the null was computed and then discarded.
 
 **admissibility is task-scoped.** a method contraindicated for one question may
 be the right answer to another, and a contraindication is never a verdict on a
-method. so a result is reported as a cell - a value, whether the method is
-admissible for THAT question, and why - and a value with no admissibility beside
-it is an invitation to compare things that are not comparable.
+method. so a result is reported as an entry in a question x method table - a value,
+whether the method is admissible for THAT question, and why. ("cell" for such an
+entry is the usual word and the wrong one in this field; nothing here is a
+biological cell.) a value with no admissibility beside it is an invitation to
+compare things that are not comparable.
 
 **a threshold transfers according to its kind - see section 8.** a new cohort
 inherits every form above; which numbers come with it depends on whether each

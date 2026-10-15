@@ -942,12 +942,17 @@ def verdicts(project_id: str | None = None, *, hypotheses: list[str] | None = No
     return out
 
 
-# --- admissibility: a cell is a value AND whether it may be compared ---------
+# --- admissibility: a matrix entry is a value AND whether it may be compared --
+#
+# "cell" below always means a CELL OF THE MATRIX - one question crossed with one
+# method - and never a biological cell. the word is unavoidable for a table and
+# dangerous in this domain, so it is said once here and the function is named
+# `matrix_cell`.
 #
 # the matrix was question x WINNER - one row per question, the ranked value of
 # whichever method came first. so a reader saw ten numbers per question with
-# nothing marking the inadmissible ones, which is an invitation to compare cells
-# that are not comparable.
+# nothing marking the inadmissible ones, which is an invitation to compare
+# entries that are not comparable.
 #
 # three sources already decide admissibility and none of them reached a cell:
 # the contract's required guards, the pack's task-scoped contraindications, and
@@ -976,8 +981,11 @@ def contraindication(pack: dict, task_id: str, method: str) -> dict | None:
     return None
 
 
-def cell(pack: dict, task_id: str, candidate: dict) -> dict:
-    """one matrix cell: the value, whether it may be compared, and why not.
+def matrix_cell(pack: dict, task_id: str, candidate: dict) -> dict:
+    """one entry of the matrix - a question crossed with a method.
+
+    the value, whether it may be compared, and why not. a cell of the TABLE; no
+    biological cell is involved at any point in this module.
 
     ordered by what FORECLOSES most. a contraindicated method is not ranked at
     all - the reason stands where its number would. a method below the floor has
@@ -1032,7 +1040,7 @@ def matrix(pack: dict, claims: dict[str, str] | None = None) -> dict:
             out[task_id] = {"status": "not_available", "why": t["not_available"],
                             "cells": []}
             continue
-        cells = [cell(pack, task_id, c) for c in (t.get("candidates") or [])]
+        cells = [matrix_cell(pack, task_id, c) for c in (t.get("candidates") or [])]
         h = _hypothesis_of(task_id)
         out[task_id] = {
             "status": "scored" if cells else "no_candidates",
