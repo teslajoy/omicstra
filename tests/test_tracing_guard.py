@@ -178,3 +178,31 @@ def test_the_refusal_offers_the_masked_route_first():
         assert "always on and always local" in msg
     finally:
         os.environ.pop("LANGSMITH_TRACING", None)
+
+
+def test_a_graph_run_emits_spans_per_node(bound_synthetic_cohort):
+    """the claim "two environment variables and no code" rests on langgraph
+    instrumenting itself, and langsmith's tracer being an ordinary callback
+    handler. this asserts the first half without needing a key for the second:
+    if nodes emit spans to a callback, they emit them to that tracer too.
+    """
+    from langchain_core.callbacks.base import BaseCallbackHandler
+    from langgraph.checkpoint.memory import InMemorySaver
+
+    from omicstra.graphs.evaluate import build_evaluate_graph
+
+    seen: list[str] = []
+
+    class Spy(BaseCallbackHandler):
+        def on_chain_start(self, serialized, inputs, **kw):
+            n = kw.get("name") or (serialized or {}).get("name")
+            if n:
+                seen.append(n)
+
+    app = build_evaluate_graph(checkpointer=InMemorySaver())
+    app.invoke({"project_id": None, "arm": "evaluate", "cohort": {},
+                "hypotheses": ["H1"]},
+               {"configurable": {"thread_id": "spans"}, "callbacks": [Spy()]})
+
+    assert "LangGraph" in seen, "the graph itself is not traced"
+    assert "gates" in seen, "a NODE is not traced, so a trace would show one span"
