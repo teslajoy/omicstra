@@ -48,12 +48,7 @@ on the path. `pip install omicstra` still resolves to 1.2.0.
 
 ---
 
-## design
-
-Agents, and where decisions are made. The model is a client-side component with
-three narrow jobs; every consequence the server produces resolves from a lookup
-table, which is what makes a model swap a configuration change rather than a
-port.
+## MCP design
 
 ```
   CLIENT · the only place a model runs
@@ -118,8 +113,7 @@ port.
 What each test proves and the condition under which it proves it is
 [`EVALUATION.md`](EVALUATION.md) - stated for any cohort. the test and its
 condition transfer unchanged; whether a threshold travels with them depends on
-whether it is a statistical standard, a cut derived from this cohort's own null,
-or a bar somebody chose by looking.
+which kind of threshold it is.
 
 
 ## analysis pipeline
