@@ -39,6 +39,7 @@ from omicstra.protocols.evaluate import (
     preflight_evaluate,
     verdicts,
 )
+from omicstra.records import timed_node
 
 
 class EvaluateState(TypedDict, total=False):
@@ -248,10 +249,10 @@ def _route_answer(state: EvaluateState) -> str:
 def build_evaluate_graph(checkpointer=None):
     """gates -> (ask) -> evaluate, with halt on refusal or an unfillable scope."""
     g = StateGraph(EvaluateState)
-    g.add_node("gates", gates)
-    g.add_node("ask", ask)
-    g.add_node("evaluate", evaluate)
-    g.add_node("halt", halt)
+    g.add_node("gates", timed_node(gates))
+    g.add_node("ask", timed_node(ask))
+    g.add_node("evaluate", timed_node(evaluate))
+    g.add_node("halt", timed_node(halt))
 
     g.add_edge(START, "gates")
     g.add_conditional_edges("gates", _route_gates,

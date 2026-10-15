@@ -29,6 +29,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from omicstra.protocols.promote import assert_not_authored, propose, provenance
+from omicstra.records import timed_node
 
 
 class PromoteState(TypedDict, total=False):
@@ -122,10 +123,10 @@ def _after_gate(state: PromoteState) -> str:
 
 def build_promote_graph(checkpointer=None):
     g = StateGraph(PromoteState)
-    g.add_node("compute", compute)
-    g.add_node("ask", ask)
-    g.add_node("emit", emit)
-    g.add_node("halt", halt)
+    g.add_node("compute", timed_node(compute))
+    g.add_node("ask", timed_node(ask))
+    g.add_node("emit", timed_node(emit))
+    g.add_node("halt", timed_node(halt))
     g.add_edge(START, "compute")
     g.add_edge("compute", "ask")
     g.add_conditional_edges("ask", _after_gate, {"emit": "emit", "halt": "halt"})

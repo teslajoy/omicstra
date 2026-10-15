@@ -1023,6 +1023,41 @@ def runs_status(run_id: str) -> dict:
 
 
 @srv.tool(description=(
+    "The TIMELINE of a run: every step in the order it happened, how long it "
+    "took, and which actor decided it. Answers 'where did this run spend its "
+    "time' and 'what has not finished', which the decision record does not - it "
+    "says what was decided, not what it cost. Reads the run's checkpoint and the "
+    "cohort's ledger; computes nothing and starts nothing."))
+def runs_trace(run_id: str, limit: int = 100) -> dict:
+    try:
+        _, spec, snap, arm = _runner_for(run_id)
+    except NotAnArmHandle as e:
+        return {"run_id": run_id, "steps": [], "arm": None, "why": str(e)}
+    v = (snap.values if snap else None) or {}
+    if not v:
+        return {"run_id": run_id, "steps": [], "arm": None,
+                "why": "no checkpoint under this handle"}
+
+    steps = [{"step_id": r.get("step_id"), "kind": r.get("kind"),
+              "status": r.get("status"), "actor": r.get("actor"),
+              "started_at": r.get("started_at"), "seconds": r.get("duration_s")}
+             for r in (v.get("records") or [])]
+    # `started_at` has always been on every record, so an ORDER was always
+    # available; `duration_s` is what says where the time went, and a step
+    # missing one is reported as missing rather than as zero.
+    steps.sort(key=lambda d: (d["started_at"] or "", d["step_id"] or ""))
+    timed = [d for d in steps if d["seconds"] is not None]
+    return {"run_id": run_id, "arm": arm, "checkpointer": spec,
+            "n_steps": len(steps), "n_timed": len(timed),
+            "seconds_total": round(sum(d["seconds"] for d in timed), 3),
+            "slowest": sorted(timed, key=lambda d: -d["seconds"])[:5],
+            "untimed": [d["step_id"] for d in steps if d["seconds"] is None],
+            "steps": steps[-limit:],
+            "note": ("the run's own timeline. the cohort's whole ledger is a "
+                     "different question - see runs_record for where it lives.")}
+
+
+@srv.tool(description=(
     "The decision record for ONE run: every gate answered, by whom, and the "
     "declaration it resolved from, read from that run's checkpoint. The cohort's "
     "whole ledger is a different question and a different file - every arm "

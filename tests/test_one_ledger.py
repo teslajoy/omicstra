@@ -217,3 +217,86 @@ def test_a_declared_verdict_standing_over_a_computed_one_is_surfaced(
     md = render(gather(root), "a report")
     assert "declares `proceed` and this run computed `proceed_with_caution`" in md
     assert "travels with every number below" in md
+
+
+# --- the trace: an order was always there, the cost was not ----------------
+def test_a_node_stamps_only_the_records_it_added(monkeypatch):
+    """the node returns the whole accumulated list. stamping all of it would
+    attribute every earlier step's cost to this one."""
+    import time
+
+    from omicstra.records import timed_node
+
+    @timed_node
+    def node(state):
+        time.sleep(0.02)
+        return {"records": [*state.get("records", []),
+                            {"step_id": "new", "kind": "gate"}]}
+
+    out = node({"records": [{"step_id": "old", "kind": "gate", "duration_s": 9.9}]})
+    assert out["records"][0]["duration_s"] == 9.9, "an earlier step keeps its own"
+    assert out["records"][1]["duration_s"] >= 0.02
+
+
+def test_a_node_that_times_itself_is_not_overwritten():
+    """the measuring functions time their own work, which is tighter than the
+    node's wall clock. the wrapper fills a gap, it does not take over."""
+    from omicstra.records import timed_node
+
+    @timed_node
+    def node(state):
+        return {"records": [{"step_id": "m", "kind": "diagnostic", "duration_s": 0.5}]}
+
+    assert node({})["records"][0]["duration_s"] == 0.5
+
+
+def test_a_node_returning_no_records_is_passed_through():
+    from omicstra.records import timed_node
+
+    @timed_node
+    def node(state):
+        return {"report": {"status": "refused"}}
+
+    assert node({}) == {"report": {"status": "refused"}}
+
+
+def test_every_graph_node_is_timed():
+    """a stage that is slow should be visible without anyone having remembered
+    to time it, so the wrapper is applied where nodes are REGISTERED."""
+    import re
+    from pathlib import Path
+
+    g = Path(__file__).resolve().parents[1] / "src" / "omicstra" / "graphs"
+    bare = []
+    for f in sorted(g.glob("*.py")):
+        for m in re.finditer(r'add_node\("([^"]+)", (?!timed_node)([^)]+)\)', f.read_text()):
+            bare.append(f"{f.name}:{m.group(1)}")
+    assert not bare, f"untimed graph node(s): {bare}"
+
+
+def test_the_trace_reports_an_untimed_step_as_missing_not_as_zero(
+        bound_synthetic_cohort, ledger_at, monkeypatch, tmp_path):
+    """a step with no duration took an unknown time, which is a different
+    statement from 'took no time' and must not average into a total."""
+    monkeypatch.setenv("OMICSTRA_CHECKPOINT", f"sqlite:{tmp_path / 'ck.sqlite'}")
+    import importlib
+
+    import omicstra.mcp.server as S
+    S = importlib.reload(S)
+
+    out = S.evaluate_run(project_id=None, hypotheses=["H1"], run_id="tr-1")
+    assert out["status"] == "refused"
+    tr = S.runs_trace("tr-1")
+    assert tr["n_steps"] >= 1
+    assert tr["seconds_total"] == round(
+        sum(s["seconds"] for s in tr["steps"] if s["seconds"] is not None), 3)
+    assert all(s["started_at"] for s in tr["steps"]), "an order was always available"
+
+
+def test_the_trace_refuses_a_handle_from_another_layer(monkeypatch, tmp_path):
+    monkeypatch.setenv("OMICSTRA_CHECKPOINT", f"sqlite:{tmp_path / 'ck.sqlite'}")
+    import importlib
+
+    import omicstra.mcp.server as S
+    S = importlib.reload(S)
+    assert S.runs_trace("never-existed")["steps"] == []

@@ -284,6 +284,44 @@ def coerce(d: dict) -> Record:
     return cls.model_validate(core)
 
 
+def timed_node(fn):
+    """stamp the records a graph node ADDS with how long that node took.
+
+    every record already carries `started_at`, so a ledger has always given a
+    reader an order. none carried `duration_s`, so it gave an order and no cost -
+    and "where did this run spend its time" is the question a trace exists for.
+
+    the node returns the whole accumulated list, so only the tail is stamped:
+    the ones already in `state` were timed by the node that made them, and
+    re-stamping them would attribute every earlier step's cost to this one.
+
+    a wrapper rather than a timer at each call site, because a node that forgets
+    to stop its own stopwatch is a node that reports a plausible wrong number.
+    """
+    import functools
+    import time
+
+    @functools.wraps(fn)
+    def wrapper(state, *a, **kw):
+        t0 = time.perf_counter()
+        out = fn(state, *a, **kw)
+        if not isinstance(out, dict) or not out.get("records"):
+            return out
+        before = len(state.get("records") or []) if isinstance(state, dict) else 0
+        d, now = round(time.perf_counter() - t0, 3), _now()
+        # `started_at` too, because a node's raw dict is not a Record yet - the
+        # default only fires in `coerce`, on the way into the ledger. so the
+        # checkpoint and the ledger disagreed about whether a step had a time,
+        # and the two are meant to be two VIEWS of one store.
+        out["records"] = [*out["records"][:before],
+                          *({**r, "started_at": r.get("started_at") or now,
+                             "duration_s": r.get("duration_s") or d}
+                            for r in out["records"][before:])]
+        return out
+
+    return wrapper
+
+
 class RecordStore:
     """the ledger. append-only within a run.
 

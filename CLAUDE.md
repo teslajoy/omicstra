@@ -169,7 +169,7 @@ to do:
   name. `spec()` is metadata only and needs no tensor library; only `load()` does
 - `src/omicstra/adapters/canonical.py` — the package's input contract: .h5ad plus
   a coordinates table. no format-specific reader lives in the package
-- `src/omicstra/mcp/server.py` — 18 tools, 2 resources, stdio + http, zero model
+- `src/omicstra/mcp/server.py` — 19 tools, 2 resources, stdio + http, zero model
   calls. two compute agents (`he_encode`, `st_encode`), each with its own gate set,
   plus `align_run` (resolves a grid) and `evaluate_run` (states a verdict on
   H1/H2/H3 over the artifacts the pack cites), and

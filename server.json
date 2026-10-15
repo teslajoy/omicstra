@@ -75,6 +75,7 @@
         "evaluate_run",
         "runs_resume",
         "runs_status",
+        "runs_trace",
         "runs_record"
       ],
       "humanInTheLoop": "The admissibility gate raises an interrupt carrying its full record set, so a client is never asked to accept cautions without seeing the diagnostics behind them. A client that cannot surface an interrupt cannot complete a gated protocol.",

@@ -21,12 +21,13 @@ read path throughout - every embedding is cached, so no node touches a GPU.
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from omicstra.agents.modality import MODALITY_AGENTS
+from omicstra.records import timed_node
 from omicstra.routing import ledger, resolve
 
 
@@ -132,12 +133,12 @@ def override_node(state: RouteState) -> dict:
 def build_route_graph(checkpointer=None):
     """cohort-free: everything specific arrives in state."""
     g = StateGraph(RouteState)
-    g.add_node("orchestrator", orchestrator)
+    g.add_node("orchestrator", timed_node(orchestrator))
     for name in MODALITY_AGENTS:
-        g.add_node(name, _modality_node(name))
-    g.add_node("judge", judge)
-    g.add_node("ask_human", ask_human)
-    g.add_node("override", override_node)
+        g.add_node(name, timed_node(_modality_node(name)))
+    g.add_node("judge", timed_node(judge))
+    g.add_node("ask_human", timed_node(ask_human))
+    g.add_node("override", timed_node(override_node))
 
     g.add_edge(START, "orchestrator")
     for name in MODALITY_AGENTS:            # fan out - these run concurrently
