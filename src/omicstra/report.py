@@ -187,6 +187,87 @@ def section_computed(b: dict) -> list[str]:
     return lines
 
 
+def _field(r: dict, *names: str) -> str:
+    """a record's value for the first of `names` that is set, params included.
+
+    `records.coerce` puts any key a Record does not declare into `params`, which
+    is the field that exists for exactly that - so a reader that looked only at
+    the top level saw an empty cause on every record an arm wrote.
+    """
+    params = r.get("params") or {}
+    for n in names:
+        v = r.get(n) if r.get(n) not in (None, "") else params.get(n)
+        if v not in (None, ""):
+            return str(v)
+    return ""
+
+
+def _declared_step_ids() -> tuple[set[str], set[str]]:
+    """the inventory steps and EDA checks the CONTRACTS declare.
+
+    read from the contracts rather than matched by shape, so a record is
+    classified as an inventory step or an EDA check because something declared
+    it one - not because its id happened to look like one.
+    """
+    from omicstra.contracts.eda import load_contract
+    from omicstra.protocols.inventory import INVENTORY_STEPS
+
+    checks = load_contract()["checks"]
+    ids = {c["id"] for c in (checks if isinstance(checks, list) else checks.values())}
+    return {s.id for s in INVENTORY_STEPS}, ids
+
+
+def _measured_steps(b: dict) -> list[str]:
+    """what the chain measured THIS run, and where it disagrees with the summary.
+
+    section 2 reports what `eda_summary.json` DECLARES, which on a curated cohort
+    is hand-written and says so. this reports what the chain computed, from the
+    ledger - so the two can be compared rather than one standing for both.
+
+    a refusal is a result here, not an omission: a step that could not run names
+    what it needed, which is the only thing that distinguishes "measured and
+    found nothing" from "never measured".
+    """
+    recs = b.get("records") or []
+    if not recs:
+        return []
+    try:
+        inv_ids, eda_ids = _declared_step_ids()
+    except Exception:                                    # noqa: BLE001
+        return []
+
+    out: list[str] = []
+    for title, ids in (("inventory", inv_ids), ("EDA", eda_ids)):
+        rows = [[r.get("step_id"), r.get("status"),
+                 _field(r, "result", "why_not_applicable", "decision", "reason")[:68]]
+                for r in recs if r.get("step_id") in ids]
+        if rows:
+            out += ["", f"**{title}, as this run measured it**", "",
+                    *_table(["step", "status", "result"], rows)]
+
+    refused = [[r.get("step_id"), r.get("status"),
+                _field(r, "reason", "why", "decision", "result")[:68]]
+               for r in recs
+               if r.get("status") in ("not_run", "error", "fail")
+               and not str(r.get("step_id", "")).startswith("verdict::")]
+    if refused:
+        out += ["", "**refused, with the cause**", "",
+                *_table(["step", "status", "cause"], refused)]
+
+    # the drift that matters: a declared verdict standing over a computed one.
+    eda = b.get("eda") or {}
+    declared = eda.get("verdict")
+    declared = declared if isinstance(declared, str) else (declared or {}).get("verdict")
+    computed = next((_field(r, "result") for r in recs
+                     if r.get("step_id") == "eda_gate"), None)
+    if declared and computed and declared != computed:
+        out += ["", (f"**the summary declares `{declared}` and this run computed "
+                     f"`{computed}`.** a declared verdict is a person's judgement "
+                     "that the cautions were acceptable; it does not make the two "
+                     "agree, and the difference travels with every number below.")]
+    return out
+
+
 def section_findings(b: dict) -> list[str]:
     """COMPUTED. what this cohort's own chain measured, pack or no pack.
 
@@ -197,11 +278,15 @@ def section_findings(b: dict) -> list[str]:
     cohort with no pack at all. that is the whole point.
     """
     lines = [_h(2, "4 · measured on this cohort")]
-    v = [r for r in (b.get("records") or [])
-         if str(r.get("step_id", "")).startswith("verdict::")]
-    if not v:
-        return lines + _absent("findings", "no hypothesis verdict in the ledger")
+    recs = b.get("records") or []
+    if not recs:
+        return lines + _absent("findings", "nothing in this cohort's ledger")
+    v = [r for r in recs if str(r.get("step_id", "")).startswith("verdict::")]
 
+    # the hypothesis verdict is ONE block of this section, not its gate. a
+    # cohort that has run its inventory and its EDA and nothing else has
+    # findings, and reporting none because no hypothesis was evaluated is the
+    # same mistake this whole section was added to fix.
     rows = []
     for r in sorted(v, key=lambda r: r["step_id"]):
         g = r.get("guards") or []
@@ -212,12 +297,15 @@ def section_findings(b: dict) -> list[str]:
                      f"{len(g) - len(failed)}/{len(g)}" if g else "none ran",
                      ", ".join(sorted({f.split("/")[-1] for f in failed}))[:34],
                      ", ".join(miss) or "complete"])
-    lines += _table(["hypothesis", "claim", "guards passed", "failed",
-                     "arms not scored"], rows)
+    if rows:
+        lines += _table(["hypothesis", "claim", "guards passed", "failed",
+                         "arms not scored"], rows)
     lines += ["", ("*computed from the artifacts this cohort's declaration names. "
                    "`diagnostic` means a required guard ran and failed, so the "
                    "number stands and may not be cited as biology alone; "
-                   "`unguarded` means nothing checked it.*")]
+                   "`unguarded` means nothing checked it.*")] if rows else []
+
+    lines += _measured_steps(b)
 
     # R3: the pack routes numbers. a routed number whose hypothesis is not clean
     # is the disagreement worth surfacing, and it is the one a reader of the

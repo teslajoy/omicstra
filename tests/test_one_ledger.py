@@ -160,3 +160,60 @@ def test_a_cohort_with_no_ledger_says_so_in_one_line(bound_synthetic_cohort, led
     md = render(b, "a report")
     assert "8 · decisions" in md
     assert "ledger is empty or absent" in md
+
+
+# --- R4: what the chain MEASURED, beside what the summary declares ---------
+def test_measured_steps_are_classified_from_the_contracts_not_by_shape(
+        bound_synthetic_cohort, ledger_at):
+    """a record is an inventory step or an EDA check because something DECLARED
+    it one, never because its id looked like one."""
+    from omicstra.report import _declared_step_ids
+
+    inv, eda = _declared_step_ids()
+    assert "shape" in inv and "coords" in inv
+    assert "cohort_counts" in eda and "spatial_autocorrelation" in eda
+    assert not (inv & eda), "a step id belongs to one chain or the other"
+
+
+def test_section_four_reports_what_this_run_measured_and_what_it_refused(
+        bound_synthetic_cohort, ledger_at):
+    """section 2 reports what eda_summary.json DECLARES, which on a curated
+    cohort is hand-written and says so. section 4 reports what the chain
+    computed, so the two can be compared rather than one standing for both.
+    """
+    root = bound_synthetic_cohort
+    path = ledger_at / "synthetic" / "records" / "decisions.jsonl"
+    RecordStore(path).append_new([
+        {"step_id": "shape", "kind": "diagnostic", "actor": "deterministic",
+         "status": "pass", "result": "280 samples, 286,250 units"},
+        {"step_id": "cohort_counts", "kind": "diagnostic", "actor": "deterministic",
+         "status": "pass", "result": "median 25,041 features per section"},
+        {"step_id": "model_tissue_fit", "kind": "diagnostic", "actor": "deterministic",
+         "status": "not_run",
+         "reason": "declared in the contract, no implementation registered"},
+    ])
+    md = render(gather(root), "a report")
+
+    assert "inventory, as this run measured it" in md
+    assert "shape" in md and "286,250" in md
+    assert "EDA, as this run measured it" in md
+    assert "median 25,041" in md
+    # a refusal is a RESULT, not an omission - it names what was missing
+    assert "refused, with the cause" in md
+    assert "no implementation registered" in md
+
+
+def test_a_declared_verdict_standing_over_a_computed_one_is_surfaced(
+        bound_synthetic_cohort, ledger_at):
+    """a person writing `proceed` into a committed summary is a recorded
+    acceptance of the cautions. it does not make the two verdicts agree, and a
+    reader of the summary alone cannot see the difference."""
+    root = bound_synthetic_cohort
+    (root / "eda_summary.json").write_text(json.dumps({"verdict": "proceed"}))
+    RecordStore(ledger_at / "synthetic" / "records" / "decisions.jsonl").append_new([
+        {"step_id": "eda_gate", "kind": "diagnostic", "actor": "deterministic",
+         "status": "pass", "result": "proceed_with_caution"},
+    ])
+    md = render(gather(root), "a report")
+    assert "declares `proceed` and this run computed `proceed_with_caution`" in md
+    assert "travels with every number below" in md
