@@ -143,10 +143,37 @@ every arm   ->  state["records"]  ->  _handle -> _persist
                                       ONE ledger, idempotent on record_id
 
 runs_record(run_id)   the RUN's checkpoint: what did this run decide
+runs_trace(run_id)    the same records as a TIMELINE: what did it cost
 report.py:gather()    the COHORT's ledger: what has this cohort decided
 ```
 
 two views, one store.
+
+### and every node is timed, at the point it is REGISTERED
+
+`records.timed_node` wraps each `add_node`, not each call site. three rules fall
+out of where it sits, and each one was a wrong answer first:
+
+```
+only the tail      a node returns the WHOLE accumulated record list, so
+                   stamping all of it would attribute every earlier step's
+                   cost to this one
+never overwrite    a node that timed its own work keeps its number. the
+                   measuring functions time the maths, which is tighter than
+                   a node's wall clock - the wrapper fills a gap
+started_at too     a node's raw dict is not a Record yet, and the default only
+                   fires in `coerce` on the way into the ledger. without this
+                   the checkpoint and the ledger disagreed about whether a step
+                   had a time, and they are two views of ONE store
+```
+
+at the registration point rather than inside each node, because a node that
+forgets to stop its own stopwatch reports a plausible wrong number, which is
+worse than reporting none. `tests/test_one_ledger.py` asserts every `add_node`
+in `graphs/` is wrapped, so a new node is timed without anyone remembering.
+
+**an untimed step took an UNKNOWN time**, which is a different statement from
+took no time. `runs_trace` names them rather than averaging a zero into a total.
 
 ---
 
