@@ -2,7 +2,7 @@
 
 a multi-agent MCP server for cross-modal embedding alignment, fusion, and evidence-based routing in spatial biology. it exposes fixed scientific protocols as tools and returns evidence; the client holds the model. alignments are evaluated against declared metrics, and questions are routed from a cohort's own recorded evidence, refusing when that evidence is absent. foundation model encoders are pluggable; integration strategy is a configurable experimental dimension, not a fixed pipeline choice.
 
-the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) using H&E morphology (Virchow2 primary, UNI2 swap) and spatial transcriptomics (Novae GNN).
+the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) using H&E morphology (Virchow2) and spatial transcriptomics (Novae GNN).
 
 [![release](https://github.com/teslajoy/omicstra/actions/workflows/release.yml/badge.svg)](https://github.com/teslajoy/omicstra/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -36,7 +36,89 @@ evaluation of its own is **not routable**, and the server says so rather than
 reusing the seed cohort's winner. The second cohort's own evidence pack is 1.3 -
 see `design/v1_3_scope.md`, which carries it with the open questions measured.
 
+**v1.3** (pre-release `1.3.0a1`) adds the worker that serves the encode queue, a
+verdict per hypothesis behind its own gates, one decision ledger that reaches the
+report, and the whole chain wired at level 0. The server holds no model, and that
+is now a test rather than a claim: it imports no model SDK, no extra can install
+one, and both judges resolve from lookup tables. It has been driven end to end
+from a **Claude-on-Bedrock** client - from a workstation and from a scheduled
+cluster node - where three runs took three different routes through the surface
+and every server answer was byte-identical to the same tool called with no model
+on the path. `pip install omicstra` still resolves to 1.2.0.
+
 ---
+
+## design
+
+Agents, and where decisions are made. The model is a client-side component with
+three narrow jobs; every consequence the server produces resolves from a lookup
+table, which is what makes a model swap a configuration change rather than a
+port.
+
+```
+  CLIENT · the only place a model runs
+  decides: which tool to call · which option when a gate asks
+  ═════════════════════════════════════════════════════════════ no model below
+
+  ORCHESTRATOR            discover            ▣ which arm, from the cohort's evidence
+       │
+       ├── has evidence ─────────────┐
+       │                             │
+       │                    ROUTING AGENT · judge #1
+       │                    ▣ which method answers THIS question
+       │                    ○ asks when a method is contraindicated
+       │                       │
+       │                       ├─ he_agent      ┐  read-path justifiers.
+       │                       ├─ st_agent      │  each says what ITS modality
+       │                       └─ pathway_agent ┘  contributes, and owns one guard
+       │
+       └── has none ────────── EDA AGENT
+                               ▣ is it usable
+                               ○ asks to accept a caution
+                                   │
+                               IMAGING AGENT      ┐ decide nothing.
+                               MOLECULAR AGENT    │ they extract.
+                                   │              ┘ ○ gates on weights, fit,
+                               ALIGNMENT AGENT      floor, scope, capacity
+                               ◐ resolves a grid
+                                   │
+       └───────────────┬───────────┘
+                       ▼
+        EVALUATION AGENT · judge #2 — no model, and no ranking first
+        ┌──────────────────────────────────────────────────────────┐
+        │ WHAT IT EVALUATES          WHAT MAKES IT ADMISSIBLE       │
+        │                                                          │
+        │ H1 cross-modal             is the label just subject      │
+        │    identifiability            identity?                   │
+        │                            scored on held-out subjects?   │
+        │ H2 structure:              does biology beat provenance?  │
+        │    clustering ·            does it ATTRIBUTE, or only     │
+        │    decodability ·             detect?                     │
+        │    confounding             does it beat its own null?     │
+        │                            is the input the thing being   │
+        │ H3 program-level              tested?                     │
+        │    transfer to unseen      does it beat the RAW modality? │
+        │    subjects                is it contraindicated for      │
+        │                               THIS question?              │
+        └──────────────────────────────────────────────────────────┘
+                       ▼
+        THE MATRIX · question × method
+        a cell = value + admissibility + why
+          ✓ admissible   ✗ contraindicated   ◌ unguarded   — not applicable
+                       ▼
+        PROMOTE AGENT   ▣ computes every number
+                        ◆ a person writes every sentence, and may not
+                          touch a number
+                       ▼
+        THE REPORT   every line marked computed, or authored
+
+  ▣ a rule decided it   ○ answered at a gate   ◆ a person declared it
+```
+
+What each test proves and the condition under which it proves it is
+[`EVALUATION.md`](EVALUATION.md) - stated for any cohort, because the thing that
+generalises is the test and its condition, never the threshold.
+
 
 ## analysis pipeline
 
@@ -382,7 +464,7 @@ layer 2: karpathy loop (outer optimization)
 
 program.md defines search space, constraints, stopping criteria.
 
-embedding dimensions: Virchow2 1280d (primary) / UNI2 1536d (alternative) - Novae GNN 64d (novae_latent) -> shared 512d
+embedding dimensions: Virchow2 1280d - Novae GNN 64d (novae_latent) -> shared 512d
 
 alignment strategies (experimental variable):
 ```
@@ -605,7 +687,7 @@ fresh install, not a failure.
 | model | supplied by the MCP client; the server ships none |
 | tracing | OpenTelemetry-ready; LangSmith optional via env, not a dependency |
 | resources | `omicstra://eda-contract`, `routing-contract`, `project/{id}/routing-evidence` |
-| H&E foundation model | Virchow2 (primary, 1280-d) - UNI2 as swap (1536-d) |
+| H&E foundation model | Virchow2 (1280-d) |
 | ST foundation model | Novae GNN |
 | pathway | gpath2vec + biological pathway embeddings |
 | alignment | contrastive MLP + cross-attention bridge |

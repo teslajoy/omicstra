@@ -4,7 +4,7 @@ this file provides guidance to Claude Code when working with code in this reposi
 
 ## project overview
 
-omicstra is a multi-agent MCP server for cross-modal reasoning in spatial biology. it aligns embeddings from H&E histopathology (UNI2/Virchow2) and spatial transcriptomics (Novae GNN) into a shared 512d space, then exposes cross-modal retrieval and evaluation through the Model Context Protocol.
+omicstra is a multi-agent MCP server for cross-modal reasoning in spatial biology. it aligns embeddings from H&E histopathology (Virchow2) and spatial transcriptomics (Novae GNN) into a shared 512d space, then exposes cross-modal retrieval and evaluation through the Model Context Protocol.
 
 seed dataset: 92 TNBC patients from Wang et al. 2024 (co-registered ST + H&E WSI, Zenodo doi:10.5281/zenodo.8135721). platform: original Spatial Transcriptomics (Stahl et al. 2016, KTH/Spatial Transcriptomics AB, acquired by 10x Genomics 2018) - 1934 spots/array, 100um diameter, **150um center-to-center**, ~200 cells/spot, array 6.2 x 6.4 mm. not 10x Visium (5000 spots, 55um).
 
@@ -51,8 +51,7 @@ layer 2: karpathy loop (outer optimization)
 
 ## embedding dimensions
 
-- Virchow2: 1280d (primary H&E encoder, picked via encoder_qc_comparison_2026-04-09 on MC linear probe)
-- UNI2: 1536d (alternative H&E encoder, pluggable swap)
+- Virchow2: 1280d (H&E encoder, picked via encoder_qc_comparison_2026-04-09 on MC linear probe)
 - Novae GNN: 64d (novae_latent, raw GAT output - LayerNorm at MLP input required)
 - Novae edge scale: `novae.settings.scale_to_microns` is a GAT input (each edge length enters as distance x scale / 20), not a unit label. the seed cache was computed at 1.2195 (the old 200um assumption); declared in `platforms.*.st_graph.scale_to_microns` and required by `StGraph` - there is no default
 - ST input to alignment: 576d (novae 64 + gpath2vec 512) for every run except R6, which is novae only (64d)
@@ -121,8 +120,8 @@ metrics.
 | orchestration | LangGraph StateGraph |
 | routing | Claude Sonnet 4.6 |
 | synthesis | Claude Opus 4.6 |
-| tracing | LangSmith (observability only) |
-| H&E encoder | Virchow2 1280d (primary) / UNI2 1536d (alternative) |
+| tracing | the committed decision ledger. LangSmith opt-in via env, not a dependency |
+| H&E encoder | Virchow2 1280d |
 | ST encoder | Novae GNN 64d (novae_latent) |
 | pathway embeddings | gpath2vec |
 | alignment | contrastive MLP + cross-attention bridge |
@@ -259,6 +258,9 @@ work lands via a branch and a PR      the template states the scope, because
   read it before adding a graph; a lint asserts every `graphs/*.py` is on it
 - `design/v1_3_scope.md` — **the live plan.** start here
 - `design/v1_2_scope.md` — what shipped, and the nine package edits it cost
+- `EVALUATION.md` — **what each test proves, and the condition under which
+  it proves it.** cohort-free: the test and its condition generalise, the
+  threshold never does. read it before adding a metric or reading one
 - `README.md` — what + why
 - `CLAUDE.md` — dev guidance (this file)
 - `EDA.md` — gate checks before pipeline work
