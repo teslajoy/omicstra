@@ -169,6 +169,7 @@ def evaluate(state: EvaluateState) -> dict:
                       "to cohort.json#evidence_pins to make the next run refuse "
                       "on drift - this record is the proposal, not the pin")})
 
+    records += _verdict_records(hyp, pins)
     return {"records": records,
             "report": {"status": "evaluated",
                        "hypotheses": hyp,
@@ -181,6 +182,57 @@ def evaluate(state: EvaluateState) -> dict:
                                 "cohort's evidence_sources declaration names. "
                                 "nothing is recomputed, and a gate whose input is "
                                 "missing says which input.")}}
+
+
+def _verdict_records(hyp: dict, pins: dict) -> list[dict]:
+    """one DiagnosticRecord per hypothesis, so the verdict outlives the run.
+
+    it used to live only in the run's `report`, which is state and not a record -
+    so it reached the checkpoint and stopped there, visible to a caller holding
+    the handle and to nobody else. the report takes a pack and a LEDGER, so a
+    verdict that never became a record could never reach it.
+
+    the shape already existed: method / scope / observed / criterion / result /
+    decision is the scientific unit every EDA step emits, and a hypothesis
+    verdict is the same unit one layer up.
+    """
+    from omicstra.records import DiagnosticRecord, GuardVerdict, stable_id
+
+    out = []
+    for h, d in sorted(hyp.items()):
+        guards = [GuardVerdict(id=g, passed=g not in d["guards_failed"],
+                               note="required by the contract for this hypothesis")
+                  for g in d["guards_ran"]]
+        rec = DiagnosticRecord(
+            step_id=f"verdict::{h}", status="pass" if d["evaluable"] else "not_run",
+            actor="deterministic",
+            record_id=stable_id("verdict", h, d["claims"], sorted(d["guards_failed"]),
+                                sorted(pins.get("sha256", {}).items())),
+            method="the guards the routing contract requires for this hypothesis, "
+                   "over the artifacts the cohort's evidence declaration names",
+            scope=f"{len(d['families']['fillable'])} fillable task family(s); "
+                  f"{len(pins.get('sha256') or {})} artifact(s) read",
+            observed={"families": d["families"], "rollup": d["rollup"],
+                      "guards_not_run": d["guards_not_run"],
+                      "artifacts": pins.get("sha256") or {}},
+            criterion="every required guard runs and passes, over pinned bytes",
+            result=d["claims"],
+            decision=_DECISION[d["claims"]],
+            guards=guards)
+        out.append(rec.model_dump(mode="json"))
+    return out
+
+
+# what each claim licenses. stated once, here, so a reader of the ledger does not
+# have to remember which of the four is a result and which is an absence.
+_DECISION = {
+    "biological": "may be cited as a biological result",
+    "diagnostic": "stands, and may NOT be cited as biology alone - a required "
+                  "guard ran and failed",
+    "unguarded": "computed, but no required guard ran. not a clean result and "
+                 "not a failure - nothing checked it",
+    "not_run": "no fillable task family on this cohort for this hypothesis",
+}
 
 
 def _route_gates(state: EvaluateState) -> str:

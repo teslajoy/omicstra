@@ -148,7 +148,7 @@ def test_gather_reads_the_ledger_and_the_report_shows_who_decided(
     assert b["actor_ratio"]["system"] == 1 and b["actor_ratio"]["deterministic"] == 1
 
     md = render(b, "a report")
-    assert "7 · decisions" in md
+    assert "8 · decisions" in md
     assert "encode_dispatch" in md and "temporal" in md
     assert "by system | 1" in md
 
@@ -158,5 +158,5 @@ def test_a_cohort_with_no_ledger_says_so_in_one_line(bound_synthetic_cohort, led
     b = gather(bound_synthetic_cohort)
     assert "records" not in b
     md = render(b, "a report")
-    assert "7 · decisions" in md
+    assert "8 · decisions" in md
     assert "ledger is empty or absent" in md

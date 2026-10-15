@@ -187,9 +187,57 @@ def section_computed(b: dict) -> list[str]:
     return lines
 
 
+def section_findings(b: dict) -> list[str]:
+    """COMPUTED. what this cohort's own chain measured, pack or no pack.
+
+    the report takes a pack and a ledger, and for a while only the pack reached
+    its substance - so a cohort that had just measured everything rendered as
+    "not routable" because nobody had curated it yet. these rows come from the
+    verdict records the evaluate stage writes, which means they appear for a
+    cohort with no pack at all. that is the whole point.
+    """
+    lines = [_h(2, "4 · measured on this cohort")]
+    v = [r for r in (b.get("records") or [])
+         if str(r.get("step_id", "")).startswith("verdict::")]
+    if not v:
+        return lines + _absent("findings", "no hypothesis verdict in the ledger")
+
+    rows = []
+    for r in sorted(v, key=lambda r: r["step_id"]):
+        g = r.get("guards") or []
+        failed = [x["id"] for x in g if not x.get("passed")]
+        o = r.get("observed") or {}
+        miss = ((o.get("rollup") or {}).get("coverage") or {}).get("missing") or []
+        rows.append([r["step_id"].split("::")[-1], r.get("result"),
+                     f"{len(g) - len(failed)}/{len(g)}" if g else "none ran",
+                     ", ".join(sorted({f.split("/")[-1] for f in failed}))[:34],
+                     ", ".join(miss) or "complete"])
+    lines += _table(["hypothesis", "claim", "guards passed", "failed",
+                     "arms not scored"], rows)
+    lines += ["", ("*computed from the artifacts this cohort's declaration names. "
+                   "`diagnostic` means a required guard ran and failed, so the "
+                   "number stands and may not be cited as biology alone; "
+                   "`unguarded` means nothing checked it.*")]
+
+    # R3: the pack routes numbers. a routed number whose hypothesis is not clean
+    # is the disagreement worth surfacing, and it is the one a reader of the
+    # pack alone cannot see.
+    claims = {r["step_id"].split("::")[-1]: r.get("result") for r in v}
+    unclean = {h for h, c in claims.items() if c in ("diagnostic", "unguarded")}
+    routed = [t for t, d in (((b.get("pack") or {}).get("tasks")) or {}).items()
+              if d.get("candidates")]
+    if unclean and routed:
+        lines += ["", (f"**the pack routes {len(routed)} question(s) while "
+                       f"{', '.join(sorted(unclean))} "
+                       f"{'is' if len(unclean) == 1 else 'are'} not a clean "
+                       "result.** a routed answer inherits its hypothesis's claim, "
+                       "and the pack does not restate it.")]
+    return lines
+
+
 def section_hypotheses(b: dict) -> list[str]:
     """one block per task family that produced evidence; one line for each that did not."""
-    lines = [_h(2, "4 · per question")]
+    lines = [_h(2, "5 · per question")]
     tasks = ((b.get("pack") or {}).get("tasks") or {})
     if not tasks:
         return lines + _absent("evidence", "no pack - this cohort is not routable")
@@ -232,7 +280,7 @@ def section_hypotheses(b: dict) -> list[str]:
 
 def section_matrix(b: dict) -> list[str]:
     """question x method: the routable answer per family, from the pack."""
-    lines = [_h(2, "5 · the matrix")]
+    lines = [_h(2, "6 · the matrix")]
     tasks = ((b.get("pack") or {}).get("tasks") or {})
     if not tasks:
         return lines + _absent("matrix", "no pack")
@@ -258,7 +306,7 @@ def section_matrix(b: dict) -> list[str]:
 
 def section_notes(b: dict) -> list[str]:
     """the human fields, verbatim and marked as such."""
-    lines = [_h(2, "6 · caveats and notes")]
+    lines = [_h(2, "7 · caveats and notes")]
     tasks = ((b.get("pack") or {}).get("tasks") or {})
     rows = []
     for task_id, t in tasks.items():
@@ -281,7 +329,7 @@ def section_decisions(b: dict) -> list[str]:
     arrived through the surface and the server observed a tool call, not a
     person.
     """
-    lines = [_h(2, "7 · decisions")]
+    lines = [_h(2, "8 · decisions")]
     recs = b.get("records") or []
     if not recs:
         return lines + _absent("decisions", "this cohort's ledger is empty or absent")
@@ -299,7 +347,7 @@ def section_decisions(b: dict) -> list[str]:
 
 
 def section_provenance(b: dict) -> list[str]:
-    lines = [_h(2, "8 · provenance")]
+    lines = [_h(2, "9 · provenance")]
     pack = b.get("pack") or {}
     prov = b.get("provenance") or {}
     lines += _kv([("pack version", pack.get("evidence_version")),
@@ -315,8 +363,8 @@ def section_provenance(b: dict) -> list[str]:
 
 
 SECTIONS = (section_cohort, section_admissibility, section_computed,
-            section_hypotheses, section_matrix, section_notes, section_decisions,
-            section_provenance)
+            section_findings, section_hypotheses, section_matrix, section_notes,
+            section_decisions, section_provenance)
 
 
 def render(bundle: dict, title: str = "evaluation report") -> str:
