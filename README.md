@@ -51,7 +51,7 @@ on the path. `pip install omicstra` still resolves to 1.2.0.
 ## MCP design
 
 ```
-  CLIENT · the only place a model runs
+  CLIENT · the only place a model runs   (verified: Claude on AWS Bedrock)
   decides: which tool to call · which option when a gate asks
   ═════════════════════════════════════════════════════════════ no model below
 
@@ -83,18 +83,28 @@ on the path. `pip install omicstra` still resolves to 1.2.0.
         ┌──────────────────────────────────────────────────────────┐
         │ WHAT IT EVALUATES          WHAT MAKES IT ADMISSIBLE       │
         │                                                          │
-        │ H1 cross-modal             is the label just subject      │
-        │    identifiability            identity?                   │
-        │                            scored on held-out subjects?   │
-        │ H2 structure:              does biology beat provenance?  │
-        │    clustering ·            does it ATTRIBUTE, or only     │
-        │    decodability ·             detect?                     │
-        │    confounding             does it beat its own null?     │
-        │                            is the input the thing being   │
-        │ H3 program-level              tested?                     │
-        │    transfer to unseen      does it beat the RAW modality? │
-        │    subjects                is it contraindicated for      │
-        │                               THIS question?              │
+        │ H1 CONCORDANCE             is the label a restatement of  │
+        │    do the two modalities      the subject?                │
+        │    agree - in retrieval    is it scored on held-out       │
+        │    AND in geometry -          subjects?                   │
+        │    against unaligned       does biology beat provenance?  │
+        │    baselines               does it ATTRIBUTE, or only     │
+        │                               detect?                     │
+        │ H2 STRUCTURAL COHERENCE    does it beat its own null?     │
+        │    A do spatial states     is the input the thing being   │
+        │      cluster better than      tested?                     │
+        │      either modality       does it beat the RAW modality  │
+        │      ALONE                    it is meant to improve on?  │
+        │    B does alignment        is it contraindicated for      │
+        │      quality vary by          THIS question?              │
+        │      compartment                                          │
+        │                            all three are COMPARATIVE -    │
+        │ H3 PATHWAY                 each is stated against a       │
+        │    INTERPRETABILITY        baseline, so the floor is not  │
+        │    do pathway embeddings   a nicety. a method that does   │
+        │    correlate with          not beat it has not answered   │
+        │    directions in the       the question, however it       │
+        │    shared space                ranks                      │
         └──────────────────────────────────────────────────────────┘
                        ▼
         THE MATRIX · question × method
