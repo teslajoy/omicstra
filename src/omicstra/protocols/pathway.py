@@ -152,3 +152,215 @@ NICHE_MEMBERSHIP_STEPS: list[Step] = [
          produces=frozenset({"niche"}), requires=frozenset({"gene_keep"}),
          params_space=("k_neighbors",)),
 ]
+
+
+# --------------------------------------------- the variable-gene chain -------
+# transcribed from the code that wrote `niche_madmean_genesets.json`, with the
+# parameters read out of that notebook's constants and checked against the
+# artifact: 3,251 sampled niches, median 55 genes, minimum exactly 20, none
+# below - which is what makes `min_foreground` a FLOOR ON THE COUNT rather than
+# only a skip threshold.
+#
+# three details a reading of the prose would have got wrong:
+#   the MAD is taken about the MEDIAN and divided by the MEAN. not MAD/median,
+#   and no 1.4826 consistency factor - raw deviation over central tendency
+#   the background is `mean > 0` on the NORMALISED profile, not on raw counts
+#   the percentile runs over the NON-ZERO ratios only. a zero-variance gene is
+#   locally constant, and ranking it adds tie-break noise on a 7-spot niche
+
+
+def niche_qc(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """drop niches that are mostly white space, on declared floors.
+
+    two gates and they ask different things: total depth over the whole niche,
+    and how many of its spots carry signal at all. a niche can clear the first
+    on one bright spot, which is not a niche.
+    """
+    need = {k: _declared(ctx, k) for k in
+            ("min_niche_umi", "min_spot_umi", "min_detected_spots")}
+    for k, v in need.items():
+        if v is None:
+            return _missing("niche_qc", k, "a depth floor is a property of the "
+                                           "platform's capture efficiency"), {}
+    niches = ctx.get("niches")
+    if niches is None:
+        raise PathwayInputMissing("niche_qc needs `niches` as (id, counts) pairs")
+
+    kept, why = [], {"total_umi": 0, "detected_spots": 0}
+    for nid, c in niches:
+        if int(c.sum()) < need["min_niche_umi"]:
+            why["total_umi"] += 1
+            continue
+        if int((c.sum(axis=1) >= need["min_spot_umi"]).sum()) < need["min_detected_spots"]:
+            why["detected_spots"] += 1
+            continue
+        kept.append((nid, c))
+    return _rec("niche_qc", "pass", f"{len(kept)} of {len(niches)} niches kept",
+                "a dropped niche is counted by cause - an unexplained drop is "
+                "an error, not a filter",
+                {"n_in": len(niches), "n_out": len(kept), "reason": why, **need},
+                method="total-depth and detected-spot floors over the raw counts",
+                criterion="both floors cleared",
+                ), {"qc_niches": kept}
+
+
+def normalise(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """log1p(counts / library * target_sum), PER SPOT.
+
+    per spot, before any aggregation, because the next step needs the spots as
+    several observations of one niche. the other chain sums them first and
+    normalises the result - same counts, different unit of normalisation, and
+    the two are not interchangeable.
+    """
+    target = _declared(ctx, "target_sum")
+    if target is None:
+        return _missing("normalise", "target_sum",
+                        "the library-size target is a declared convention"), {}
+    import numpy as np
+
+    out = []
+    for nid, c in ctx["qc_niches"]:
+        lib = c.sum(axis=1, keepdims=True) + 1e-9
+        out.append((nid, np.log1p(c / lib * float(target)).astype("float32")))
+    return _rec("normalise", "pass", f"{len(out)} niches at target {target:g}",
+                "per spot, so the spots stay several observations of one niche",
+                {"n_in": len(out), "n_out": len(out), "target_sum": float(target)},
+                method=f"log1p(counts / library * {target:g}) per spot",
+                criterion="normalised before aggregation, never after",
+                ), {"normalised": out}
+
+
+def variability(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """per gene, across the spots of its niche: MAD about the median over the mean.
+
+    a robust coefficient of variation. the MAD is taken about the MEDIAN and
+    divided by the MEAN - not MAD/median - and with no 1.4826 consistency
+    factor, because nothing here assumes normality.
+    """
+    import numpy as np
+
+    out: list = []
+    for nid, z in ctx["normalised"]:
+        mean = z.mean(axis=0)
+        mad = np.median(np.abs(z - np.median(z, axis=0)[None, :]), axis=0)
+        out.append((nid, mean, mad / (mean + 1e-9)))
+    return _rec("variability", "pass", f"{len(out)} niches scored",
+                "a robust CV per gene, computed within the niche",
+                {"n_in": len(out), "n_out": len(out)},
+                method="MAD about the median, divided by the mean, scale 1.0",
+                criterion="no normality assumed, so no consistency factor",
+                ), {"variability": out}
+
+
+def background(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """locally detected genes: the denominator a selection test is judged against.
+
+    `mean > 0` on the NORMALISED profile. this is the background a Fisher test
+    uses, and it is per niche on purpose - a gene undetected in this niche is
+    not part of what this niche could have selected.
+    """
+    floor = _declared(ctx, "min_background")
+    if floor is None:
+        return _missing("background", "min_background",
+                        "the smallest background a selection test may be "
+                        "judged against is a declared choice"), {}
+    kept, dropped = [], 0
+    for nid, mean, ratio in ctx["variability"]:
+        bg = mean > 0
+        if int(bg.sum()) < floor:
+            dropped += 1
+            continue
+        kept.append((nid, bg, ratio))
+    return _rec("background", "pass", f"{len(kept)} niches kept, {dropped} too sparse",
+                "a niche whose background is below the floor cannot support a "
+                "selection test, so it is dropped rather than tested",
+                {"n_in": len(kept) + dropped, "n_out": len(kept),
+                 "reason": {"background_below_floor": dropped},
+                 "min_background": floor},
+                method="locally detected = normalised mean > 0",
+                criterion=f"at least {floor} detected genes",
+                ), {"background": kept}
+
+
+def foreground(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """the top fraction of variable genes, ranked within the niche.
+
+    the percentile runs over the NON-ZERO ratios only. a zero-variance gene is
+    locally constant and uninformative, and ranking it adds arbitrary tie-break
+    noise on a niche with few spots.
+
+    `min_foreground` is a FLOOR ON THE COUNT, not only a skip threshold -
+    measured against the published artifact, whose smallest set is exactly it.
+    """
+    frac = _declared(ctx, "top_fraction")
+    floor = _declared(ctx, "min_foreground")
+    if frac is None or floor is None:
+        return _missing("foreground", "top_fraction" if frac is None else "min_foreground",
+                        "how much of a niche counts as variable was chosen by "
+                        "looking at one tissue, so it does not travel"), {}
+    import numpy as np
+
+    kept, dropped, cutoffs = [], 0, []
+    for nid, bg, ratio in ctx["background"]:
+        nz = np.where(bg & (ratio > 0))[0]
+        if nz.size < floor:
+            dropped += 1
+            continue
+        n_keep = min(max(int(floor), int(np.floor(float(frac) * nz.size))), nz.size)
+        top = nz[np.argpartition(-ratio[nz], n_keep - 1)[:n_keep]]
+        cutoffs.append(float(ratio[top].min()))
+        kept.append((nid, top))
+    return _rec("foreground", "pass",
+                f"{len(kept)} niches selected, {dropped} with too few variable genes",
+                "each niche gets its own cutoff - the fraction is declared, the "
+                "threshold it implies is measured per niche and recorded",
+                {"n_in": len(kept) + dropped, "n_out": len(kept),
+                 "reason": {"nonzero_below_floor": dropped},
+                 "top_fraction": float(frac), "min_foreground": int(floor),
+                 "cutoff_median": float(np.median(cutoffs)) if cutoffs else None,
+                 "size_median": int(np.median([t.size for _, t in kept])) if kept else None},
+                method="top fraction by robust CV, over the non-zero subset",
+                criterion="percentile on non-zero only; count floored at min_foreground",
+                ), {"foreground": kept}
+
+
+def gene_sets(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """niche -> the symbols of its variable genes. gpath2vec's input.
+
+    the seam. enrichment, the graph and the embedding belong to that package
+    and are not re-implemented here; what this chain owes it is the sets.
+    """
+    genes = ctx.get("gene_symbols")
+    if genes is None:
+        raise PathwayInputMissing("gene_sets needs `gene_symbols` on the gene axis")
+    import numpy as np
+
+    g = np.asarray(genes)
+    sets = {nid: g[idx].tolist() for nid, idx in ctx["foreground"]}
+    sizes = [len(v) for v in sets.values()]
+    return _rec("gene_sets", "pass", f"{len(sets)} niches with a gene set",
+                "handed to the pathway encoder as its input; enrichment, graph "
+                "and embedding are the encoder's and are not duplicated here",
+                {"n_in": len(ctx["foreground"]), "n_out": len(sets),
+                 "size_median": int(np.median(sizes)) if sizes else None,
+                 "size_min": min(sizes) if sizes else None},
+                method="gene symbols on the declared axis",
+                criterion="one set per surviving niche",
+                ), {"gene_sets": sets}
+
+
+VARIABLE_GENE_STEPS: list[Step] = [
+    Step(id="niche_qc", fn=niche_qc, produces=frozenset({"qc_niches"}),
+         params_space=("min_niche_umi", "min_spot_umi", "min_detected_spots")),
+    Step(id="normalise", fn=normalise, produces=frozenset({"normalised"}),
+         requires=frozenset({"qc_niches"}), params_space=("target_sum",)),
+    Step(id="variability", fn=variability, produces=frozenset({"variability"}),
+         requires=frozenset({"normalised"})),
+    Step(id="background", fn=background, produces=frozenset({"background"}),
+         requires=frozenset({"variability"}), params_space=("min_background",)),
+    Step(id="foreground", fn=foreground, produces=frozenset({"foreground"}),
+         requires=frozenset({"background"}),
+         params_space=("top_fraction", "min_foreground")),
+    Step(id="gene_sets", fn=gene_sets, produces=frozenset({"gene_sets"}),
+         requires=frozenset({"foreground"})),
+]

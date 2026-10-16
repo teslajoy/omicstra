@@ -132,3 +132,149 @@ def test_each_step_is_its_own_traced_span():
     build_protocol(NICHE_MEMBERSHIP_STEPS, "niche_membership").invoke(
         {**CTX, "params": DECLARED}, config={"callbacks": [Spy()]})
     assert {"mito_filter", "niche_membership"} <= set(seen), seen
+
+
+# --- the variable-gene chain ----------------------------------------------
+# transcribed from the code that wrote `niche_madmean_genesets.json`, with the
+# parameters read out of that notebook's constants and CHECKED against the
+# artifact itself: 3,251 sampled niches, median 55 genes, minimum exactly 20.
+import numpy as np
+
+from omicstra.protocols.pathway import VARIABLE_GENE_STEPS
+
+VG_PARAMS = {"niche_qc": {"min_niche_umi": 1000, "min_spot_umi": 200,
+                          "min_detected_spots": 3},
+             "normalise": {"target_sum": 1e6},
+             "variability": {},
+             "background": {"min_background": 100},
+             "foreground": {"top_fraction": 0.25, "min_foreground": 20},
+             "gene_sets": {}}
+
+
+def _niches(n=20, g=400, shallow=0, seed=0):
+    rng = np.random.default_rng(seed)
+    out = []
+    for i in range(n):
+        depth = 40 if i < shallow else 400
+        c = rng.poisson(depth / g, size=(7, g)).astype("float32") * (depth / 100)
+        out.append((f"n{i}", c))
+    return out
+
+
+def _vg(params=None, niches=None, g=400):
+    return build_protocol(VARIABLE_GENE_STEPS, "variable_gene").invoke(
+        {"params": params if params is not None else VG_PARAMS,
+         "niches": niches if niches is not None else _niches(g=g),
+         "gene_symbols": [f"G{j}" for j in range(g)]})
+
+
+def test_the_chain_runs_end_to_end_and_every_step_reports_a_funnel():
+    r = _vg(niches=_niches(n=40, shallow=5))
+    assert all(v["status"] == "pass" for v in r.values()), \
+        {k: v["status"] for k, v in r.items()}
+    assert r["niche_qc"]["observed"]["n_in"] == 40
+    assert r["niche_qc"]["observed"]["n_out"] == 35, "the shallow five are dropped"
+    for sid, rec in r.items():
+        o = rec["observed"]
+        assert {"n_in", "n_out"} <= set(o), sid
+        if o["n_in"] != o["n_out"]:
+            assert o.get("reason"), f"{sid} drops without naming a cause"
+
+
+def test_a_drop_is_attributed_to_its_cause():
+    """two qc gates ask different things: total depth over the niche, and how
+    many spots carry signal. a niche can clear the first on one bright spot."""
+    r = _vg(niches=_niches(n=10, shallow=4))
+    why = r["niche_qc"]["observed"]["reason"]
+    assert why["total_umi"] == 4 and why["detected_spots"] == 0
+
+
+# --- the three details prose would have got wrong -------------------------
+def test_the_mad_is_about_the_median_and_divided_by_the_MEAN():
+    """not MAD/median, and no 1.4826 consistency factor - nothing here assumes
+    normality. a ratio computed the other way would rank different genes."""
+    from omicstra.protocols.pathway import variability
+
+    z = np.array([[1.0, 10.0], [2.0, 10.0], [9.0, 10.0]], dtype="float32")
+    _, upd = variability({"params": {}, "normalised": [("n", z)]})
+    _, mean, ratio = upd["variability"][0]
+
+    med = np.median(z, axis=0)
+    expect = np.median(np.abs(z - med), axis=0) / (z.mean(axis=0) + 1e-9)
+    assert np.allclose(ratio, expect)
+    # and it is NOT MAD/median, which would differ on the first gene
+    assert not np.isclose(ratio[0], expect[0] * z.mean(axis=0)[0] / med[0])
+
+
+def test_the_percentile_runs_over_the_non_zero_ratios_only():
+    """a zero-variance gene is locally constant and uninformative, and ranking
+    it adds arbitrary tie-break noise on a niche with few spots."""
+    from omicstra.protocols.pathway import foreground
+
+    n_genes = 200
+    ratio = np.zeros(n_genes, dtype="float32")
+    ratio[:40] = np.linspace(0.1, 1.0, 40)       # only 40 are non-zero
+    bg = np.ones(n_genes, dtype=bool)
+    _, upd = foreground({"params": {"top_fraction": 0.25, "min_foreground": 5},
+                         "background": [("n", bg, ratio)]})
+    picked = upd["foreground"][0][1]
+    assert picked.size == 10, "25% of the 40 NON-ZERO, not of all 200"
+    assert (ratio[picked] > 0).all(), "a zero-variance gene was selected"
+
+
+def test_min_foreground_is_a_floor_on_the_count_not_only_a_skip():
+    """measured against the published artifact: its smallest gene set is
+    exactly min_foreground, and none is below it."""
+    from omicstra.protocols.pathway import foreground
+
+    ratio = np.zeros(200, dtype="float32")
+    ratio[:24] = np.linspace(0.1, 1.0, 24)       # 25% of 24 is 6, below the floor
+    _, upd = foreground({"params": {"top_fraction": 0.25, "min_foreground": 20},
+                         "background": [("n", np.ones(200, dtype=bool), ratio)]})
+    assert upd["foreground"][0][1].size == 20, "the floor raises the count"
+
+
+def test_the_background_is_the_normalised_mean_not_the_raw_counts():
+    """`mean > 0` on the NORMALISED profile. the background is what a selection
+    test is judged against, and it is per niche on purpose."""
+    from omicstra.protocols.pathway import background
+
+    mean = np.array([0.0, 0.0, 1.0, 2.0], dtype="float32")
+    ratio = np.array([0.0, 0.0, 0.5, 0.7], dtype="float32")
+    _, upd = background({"params": {"min_background": 2},
+                         "variability": [("n", mean, ratio)]})
+    bg = upd["background"][0][1]
+    assert bg.tolist() == [False, False, True, True]
+
+
+def test_a_niche_below_the_background_floor_is_dropped_with_its_cause():
+    from omicstra.protocols.pathway import background
+
+    mean = np.array([0.0, 1.0], dtype="float32")
+    rec, upd = background({"params": {"min_background": 2},
+                           "variability": [("n", mean, mean)]})
+    assert upd["background"] == []
+    assert rec.observed["reason"]["background_below_floor"] == 1
+
+
+# --- declared, not assumed, at every threshold ----------------------------
+def test_every_threshold_refuses_when_undeclared():
+    for step, field in (("niche_qc", "min_niche_umi"),
+                        ("normalise", "target_sum"),
+                        ("background", "min_background"),
+                        ("foreground", "top_fraction")):
+        params = {k: dict(v) for k, v in VG_PARAMS.items()}
+        params[step].pop(field)
+        r = _vg(params)
+        assert r[step]["status"] == "not_run", f"{step} ran without {field}"
+        assert field in r[step]["result"], r[step]["result"]
+
+
+def test_the_per_niche_cutoff_is_measured_and_recorded():
+    """the FRACTION is declared; the threshold it implies is measured per niche.
+    EVALUATION.md section 8: a null-derived or data-derived cut is re-derived,
+    never inherited."""
+    r = _vg()
+    o = r["foreground"]["observed"]
+    assert o["top_fraction"] == 0.25
+    assert o["cutoff_median"] is not None and o["cutoff_median"] > 0
