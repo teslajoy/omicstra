@@ -135,13 +135,21 @@ def spec(name: str) -> EncoderSpec:
 
 
 def load(name: str) -> Any:
-    """materialise the model. THIS is the call that needs torch."""
-    spec(name)          # refuse an undeclared name BEFORE importing a tensor library
+    """materialise the model. THIS is the call that needs the heavy dependency.
+
+    the refusal names the extra the SPEC declares, not a fixed one. every
+    encoder needed `encode` until one did not: the pathway encoder is a
+    separate package under its own extra, and a message naming the wrong one
+    sends a reader to install something that would not have helped.
+    """
+    sp = spec(name)     # refuse an undeclared name BEFORE importing anything heavy
     try:
         return _REGISTRY[name][1]()
     except ImportError as e:
+        extras = ",".join(sp.extras) or "encode"
         raise EncoderUnavailable(
-            f"{name} needs the encode extra: pip install 'omicstra[encode]' ({e})") from e
+            f"{name} needs the {extras} extra: pip install 'omicstra[{extras}]' ({e})"
+        ) from e
 
 
 # --- Virchow2 ---------------------------------------------------------------
@@ -324,4 +332,58 @@ register(
               "measured by the encoder_compatibility probe rather than assumed.",
     ),
     _load_novae,
+)
+
+# --- gpath2vec --------------------------------------------------------------
+def _load_gpath2vec():
+    """the pathway encoder, which is a separate published package.
+
+    omicstra does not re-implement it. `protocols/pathway.py` prepares what it
+    takes - per-niche gene sets, verified exactly against the sets that produced
+    the published embeddings - and enrichment, the graph and the walks are the
+    encoder's own, with its own provenance.
+
+    the import is deferred to here for the same reason every other loader
+    defers one: `spec()` must answer for an encoder a machine cannot run, so a
+    plan can be made where the weights cannot.
+    """
+    import gpath2vec
+
+    return gpath2vec
+
+
+register(
+    EncoderSpec(
+        name="gpath2vec", dim=512, role="pathway", modality="molecular",
+        unit="niche",
+        # HGNC symbols, because the pathway universe is keyed by symbol. a
+        # cohort indexed by Ensembl is converted on the declared axis before
+        # the gene sets are built, never silently matched.
+        gene_axis="symbol",
+        trained_on="nothing pre-trained. the embedding is fitted PER COHORT by "
+                   "metapath2vec over that cohort's own niche-pathway graph, so "
+                   "there is no training distribution to be out of - which is "
+                   "why it carries no min_units from a prototype count and why "
+                   "encoder_compatibility has nothing to probe. what it needs "
+                   "instead is a pathway universe, and that is declared",
+        expects=UnitExpectation(
+            resolution_class=("niche",),
+            footprint_um=None,
+            declared=True,
+            source="the unit is whatever the cohort declares a niche to be - a "
+                   "centre and its k neighbours. the encoder has no opinion "
+                   "about the footprint, only that the unit is a niche and not "
+                   "a spot: its input is a per-niche gene set, and a single "
+                   "spot does not have the several observations the selection "
+                   "needs",
+        ),
+        extras=("pathway",),
+        notes="fitted per cohort, so an embedding is not portable BETWEEN "
+              "cohorts and nothing here pretends otherwise. the input is the "
+              "gene sets `protocols/pathway.py:VARIABLE_GENE_STEPS` produces, "
+              "which reproduce the published sets exactly on the seed cohort. "
+              "enrichment_method - fisher or aucell - is a cohort declaration "
+              "and not a default, because the two answer different questions.",
+    ),
+    _load_gpath2vec,
 )

@@ -396,3 +396,61 @@ def test_the_two_chains_fork_at_aggregation():
     assert "niche_sum" in au and "niche_sum" not in vg
     assert "variability" in vg and "variability" not in au
     assert au & vg == set(), "the chains share no step past qc"
+
+
+# --- the encoder, resolved by declared name --------------------------------
+def test_gpath2vec_is_registered_and_answers_without_being_installed():
+    """`spec()` is metadata and must answer for an encoder this machine cannot
+    run, so a cohort can be PLANNED where the weights cannot be loaded."""
+    from omicstra.models.encoders import spec
+
+    s = spec("gpath2vec")
+    assert (s.dim, s.role, s.modality, s.unit) == (512, "pathway", "molecular", "niche")
+    assert s.gene_axis == "symbol", "the pathway universe is keyed by symbol"
+    assert s.extras == ("pathway",), "its own extra - it needs no tensor library"
+
+
+def test_it_declares_no_unit_floor_and_says_why():
+    """novae carries min_units because its prototype count sets one. this is
+    fitted PER COHORT, so there is no training distribution to be out of and
+    nothing for a floor to protect against."""
+    from omicstra.models.encoders import spec
+
+    s = spec("gpath2vec")
+    assert s.min_units is None
+    assert "per cohort" in s.trained_on.lower()
+    assert "nothing pre-trained" in s.trained_on.lower()
+
+
+def test_the_refusal_names_the_extra_the_spec_declares():
+    """every encoder needed `encode` until one did not. a message naming the
+    wrong extra sends a reader to install something that would not have helped.
+    """
+    from omicstra.models.encoders import EncoderUnavailable, load, spec
+
+    try:
+        load("gpath2vec")
+    except EncoderUnavailable as e:
+        assert "pathway" in str(e) and "omicstra[pathway]" in str(e)
+        assert "omicstra[encode]" not in str(e)
+    else:
+        pytest.skip("gpath2vec is installed here, so the refusal cannot fire")
+
+    # and the declared extra is what the message uses, for every encoder
+    for name in ("virchow2", "novae", "gpath2vec"):
+        assert spec(name).extras, f"{name} declares no extra"
+
+
+def test_the_chain_feeds_the_encoder_rather_than_duplicating_it():
+    """the seam. omicstra prepares the gene sets; enrichment, the graph and the
+    walks belong to the published package and are not re-implemented here."""
+    import inspect
+
+    from omicstra.protocols import pathway
+
+    src = inspect.getsource(pathway)
+    for owned_by_the_encoder in ("metapath2vec", "random_walk", "fisher_exact",
+                                 "BH", "networkx"):
+        assert owned_by_the_encoder not in src, (
+            f"{owned_by_the_encoder} belongs to gpath2vec and is duplicated here")
+    assert "gene_sets" in src, "the chain must produce the encoder's input"
