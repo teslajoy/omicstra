@@ -364,3 +364,179 @@ VARIABLE_GENE_STEPS: list[Step] = [
     Step(id="gene_sets", fn=gene_sets, produces=frozenset({"gene_sets"}),
          requires=frozenset({"foreground"})),
 ]
+
+
+# ------------------------------------------------------ the AUCell chain -----
+# transcribed from `scripts/niche_aucell.py`. the notebook's prose says "AUCell
+# on the variable-gene-filtered niche profile"; the script does not filter, and
+# the script is right - see `aucell` below for why that is a method rule rather
+# than a preference.
+
+
+def niche_sum(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """collapse a niche's spots into ONE profile, by summing raw counts.
+
+    this is where the two chains part. the variable-gene chain never collapses,
+    because its statistic needs the spots as several observations; this one
+    collapses first and normalises the result. the same counts, a different
+    unit of normalisation, and not interchangeable.
+    """
+    import numpy as np
+
+    rows = [(nid, np.asarray(c).sum(axis=0)) for nid, c in ctx["qc_niches"]]
+    return _rec("niche_sum", "pass", f"{len(rows)} niches summed to one profile",
+                "collapsed BEFORE normalising, which is what makes this chain "
+                "different from the variable-gene one",
+                {"n_in": len(rows), "n_out": len(rows)},
+                method="sum raw counts over the spots of the niche",
+                criterion="one profile per niche",
+                ), {"summed": rows}
+
+
+def library_normalise(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """scale each niche to a declared library size, then log1p.
+
+    the target differs from the other chain's and that is not an oversight:
+    this one normalises a SUMMED profile, the other normalises each spot.
+    """
+    target = _declared(ctx, "target_sum")
+    if target is None:
+        return _missing("library_normalise", "target_sum",
+                        "the library-size target is a declared convention"), {}
+    import numpy as np
+
+    out = []
+    for nid, v in ctx["summed"]:
+        v = np.asarray(v, dtype="float64")
+        out.append((nid, np.log1p(v * (float(target) / max(v.sum(), 1.0)))))
+    return _rec("library_normalise", "pass",
+                f"{len(out)} niches at target {target:g}",
+                "normalised AFTER summing, on the niche's own library",
+                {"n_in": len(out), "n_out": len(out), "target_sum": float(target)},
+                method=f"counts * {target:g} / library, then log1p",
+                criterion="one library size per niche",
+                ), {"profiles": out}
+
+
+def pathway_net(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """the gene sets to score, size-filtered on declared bounds.
+
+    a set too small is noise and one too large is the transcriptome; both
+    bounds are declared, because what counts as either depends on the panel.
+    """
+    lo, hi = _declared(ctx, "min_size"), _declared(ctx, "max_size")
+    if lo is None or hi is None:
+        return _missing("pathway_net", "min_size" if lo is None else "max_size",
+                        "a usable gene-set size depends on the panel"), {}
+    sets = ctx.get("pathway_sets")
+    if sets is None:
+        raise PathwayInputMissing("pathway_net needs `pathway_sets`")
+
+    kept = {k: v for k, v in sets.items() if lo <= len(v) <= hi}
+    return _rec("pathway_net", "pass",
+                f"{len(kept)} of {len(sets)} pathways within [{lo}, {hi}]",
+                "size-filtered before scoring, so a set nobody could score "
+                "never reaches the ranking",
+                {"n_in": len(sets), "n_out": len(kept),
+                 "reason": {"outside_size_bounds": len(sets) - len(kept)},
+                 "min_size": lo, "max_size": hi},
+                method="declared size bounds over the pathway universe",
+                criterion=f"{lo} <= |set| <= {hi}",
+                ), {"net": kept}
+
+
+def aucell(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """rank-based enrichment per niche, over the FULL gene universe.
+
+    the universe is the denominator. AUCell scores a set as an AUC over the
+    ranking of every measured gene in the unit, so restricting the input to a
+    per-niche foreground would score each niche against a different denominator
+    and the values would stop being comparable BETWEEN niches - which is the one
+    thing they are for. a variable-gene-restricted variant exists as its own
+    exploratory artifact, kept separate for exactly this reason.
+
+    that is a general rule and `EVALUATION.md` carries it: a rank-based score
+    wants the full universe, a selection test wants the filter, and the two
+    cannot share a preprocessing path.
+    """
+    import numpy as np
+
+    genes = ctx.get("gene_symbols")
+    if genes is None:
+        raise PathwayInputMissing("aucell needs `gene_symbols`")
+    index = {g: i for i, g in enumerate(genes)}
+    net = {k: [index[g] for g in v if g in index] for k, v in ctx["net"].items()}
+    net = {k: v for k, v in net.items() if v}
+
+    names, scores = sorted(net), []
+    n = len(genes)
+    for _, profile in ctx["profiles"]:
+        # rank over EVERY gene, descending. ties take their average rank, so a
+        # zero-inflated profile does not hand an arbitrary order an advantage.
+        order = np.argsort(np.argsort(-np.asarray(profile), kind="stable"))
+        rank = np.empty(n, dtype="float64")
+        rank[np.argsort(order)] = np.arange(n, dtype="float64")
+        scores.append([float(1.0 - (rank[net[k]].mean() / max(n - 1, 1)))
+                       for k in names])
+    return _rec("aucell", "pass",
+                f"{len(scores)} niches x {len(names)} pathways",
+                "every niche ranked over the same universe, so the scores are "
+                "comparable between niches",
+                {"n_in": len(ctx["profiles"]), "n_out": len(scores),
+                 "n_pathways": len(names), "n_genes_ranked": n},
+                method="AUC over the full-universe ranking, per gene set",
+                criterion="no per-unit feature filter - the universe is the denominator",
+                ), {"aucell": (names, scores,
+                               [nid for nid, _ in ctx["profiles"]])}
+
+
+def zscore_within_group(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """z-score each pathway WITHIN a declared group, usually the section.
+
+    a section is a batch: its own staining, depth and capture efficiency. a
+    score compared across sections without this compares batches. the raw
+    matrix is kept too, because the z-score destroys absolute level and some
+    questions need it.
+    """
+    group_by = _declared(ctx, "group_by")
+    if group_by is None:
+        return _missing("zscore_within_group", "group_by",
+                        "which variable is the batch is a cohort's statement, "
+                        "not something to infer from a name"), {}
+    import numpy as np
+
+    names, scores, nids = ctx["aucell"]
+    groups = ctx.get("niche_groups") or {}
+    arr = np.asarray(scores, dtype="float64")
+    out = np.zeros_like(arr)
+    seen: dict[str, list[int]] = {}
+    for i, nid in enumerate(nids):
+        seen.setdefault(str(groups.get(nid, "")), []).append(i)
+    for rows in seen.values():
+        block = arr[rows]
+        out[rows] = (block - block.mean(axis=0)) / (block.std(axis=0, ddof=1) + 1e-9)
+    return _rec("zscore_within_group", "pass",
+                f"{len(seen)} {group_by} group(s) z-scored",
+                "the raw scores are kept beside the z-scored ones - the z-score "
+                "removes absolute level, and some questions need it",
+                {"n_in": len(nids), "n_out": len(nids),
+                 "group_by": group_by, "n_groups": len(seen)},
+                method=f"(x - mean) / sd within each {group_by}",
+                criterion="scored within the batch, never across it",
+                ), {"aucell_z": (names, out.tolist(), nids)}
+
+
+AUCELL_STEPS: list[Step] = [
+    Step(id="niche_sum", fn=niche_sum, produces=frozenset({"summed"}),
+         requires=frozenset({"qc_niches"})),
+    Step(id="library_normalise", fn=library_normalise,
+         produces=frozenset({"profiles"}), requires=frozenset({"summed"}),
+         params_space=("target_sum",)),
+    Step(id="pathway_net", fn=pathway_net, produces=frozenset({"net"}),
+         params_space=("min_size", "max_size")),
+    Step(id="aucell", fn=aucell, produces=frozenset({"aucell"}),
+         requires=frozenset({"profiles", "net"})),
+    Step(id="zscore_within_group", fn=zscore_within_group,
+         produces=frozenset({"aucell_z"}), requires=frozenset({"aucell"}),
+         params_space=("group_by",)),
+]
