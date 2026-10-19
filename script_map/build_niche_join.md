@@ -59,7 +59,7 @@ boundary is averaged over fewer members, not over zeros.
 | 190-195 | load per-unit morphology vectors; assert row counts agree | `{key}.npy` | `vc` | - | `assert vn.rows == vc.rows == len(meta)` | - |
 | 195 | `spot_to_row`: unit id -> row index | `meta.index` | dict | - | - | - |
 | 198-199 | load the molecular parquet; select the embedding columns | `{key}_novae_embeddings.parquet` | `nv`, `novae_cols` | - | - | **`startswith('novae_')`** - a PREFIX rule, not a declared list |
-| **201** | **the canonical unit set** | `meta.index`, `nv.index` | `shared` | - | **`[s for s in meta.index if s in nv.index]` - units in one assay only are dropped here, SILENTLY and UNCOUNTED. the only drop in the script with no counter** | - |
+| **201** | **the canonical unit set** | `meta.index`, `nv.index` | `shared` | - | **`[s for s in meta.index if s in nv.index]` - units present in one embedding assay only are dropped here. `len(shared)` IS recorded, as `n_niches_pre_intersection` at 323; what is nowhere is the `n_in` this drop ran against - `len(meta)` and `len(nv.index)`** | - |
 | 204-208 | per-sample lookup tables | the five by-sample dicts | `gp_sub`, `mcw_sub`, `mclab_sub`, `tls_sub`, `morph_sub` | - | `.get` -> `None`; each absence is handled per unit below | two key spaces: `subarray_key` for 204/207/208, `sp` for 205/206 |
 | 211 | molecular values frame for reindex pooling | `nv` | `nv_vals` | - | - | `novae_cols` |
 | 214-215 | counters | - | `n_missing_gp`, `n_missing_tls`, `n_missing_morph`, `n_missing_neighbor`, `n_missing_mc` | - | - | - |
@@ -69,16 +69,16 @@ boundary is averaged over fewer members, not over zeros.
 | line | operation | inputs | outputs | constants | filters / drops | column lists |
 |:--|:--|:--|:--|:--|:--|:--|
 | 218 | read the declared neighbour list | `nv.loc[sid,'neighbor_spot_ids']` | `neighbors_raw` | - | the neighbourhood is READ from the molecular assay, not recomputed from coordinates | `neighbor_spot_ids` |
-| **220** | keep only neighbours present in the morphology assay | `spot_to_row` | `neighbors` | - | **a neighbour absent from the other assay is dropped** | - |
+| **220** | keep only neighbours present in the morphology assay | `spot_to_row` | `neighbors` | - | **the filter is against `spot_to_row` = `meta.index`, the MORPHOLOGY index, only. a neighbour in the morphology assay but absent from the molecular parquet passes it (see 231). and the result is NOT capped at `K`, so a declared neighbour list longer than `K` yields a token block taller than 7 at 228 and a `virchow2_cell_tokens` longer than 8960, unguarded** | - |
 | **221-224** | **pad to fixed width by repeating self** | - | `neighbors` len `K` | `K_NEIGHBORS` | **`n_missing_neighbor` counted. a boundary unit's own vector is weighted (1 + pad)/7 in every pooled field** | - |
 | 227-228 | stack self + K neighbours into the per-unit token block | `vc` | `(7, 1280)` `float32` | - | - | - |
-| 231 | pool the molecular vector: reindex `[sid]+neighbors`, `mean(axis=0)` | `nv_vals` | 64d `float32` | - | default `skipna=True`; every key exists after 220, so the denominator is 7 with padding | `novae_cols` |
+| **231** | pool the molecular vector: reindex `[sid]+neighbors`, `mean(axis=0)` | `nv_vals` | 64d `float32` | - | **default `skipna=True`, and 220 did not filter against `nv.index` - so a neighbour absent from the molecular parquet becomes a NaN row and the mean runs over FEWER than 7 members, uncounted. the same is true of 243 and of `niche_mean_pool`. padding at 224 fires on absence from morphology and never on absence from the molecular assay** | `novae_cols` |
 | 234-238 | pathway vector, already per unit, looked up not pooled | `gp_sub` | 512d or NaN | **`512` HARDCODED at 238** | absent -> all-NaN row, `n_missing_gp` counted. **238 contradicts 390/461, which take the real width as `len(gp_cols)`** | - |
 | 241-251 | pool the scalar signal | `tls_sub` | float or NaN | - | table absent, or all 7 keys NaN -> NaN, `n_missing_tls` counted | `tls_score` |
 | 253-258 | pool the 14-way weight vector | `mcw_sub`, `niche_mean_pool` | 14d `float32` | **`14` via `range(1, 15)` at 255, `14` again at 258** | table absent -> all-NaN | **`['mc1'..'mc14']` generated, not declared** |
 | 260-265 | categorical label, **center unit only, not pooled** | `morph_sub` | str or `None` | - | absent -> `None`, `n_missing_morph` counted | `dominant_18class` |
 | 267-276 | discrete class label, **center unit only, not pooled** | `mclab_sub` | int or `-1` | **`-1` sentinel at 276** | absent -> `-1`, `n_missing_mc` counted. the sentinel is a value in the column; downstream filters `< 0` | `megacluster` |
-| 278-292 | assemble the row | all of the above | one dict | - | **291 stores `neighbors_raw[:K]` - the RAW list, before the 220 filter and before the 224 padding. the provenance column and the pooling do not agree by construction** | the 13-key output row |
+| 278-292 | assemble the row | all of the above | one dict | - | **291 stores `neighbors_raw[:K]` - the RAW list, before the 220 filter and before the 224 padding. for a unit where nothing was filtered the two agree; for the `n_boundary_niches_padded` units they do not, and for a unit hit by the 231 case they do not either, uncounted. a reader who recomputes the pooling from this column does not reproduce the row** | the 13-key output row |
 | 294 | frame, indexed on unit id | `rows` | `df` | - | - | - |
 
 discrete labels are taken from the center unit and continuous ones are pooled
@@ -98,9 +98,12 @@ an embedding in the same row describe different footprints.
 says why: the std is meant to reflect the units that feed alignment. reversing
 the two produces different numbers for every surviving unit. this is tier-1 case 6.
 
-the funnel at 318-331 counts nine things and misses one: the drop at 201.
-`n_niches_pre_intersection` is already post-201, so `len(shared)` is nowhere in
-the record.
+the funnel at 318-331 reports nine counts, and what it is missing is an `n_in`,
+not an `n_out`. `n_niches_pre_intersection` at 323 IS `len(shared)` - one row was
+appended per member of `shared`, so 301's input is recorded exactly. what is
+nowhere is the size the 201 intersection ran against: `len(meta)` and
+`len(nv.index)`. a funnel stage needs both ends, and this one has only the far
+one.
 
 ---
 
@@ -131,17 +134,18 @@ the per-sample funnel at 479, the normalisation named as a string at 464.
 
 ---
 
-## 5 · every drop in the script, in execution order
+## 5 · every point a unit or sample can be lost, or an absence introduced
 
-the funnel a translation has to reproduce. the counted column is what the script
-records today.
+in execution order. six of the twelve remove nothing at all - they turn an
+absence into a value in the row, which is a different event and needs a
+different stage. the counted column is what the script records today.
 
 | # | line | what is removed | counted as |
 |:--|:--|:--|:--|
-| 1 | 128 | subjects with no subject-level label | **no** |
-| 2 | 145 | samples missing from any of the three assays | **no** (only `n_subarrays_enumerated` survives) |
-| 3 | 201 | units not present in BOTH embedding assays | **no** |
-| 4 | 220 | neighbours absent from the morphology assay | via #5 |
+| 1 | 128, 180-181 | **nothing.** `dropna` at 128 removes a row from the LABEL table, and 180-181 are `.get` -> `None`. a subject with no archetype, or a sample whose key is absent from the subject map, still emits every row - with `None` in `patient_id` or `archetype` | **no** |
+| 2 | 145 | samples missing from any of the three assays | `n_out` only: `n_subarrays_enumerated`. the three key sets it intersected are **not** recorded |
+| 3 | 201 | units not present in BOTH embedding assays | `n_out` only: `n_niches_pre_intersection` at 323 is `len(shared)`. the `n_in` it ran against is **not** recorded |
+| 4 | 220, 231 | a POOLING MEMBER, not a row. absent from morphology -> dropped at 220 and restored by #5. absent from the MOLECULAR parquet -> passes 220, becomes a NaN row at 231, and the skipna mean runs over a smaller denominator | morphology side via #5; **molecular side not at all** |
 | 5 | 221-224 | nothing removed; width restored by repeating self | `n_boundary_niches_padded` |
 | 6 | 234-238 | nothing removed; pathway absence becomes NaN | `n_missing_gpath2vec` |
 | 7 | 241-251 | nothing removed; scalar absence becomes NaN | `n_missing_tls` |
@@ -151,12 +155,24 @@ records today.
 | 11 | 410-412 | samples already on disk | status `exists` |
 | 12 | 413-426 | samples that raised | status `failed` |
 
-three of the twelve are uncounted (#1, #2, #3). each one is an unexplained drop
-under the funnel rule, so each needs a stage with a reason in the translation.
+five of the twelve remove a row or a whole sample: #2, #3, #10, #11, #12. #4
+removes a pooling member, which changes a value rather than a count.
+
+of the five, **#2 and #3 record only their `n_out`** - the set each one
+intersected is never counted. **#1 records nothing because it removes nothing**:
+it writes `None` into two columns and moves on. and **#4's molecular half is
+invisible** - it has no counter and no reason, and it changes a pooled vector
+without changing any number in the funnel.
+
+so the translation needs an `n_in` on #2 and #3, a stage for #1's absence, and a
+pooling stage that counts its own denominator rather than assuming 7.
 
 ---
 
-## 6 · every numeric literal, and what it is
+## 6 · every numeric literal that carries a decision
+
+structural indices (`parts[1]`, `axis=0`, the `0`/`1` of a split) and `0.0` at
+443 are excluded: they are not parameters.
 
 | line | literal | kind | in the translation |
 |:--|:--|:--|:--|
@@ -192,6 +208,9 @@ under the funnel rule, so each needs a stage with a reason in the translation.
 - **M-1** · the docstring at 14 says `novae_niche` is `len=64 (mean-pool self +
   6 neighbors, z-score per sub)`, which is right, but 20-21 says the scope is
   "expected 260 subarrays" - a count, in a docstring, that nothing enforces.
+- **M-2** · `configs/data_contract.json:353` declares `neighbor_spot_ids` as
+  "provenance of the K+1 spots". 291 stores `neighbors_raw[:K]` - K entries, self
+  excluded. the declared width and the written width differ by one.
 - **X-3** · the docstring at 24 names the output as
   `data/embeddings/niches/{key}.parquet`. that is the v1 default at 66; the
   published v3 build was written elsewhere via `--out-dir`. the path in the
