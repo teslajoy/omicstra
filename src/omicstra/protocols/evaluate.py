@@ -1052,3 +1052,648 @@ def matrix(pack: dict, claims: dict[str, str] | None = None) -> dict:
             "n_cells": len(cells),
             "cells": cells}
     return out
+
+
+# ========================================================= EVALUATE_STEPS ====
+# the chain that COMPUTES a verdict, as against the gates above, which judge a
+# verdict somebody else computed.
+#
+# both are needed and they answer different questions. a cohort WITH an evidence
+# pack takes the gates: the numbers exist, the question is what they may claim.
+# a cohort with no pack has nothing to judge, and four of the guards above say
+# so by name - `_not_run("G5_noise_floor", "a permutation null over ARI")` and
+# the three beside it. this chain produces those inputs.
+#
+# it does not re-judge what the gates judge. two answers to one question is the
+# defect; this answers the question they could not.
+#
+# the ctx it reads, all of it arrays and labels already in memory - the chain
+# that assembles them is the caller's:
+#
+#   ctx["spaces"]        {name: (n, d) matrix}   one per view being evaluated
+#   ctx["paired"]        {name: (n, d) matrix}   the other modality, row-aligned
+#   ctx["labels"]        {name: (n,) labels}     biological labels
+#   ctx["confounder"]    (n,) labels             the subject each unit came from
+#   ctx["scores"]        {name: (n,) float}      continuous signals, e.g. a
+#                                                pathway or signature score
+#
+# every statistic comes from `measures/evaluation.py`. a protocol computes no
+# maths of its own - a number computed in here is a number no notebook can check.
+
+from omicstra.protocols import Ctx, Step
+from omicstra.records import DiagnosticRecord
+
+# the four states a hypothesis can be in. `unguarded` exists because "no guard
+# failed" was true of a hypothesis where no guard RAN, and `not_run` because
+# "nothing to report" and "reported nothing" are different answers.
+VERDICTS = ("biological", "diagnostic", "unguarded", "not_run")
+
+
+class EvaluationInputMissing(RuntimeError):
+    """a declared input is absent from the context, so no step will guess at it."""
+
+
+def _erec(step_id: str, status: str, result: str, decision: str,
+          observed: dict, method: str = "", criterion: str = "",
+          **kw) -> DiagnosticRecord:
+    return DiagnosticRecord(step_id=step_id, status=status, method=method,
+                            criterion=criterion, result=result, decision=decision,
+                            observed=observed, **kw)
+
+
+def _edeclared(ctx: Ctx, field: str):
+    """this step's declared parameter, or None. never a default."""
+    v = (ctx.get("params") or {}).get(field)
+    return v if v not in ("", None) else None
+
+
+def _emissing(step: str, field: str, why: str) -> DiagnosticRecord:
+    return _erec(step, "not_run", f"{field} is not declared",
+                 f"declare {field} for this cohort - {why}", {"missing": field})
+
+
+def _eneed(ctx: Ctx, key: str, step: str):
+    if key not in ctx:
+        raise EvaluationInputMissing(f"{step} needs {key!r} on the context")
+    return ctx[key]
+
+
+
+def _guarded_null(observed: float, nulls, tail: str):
+    """`noise_floor`, or the reason it could not run.
+
+    the guard refuses a null below its own minimum, and that minimum is the
+    GUARD's to hold - duplicating it here would be a second source for one bar.
+    so the refusal is caught and turned into a reason, which is what a cohort
+    declaring too few permutations should see instead of a traceback.
+    """
+    try:
+        g = noise_floor(observed, nulls, tail=tail)
+    except ValueError as e:
+        return None, str(e)
+    return g, ""
+
+# ------------------------------------------------- 1 · the label's granularity --
+def label_granularity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """G1, before any score is computed against the label.
+
+    this runs FIRST because it decides what every later number may claim. a
+    label that encodes the subject turns a clustering score into a subject
+    classification, and the score is identical either way - only the sentence
+    it licenses changes. so the chain measures it before it has a score to be
+    tempted by.
+    """
+    labels = _edeclared(ctx, "labels")
+    tau = _edeclared(ctx, "tau_label_nmi")
+    if labels is None:
+        return _emissing("label_granularity", "labels",
+                         "which labels carry the biological claim is the "
+                         "cohort's, and a label at subject level is a different "
+                         "claim from one at unit level"), {}
+    if tau is None:
+        return _emissing("label_granularity", "tau_label_nmi",
+                         "the NMI above which a label is treated as encoding "
+                         "the confounder. a null-derived cut, re-derived per "
+                         "cohort - see EVALUATION.md section 8"), {}
+
+    tables = _eneed(ctx, "labels", "label_granularity")
+    confounder = _eneed(ctx, "confounder", "label_granularity")
+    names = [n for n in labels if n in tables]
+    if missing := [n for n in labels if n not in tables]:
+        return _erec("label_granularity", "not_run",
+                     f"declared label(s) {missing} are not on the context",
+                     "refused - a declared label with no values is a missing "
+                     "input, not an absent result",
+                     {"declared": list(labels), "present": sorted(tables)}), {}
+
+    results = {n: nmi_label_confounder(tables[n], confounder, tau=float(tau))
+               for n in names}
+    confounded = sorted(n for n, g in results.items() if not g.passed)
+    return _erec("label_granularity", "pass",
+                 f"{len(names) - len(confounded)} of {len(names)} label(s) are "
+                 f"independent of the confounder at tau {float(tau)}"
+                 + (f"; {confounded} encode it" if confounded else ""),
+                 ("every score against a confounded label is diagnostic - it is "
+                  "still reported, and it cannot carry a biological claim alone"
+                  if confounded else
+                  "scores against these labels may carry a biological claim if "
+                  "their own guards pass"),
+                 {"n_in": len(names), "n_out": len(names), "reason": "",
+                  "nmi": {n: g.value for n, g in results.items()},
+                  "confounded": confounded, "tau": float(tau),
+                  "guards": [{"guard": "G1_label_granularity", "scope": n,
+                              "status": "pass" if g.passed else "fail"}
+                             for n, g in results.items()]},
+                 method="NMI(label, confounder) per declared label",
+                 criterion="the label is measured before any score is scored against it",
+                 ), {"label_guards": {n: g for n, g in results.items()},
+                     "confounded_labels": confounded}
+
+
+# ------------------------------------------- 2 · identifiability, and its null --
+def paired_identifiability(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """H1. retrieval and geometric agreement, each with its own floor.
+
+    the two are reported together because a space can retrieve well while
+    agreeing poorly in geometry, and the reverse - `EVALUATION.md` section 1 is
+    explicit that either alone is not decisive.
+
+    the similarity matrix is built here and the statistics come from
+    `measures.evaluation`, so the AUC's negative sample and its seed are
+    declared rather than implicit, which is how the published chain carried
+    them.
+    """
+    ks = _edeclared(ctx, "ks")
+    ratio = _edeclared(ctx, "negative_ratio")
+    neg_seed = _edeclared(ctx, "negative_seed")
+    if ks is None:
+        return _emissing("paired_identifiability", "ks",
+                         "which recall depths this cohort reports"), {}
+    if ratio is None or neg_seed is None:
+        return _emissing("paired_identifiability",
+                         "negative_ratio" if ratio is None else "negative_seed",
+                         "the AUC is computed over a SAMPLE of mismatched "
+                         "pairs, so the ratio and the seed are part of the "
+                         "number and were implicit in the script"), {}
+
+    import numpy as np
+
+    from omicstra.measures.evaluation import linear_cka, retrieval
+
+    spaces = _eneed(ctx, "spaces", "paired_identifiability")
+    paired = _eneed(ctx, "paired", "paired_identifiability")
+    shared = [v for v in spaces if v in paired]
+    if not shared:
+        return _erec("paired_identifiability", "not_applicable",
+                     "no view has a paired counterpart",
+                     "identifiability is a claim about TWO representations of "
+                     "one unit; with one there is nothing to identify",
+                     {"spaces": sorted(spaces), "paired": sorted(paired),
+                      "n_out": 0, "reason": "no paired view"}), {}
+
+    out: dict[str, dict] = {}
+    for v in shared:
+        A, B = np.asarray(spaces[v]), np.asarray(paired[v])
+        if A.shape[0] != B.shape[0]:
+            return _erec("paired_identifiability", "fail",
+                         f"view {v!r}: {A.shape[0]} units against {B.shape[0]}",
+                         "refused - the diagonal is only the matched pair if the "
+                         "two matrices are the same units in the same order",
+                         {"view": v, "n_in": A.shape[0], "n_out": 0,
+                          "reason": "row counts differ"}), {}
+        sim = A @ B.T
+        r = retrieval(sim, ks=tuple(int(k) for k in ks),
+                      negative_ratio=int(ratio), negative_seed=int(neg_seed))
+        r["cka"] = linear_cka(A, B)
+        out[v] = r
+
+    return _erec("paired_identifiability", "pass",
+                 "; ".join(f"{v}: AUC {r['auc']:.3f}, CKA {r['cka']:.3f}, "
+                           f"gap {r['alignment_gap']:+.3f}" for v, r in out.items()),
+                 "retrieval and geometric agreement reported together - either "
+                 "alone is not decisive",
+                 {"n_in": len(shared), "n_out": len(shared), "reason": "",
+                  "per_view": out, "negative_ratio": int(ratio),
+                  "negative_seed": int(neg_seed)},
+                 method="matched-vs-mismatched discrimination and linear CKA",
+                 criterion="both reported, on the same units",
+                 ), {"identifiability": out}
+
+
+# ---------------------------------------- 3 · structure, and whether it holds --
+def structure_and_its_null(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """H2-A. the clustering score, its permutation null, and its companion probe.
+
+    three things produce the same ARI - biology, the label standing in for the
+    subject, and the geometry of the space - so the number is computed with all
+    three separations attached:
+
+        the label's NMI came from step 1 and decides what this may claim
+        the permutation null closes G5, which the pack-reading gate records as
+          `not_run` for want of "a permutation null over ARI"
+        the linear probe is the companion, because ARI is geometry-biased: a
+          manifold embedding scores low against KMeans' globular assumption
+          while a probe on the same space is at parity
+
+    the null permutes the LABEL, which is the right null for "does this space
+    recover this label" - permuting the space would test a different thing.
+    """
+    needed = ("k", "n_init", "seed", "silhouette_sample", "n_permutations",
+              "probe_max_iter", "held_out_groups")
+    vals = {f: _edeclared(ctx, f) for f in needed}
+    for f, v in vals.items():
+        if v is None:
+            return _emissing("structure_and_its_null", f,
+                             "the clustering, its null and its probe are each "
+                             "parameterised, and a default here is a choice "
+                             "made on one tissue"), {}
+
+    import numpy as np
+
+    from omicstra.measures.evaluation import (
+        cluster_agreement,
+        linear_probe,
+        permutation_test,
+    )
+
+    spaces = _eneed(ctx, "spaces", "structure_and_its_null")
+    tables = _eneed(ctx, "labels", "structure_and_its_null")
+    confounder = _eneed(ctx, "confounder", "structure_and_its_null")
+    confounded = set(ctx.get("confounded_labels") or ())
+
+    out: dict[str, dict] = {}
+    rng = np.random.default_rng(int(vals["seed"]))
+    for view, X in spaces.items():
+        for lname, y in tables.items():
+            obs = cluster_agreement(X, y, k=int(vals["k"]),
+                                    n_init=int(vals["n_init"]),
+                                    seed=int(vals["seed"]),
+                                    silhouette_sample=int(vals["silhouette_sample"]))
+            if np.isnan(obs["ari"]):
+                out[f"{view}/{lname}"] = {**obs, "guard_g5": "not_run",
+                                          "reason": obs.get("reason", "")}
+                continue
+            nulls = []
+            y_arr = np.asarray(y)
+            for _ in range(int(vals["n_permutations"])):
+                shuffled = rng.permutation(y_arr)
+                nulls.append(cluster_agreement(
+                    X, shuffled, k=int(vals["k"]), n_init=int(vals["n_init"]),
+                    seed=int(vals["seed"]),
+                    silhouette_sample=int(vals["silhouette_sample"]))["ari"])
+            null = permutation_test(obs["ari"], nulls, tail="greater")
+            g5, why = _guarded_null(obs["ari"], nulls, tail="greater")
+            if g5 is None:
+                out[f"{view}/{lname}"] = {**obs, "null": null,
+                                          "guard_g5": "not_run", "reason": why}
+                continue
+            probe = linear_probe(X, y, confounder, seed=int(vals["seed"]),
+                                 max_iter=int(vals["probe_max_iter"]),
+                                 held_out_groups=int(vals["held_out_groups"]))
+            out[f"{view}/{lname}"] = {
+                **obs, "null": null, "probe_accuracy": probe["accuracy"],
+                "guard_g5": "pass" if g5.passed else "fail",
+                "g5": g5.model_dump(),
+                "claims_biology": bool(g5.passed and lname not in confounded),
+                "why_diagnostic": ("the label encodes the confounder"
+                                   if lname in confounded else ""),
+            }
+
+    ran = [k for k, v in out.items() if v.get("guard_g5") != "not_run"]
+    return _erec("structure_and_its_null", "pass" if ran else "not_run",
+                 f"{len(ran)} of {len(out)} (view, label) pair(s) scored against "
+                 f"a {int(vals['n_permutations'])}-permutation null",
+                 ("each score ships with its null, its probe and the label's own "
+                  "granularity - the three readings of one ARI, separated"
+                  if ran else
+                  "no pair could be scored; a clustering score over fewer than "
+                  "two classes is not a measurement"),
+                 {"n_in": len(out), "n_out": len(ran),
+                  "reason": "" if len(ran) == len(out) else "unscoreable pairs",
+                  "per_pair": out, "n_permutations": int(vals["n_permutations"]),
+                  "null": "the LABEL is permuted, not the space",
+                  "guards": [{"guard": "G5_noise_floor", "scope": key,
+                              "status": b["guard_g5"],
+                              "note": b.get("why_diagnostic") or b.get("reason", "")}
+                             for key, b in out.items()]
+                            + [{"guard": "G1_label_granularity", "scope": key,
+                                "status": "fail",
+                                "note": b["why_diagnostic"]}
+                               for key, b in out.items()
+                               if b.get("claims_biology") is False]},
+                 method="KMeans ARI against a label, permutation null over the "
+                        "label, and a by-subject linear probe beside it",
+                 criterion="G5 runs, and the probe is reported with the ARI",
+                 ), {"structure": out}
+
+
+# ------------------------------------------ 4 · held out, measured not declared --
+def held_out_comparison(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """G2. the within-subject score beside the cross-subject one.
+
+    named `held_out_comparison` and not `held_out_honesty`: the guard of that
+    name is defined above and is what `GUARDS["G2"]` points at. a step that
+    shadowed it would have left the registry pointing at a function with a
+    different signature, and the first symptom would have been a guard that
+    appeared to run.
+
+    this closes `_not_run("G2_held_out_honesty", "a within-subject score to
+    compare")`. a split is a declaration; the DIFFERENCE between scoring within
+    a subject and across subjects is a measurement, and it is the one that says
+    whether the split held anything out.
+
+    the expected direction is within > cross: units from one subject are
+    near-copies, so a within-subject score is inflated. a cross score that
+    MATCHES or beats the within one is the finding - it says the split is not
+    separating subjects, usually because the label or the units leak.
+    """
+    ks = _edeclared(ctx, "ks")
+    ratio = _edeclared(ctx, "negative_ratio")
+    neg_seed = _edeclared(ctx, "negative_seed")
+    min_units = _edeclared(ctx, "min_units_per_subject")
+    if ks is None or ratio is None or neg_seed is None:
+        return _emissing("held_out_comparison", "ks/negative_ratio/negative_seed",
+                         "the within-subject score must be computed the SAME "
+                         "way as the cross-subject one or the comparison is "
+                         "between two different statistics"), {}
+    if min_units is None:
+        return _emissing("held_out_comparison", "min_units_per_subject",
+                         "a subject with very few units gives a within-score "
+                         "over almost no pairs; the floor is the cohort's"), {}
+
+    import numpy as np
+
+    from omicstra.measures.evaluation import retrieval
+
+    spaces = _eneed(ctx, "spaces", "held_out_honesty")
+    paired = _eneed(ctx, "paired", "held_out_honesty")
+    confounder = np.asarray(_eneed(ctx, "confounder", "held_out_honesty"))
+    cross = ctx.get("identifiability") or {}
+    if not cross:
+        return _erec("held_out_comparison", "not_run",
+                     "no cross-subject score to compare against",
+                     "G2 is a comparison; with one number there is nothing to "
+                     "compare",
+                     {"n_out": 0, "reason": "identifiability did not run"}), {}
+
+    out: dict[str, dict] = {}
+    for view in cross:
+        A, B = np.asarray(spaces[view]), np.asarray(paired[view])
+        within = []
+        for s in np.unique(confounder):
+            idx = np.flatnonzero(confounder == s)
+            if idx.size < int(min_units):
+                continue
+            r = retrieval(A[idx] @ B[idx].T, ks=tuple(int(k) for k in ks),
+                          negative_ratio=int(ratio), negative_seed=int(neg_seed))
+            within.append(r["auc"])
+        if not within:
+            out[view] = {"guard_g2": "not_run",
+                         "reason": f"no subject has {int(min_units)} units"}
+            continue
+        w = float(np.nanmean(within))
+        c = float(cross[view]["auc"])
+        g2 = held_out_honesty(w, c)
+        out[view] = {"within_subject_auc": w, "cross_subject_auc": c,
+                     "n_subjects_scored": len(within),
+                     "guard_g2": "pass" if g2.passed else "fail",
+                     "g2": g2.model_dump()}
+
+    ran = [v for v, r in out.items() if r.get("guard_g2") != "not_run"]
+    return _erec("held_out_comparison", "pass" if ran else "not_run",
+                 "; ".join(f"{v}: within {r['within_subject_auc']:.3f} vs cross "
+                           f"{r['cross_subject_auc']:.3f}"
+                           for v, r in out.items() if "within_subject_auc" in r)
+                 or "no view could be scored within subject",
+                 ("the gap between the two is what the split bought. a cross "
+                  "score at or above the within score says the split is not "
+                  "separating subjects"
+                  if ran else "nothing to compare"),
+                 {"n_in": len(cross), "n_out": len(ran),
+                  "reason": "" if len(ran) == len(cross) else "unscoreable views",
+                  "per_view": out,
+                  "guards": [{"guard": "G2_held_out_honesty", "scope": v,
+                              "status": r["guard_g2"],
+                              "note": r.get("reason", "")}
+                             for v, r in out.items()]},
+                 method="the same retrieval statistic within subject and across",
+                 criterion="within exceeds cross; equality is the finding",
+                 ), {"honesty": out}
+
+
+# ------------------------------------- 5 · the association, and its specificity --
+def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """H3. per-signal CCA with its null, and the axes' off-diagonal cosine.
+
+    this closes two `not_run`s at once, and the second is the one whose stated
+    reason named a file that could not satisfy it: G4 asked for "per-pathway
+    axis vectors (pathway_axes.parquet)", and that artifact carries
+    `pathway_name`, `pathway_id`, `coverage_frac`, `set_size` and `testable` -
+    metadata, no vectors. the vectors are the CCA's own weights, which nothing
+    was asking the CCA for.
+
+    with them, "this axis encodes signal X" becomes a checkable claim: if the
+    axes for five signals sit at 0.97 mutual cosine, the five magnitudes are one
+    direction wearing five labels. the guard reports the cosine and fails only
+    past tau, because aliasing at one resolution was an artifact and at a finer
+    one was real biology.
+    """
+    n_perms = _edeclared(ctx, "n_permutations")
+    alpha = _edeclared(ctx, "alpha")
+    tau = _edeclared(ctx, "tau_specificity")
+    tail = _edeclared(ctx, "tail")
+    if n_perms is None or alpha is None or tau is None or tail is None:
+        for f, v in (("n_permutations", n_perms), ("alpha", alpha),
+                     ("tau_specificity", tau), ("tail", tail)):
+            if v is None:
+                return _emissing("association_and_specificity", f,
+                                 "the null size, the FDR level, the aliasing "
+                                 "bar and the tail are each a declaration"), {}
+
+    import numpy as np
+
+    from omicstra.measures.evaluation import (
+        bh_fdr,
+        permutation_test,
+        top_canonical_correlation,
+    )
+
+    spaces = _eneed(ctx, "spaces", "association_and_specificity")
+    scores = _eneed(ctx, "scores", "association_and_specificity")
+    if not scores:
+        return _erec("association_and_specificity", "not_applicable",
+                     "this cohort declares no continuous signals to associate",
+                     "association is a claim about a signal; with none there is "
+                     "nothing to carry",
+                     {"n_out": 0, "reason": "no scores declared"}), {}
+
+    out: dict[str, dict] = {}
+    for view, X in spaces.items():
+        Z = np.asarray(X)
+        rng = np.random.default_rng(len(scores))
+        rows, axes, names = [], [], []
+        for sname, s in scores.items():
+            y = np.asarray(s, dtype=np.float64)
+            obs, a, _ = top_canonical_correlation(Z, y, with_weights=True)
+            nulls = [top_canonical_correlation(Z, rng.permutation(y))
+                     for _ in range(int(n_perms))]
+            null = permutation_test(obs, nulls, tail=str(tail))
+            g5, why = _guarded_null(obs, nulls, tail=str(tail))
+            rows.append({"signal": sname, "r": obs, **null,
+                         "guard_g5": "pass" if (g5 and g5.passed)
+                                     else "fail" if g5 else "not_run",
+                         "g5_not_run_because": why})
+            axes.append(a)
+            names.append(sname)
+
+        fdr = bh_fdr([r["p"] for r in rows], alpha=float(alpha), family=names)
+        for r, q, rej in zip(rows, fdr["q"], fdr["rejected"]):
+            r["q"] = q
+            r["significant"] = bool(rej)
+
+        spec = None
+        if len(axes) >= 2:
+            g4 = specificity_matrix(np.vstack(axes), names=names, tau=float(tau))
+            spec = {"guard_g4": "pass" if g4.passed else "fail", **g4.model_dump()}
+        out[view] = {"per_signal": rows, "fdr_family": fdr["n_family"],
+                     "specificity": spec,
+                     "specificity_status": (spec["guard_g4"] if spec else "not_run"),
+                     "specificity_missing": (None if spec else
+                                             "fewer than two axes to compare")}
+
+    n_sig = sum(1 for v in out.values() for r in v["per_signal"] if r["significant"])
+    aliased = sorted(v for v, r in out.items()
+                     if (r["specificity"] or {}).get("guard_g4") == "fail")
+    return _erec("association_and_specificity", "pass",
+                 f"{n_sig} signal-view association(s) survive BH-FDR at "
+                 f"{float(alpha)}"
+                 + (f"; axes alias in {aliased}" if aliased else ""),
+                 ("the axes alias, so each magnitude is one direction wearing "
+                  "several labels - the cosine travels with every magnitude"
+                  if aliased else
+                  "each association carries its own null, its q over the stated "
+                  "family, and the cosine between its axis and the others"),
+                 {"n_in": len(spaces) * len(scores), "n_out": n_sig,
+                  "reason": "did not survive the null or the correction",
+                  "per_view": out, "n_permutations": int(n_perms),
+                  "alpha": float(alpha), "tau_specificity": float(tau),
+                  "tail": str(tail),
+                  "fdr_family_note": "the family is the signals of ONE view; a "
+                                     "caller correcting across views passes that "
+                                     "family to bh_fdr instead",
+                  "guards": [{"guard": "G5_noise_floor", "scope": f"{v}/{r['signal']}",
+                              "status": r["guard_g5"],
+                              "note": r.get("g5_not_run_because", "")}
+                             for v, blk in out.items() for r in blk["per_signal"]]
+                            + [{"guard": "G4_specificity", "scope": v,
+                                "status": blk["specificity_status"],
+                                "note": blk["specificity_missing"] or ""}
+                               for v, blk in out.items()]},
+                 method="top canonical correlation per signal, permutation null, "
+                        "BH-FDR over the declared family, and the off-diagonal "
+                        "cosine between the CCA's own axis weights",
+                 criterion="G5 runs per signal and G4 runs over the axes",
+                 ), {"association": out}
+
+
+# ----------------------------------------------------------- 6 · the verdict --
+def hypothesis_verdict(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """one of four states per hypothesis, from what the steps above recorded.
+
+    it reads the earlier steps' records rather than recomputing anything, so a
+    hypothesis whose step did not run cannot be judged - which is the whole
+    reason the vocabulary has four states and not two:
+
+        biological   a statistic ran, its guards ran, and they passed
+        diagnostic   a statistic ran and a guard says what it actually measures.
+                     the number is still reported
+        unguarded    a statistic ran and no guard ran on it. NOT a pass - "no
+                     guard failed" was true of a hypothesis where none ran
+        not_run      no statistic for this hypothesis ran at all
+
+    the mapping from hypothesis to step is DECLARED, not inferred from a name:
+    a cohort that evaluates two of the three says so, and the third is
+    `not_run` with the step that would have produced it named.
+    """
+    mapping = _edeclared(ctx, "hypotheses")
+    if mapping is None:
+        return _emissing("hypothesis_verdict", "hypotheses",
+                         "which hypothesis each step answers for this cohort. "
+                         "inferring it from a step's name is how a verdict ends "
+                         "up attached to a statistic that does not test it"), {}
+
+    records = ctx.get("_records") or {}
+    verdicts: dict[str, dict] = {}
+    for h, step_ids in dict(mapping).items():
+        steps = list(step_ids)
+        ran = [s for s in steps if (records.get(s) or {}).get("status") == "pass"]
+        if not ran:
+            absent = {s: (records.get(s) or {}).get("result", "never reached")
+                      for s in steps}
+            verdicts[h] = {"verdict": "not_run", "steps": steps,
+                           "why": "no step for this hypothesis produced a statistic",
+                           "step_status": absent}
+            continue
+
+        # the guards come from each step's DECLARED `guards` list. the first
+        # version of this walked the nested `observed` blocks looking for keys
+        # named `guard_g*`, and missed every guard that sat one level deeper -
+        # so an aliased cohort came back `unguarded` while G4 had run and
+        # failed. a verdict that depends on guessing a shape is a verdict that
+        # silently reads the wrong one.
+        ran_guards, failed, not_run_guards = [], [], []
+        for s in ran:
+            for g in ((records[s] or {}).get("observed") or {}).get("guards", []):
+                tag = f"{s}/{g.get('scope')}/{g['guard']}"
+                if g["status"] == "pass":
+                    ran_guards.append(tag)
+                elif g["status"] == "fail":
+                    ran_guards.append(tag)
+                    failed.append(tag + (f" ({g['note']})" if g.get("note") else ""))
+                else:
+                    not_run_guards.append(tag + (f" ({g['note']})"
+                                                 if g.get("note") else ""))
+
+        if not ran_guards:
+            verdict = "unguarded"
+            why = ("a statistic ran and no guard ran on it. this is not a pass - "
+                   "it is the state that 'no guard failed' used to hide"
+                   + (f". guards that could not run: {sorted(set(not_run_guards))}"
+                      if not_run_guards else ""))
+        elif failed:
+            verdict = "diagnostic"
+            why = ("the number is reported and says something other than the "
+                   "intended claim: " + ", ".join(sorted(set(failed))))
+        else:
+            verdict = "biological"
+            why = f"{len(ran_guards)} guard(s) ran and passed"
+        verdicts[h] = {"verdict": verdict, "steps": ran, "why": why,
+                       "guards": sorted(set(ran_guards)),
+                       "guards_failed": sorted(set(failed)),
+                       "guards_not_run": sorted(set(not_run_guards))}
+
+    tally = {v: sum(1 for d in verdicts.values() if d["verdict"] == v)
+             for v in VERDICTS}
+    return _erec("hypothesis_verdict", "pass",
+                 ", ".join(f"{h}: {d['verdict']}" for h, d in verdicts.items()),
+                 "a verdict COMPUTED from the statistics this chain produced, "
+                 "not read from a pack. `unguarded` and `not_run` are answers, "
+                 "not gaps",
+                 {"n_in": len(verdicts), "n_out": len(verdicts), "reason": "",
+                  "verdicts": verdicts, "tally": tally,
+                  "vocabulary": list(VERDICTS)},
+                 method="the four-state verdict over the records of this chain",
+                 criterion="every hypothesis gets one of the four states",
+                 ), {"verdicts": verdicts}
+
+
+# the order IS the method, and two of these orderings are load-bearing:
+# `label_granularity` runs FIRST because it decides what every later score may
+# claim, and `held_out_comparison` requires `identifiability` because G2 is a
+# comparison against a number that must already exist.
+EVALUATE_STEPS: list[Step] = [
+    Step(id="label_granularity", fn=label_granularity,
+         produces=frozenset({"label_guards"}),
+         params_space=("labels", "tau_label_nmi")),
+    Step(id="paired_identifiability", fn=paired_identifiability,
+         produces=frozenset({"identifiability"}),
+         params_space=("ks", "negative_ratio", "negative_seed")),
+    Step(id="structure_and_its_null", fn=structure_and_its_null,
+         produces=frozenset({"structure"}), requires=frozenset({"label_guards"}),
+         params_space=("k", "n_init", "seed", "silhouette_sample",
+                       "n_permutations", "probe_max_iter", "held_out_groups")),
+    Step(id="held_out_comparison", fn=held_out_comparison,
+         produces=frozenset({"honesty"}), requires=frozenset({"identifiability"}),
+         params_space=("ks", "negative_ratio", "negative_seed",
+                       "min_units_per_subject")),
+    Step(id="association_and_specificity", fn=association_and_specificity,
+         produces=frozenset({"association"}),
+         params_space=("n_permutations", "alpha", "tau_specificity", "tail")),
+    # requires NOTHING, deliberately. the first version required the three
+    # products, so a cohort with no paired modality - a legitimate state the
+    # steps above report as `not_applicable` - got no verdict at all instead of
+    # `not_run` for that hypothesis and real verdicts for the others. a step
+    # whose job is to report what did not produce cannot depend on it producing.
+    Step(id="hypothesis_verdict", fn=hypothesis_verdict,
+         params_space=("hypotheses",)),
+]

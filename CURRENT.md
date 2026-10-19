@@ -14,6 +14,10 @@ is not worked on, discussed, or measured until the task card is closed.
 **`EVALUATE_STEPS`: the chain that COMPUTES a verdict, in
 `protocols/evaluate.py`.**
 
+**DONE 2026-10-19 (tier 1).** 6 steps, 42 synthetic cases, 876 pass. G2, G4 and
+G5 all run, asserted by a test. tier 2 against the cohort's artifacts is NOT
+done and is the next card.
+
 the gates that already exist read a cohort's evidence pack and judge the numbers
 in it. four of their guards cannot run on a pack, and each one says so by name:
 
@@ -106,6 +110,10 @@ cohort two             the last card
 
 real, written down so it stops re-entering the build, and not worked on:
 
+- `noise_floor` passes at a hardcoded `p < 0.05` while the chain declares its
+  BH alpha. two alphas, one declared and one not
+- EVALUATE_STEPS tier 2: the chain's computed z, q and specificity against
+  `per_pathway_cca.parquet`, `perm_nulls.parquet` and `mc_coherence.parquet`
 - the three tests the matrix cites with no home in the contract: the
   rank-matched control, the categorical FTU contrast, and the
   rotation-equivalence sanity check
