@@ -95,7 +95,17 @@ pathway = ["gpath2vec"]
 # the same bar every other dependency here had to clear.
 durable = ["temporalio>=1.32"]
 
-dev = ["pytest", "ruff", "build"]
+# test tooling. statsmodels is here and NOT in `measure`: the package never
+# calls it, and a runtime dependency added to satisfy a test is a dependency
+# every installer carries for nothing. what it buys is a SECOND IMPLEMENTATION -
+# `measures/evaluation.bh_fdr` is hand-written numpy, and the strongest evidence
+# it is right is that a library nobody here wrote agrees with it on random
+# input. skipping that check where the library is absent would have left CI
+# never running it, so it is declared rather than guarded.
+#
+# cp314 wheel, so 3.14 needs no source build - the same bar every other
+# dependency here had to clear.
+dev = ["pytest", "ruff", "build", "statsmodels>=0.14"]
 
 [build-system]
 requires = ["hatchling"]

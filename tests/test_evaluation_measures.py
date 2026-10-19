@@ -101,16 +101,17 @@ def test_bh_fdr_matches_the_hand_computed_values():
 def test_bh_fdr_agrees_with_statsmodels():
     """a second implementation, from a library nobody here wrote.
 
-    statsmodels is a dependency of the cohort SCRIPTS and not of this package -
-    `pyproject`'s `measure` extra declares numpy, scipy, scikit-learn and
-    anndata. so this skips where it is absent rather than pulling a dependency
-    in to make a test pass, and the hand-computed check above is what holds the
-    correctness claim everywhere.
+    `bh_fdr` is hand-written numpy, so the strongest evidence it is right is
+    that an independent implementation agrees with it on random input. that is
+    worth a declared test dependency: statsmodels is in `pyproject`'s `dev`
+    extra, with the test tooling, and deliberately not in `measure` - the
+    package never calls it, and a runtime dependency added to satisfy a test is
+    one every installer carries for nothing.
+
+    it is a hard import on purpose. guarding it would mean CI never runs the
+    one check that is not this repo's own arithmetic checking itself.
     """
-    multipletests = pytest.importorskip(
-        "statsmodels.stats.multitest",
-        reason="statsmodels is a script dependency, not a package one"
-    ).multipletests
+    from statsmodels.stats.multitest import multipletests
 
     rng = np.random.default_rng(3)
     p = np.clip(rng.beta(0.3, 4.0, 40), 1e-9, 1.0)
