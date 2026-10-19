@@ -242,6 +242,33 @@ git-ignored, nothing failed, and the next report would simply have been wrong
 about who decided what. `tests/conftest.py` now points `runs_dir` at tmp for
 every test, by fixture and by environment variable so a subprocess gets it too.
 
+### TODO · two package defaults the threshold lint does not yet cover
+
+`tests/test_rule_lints.py` asserts an analysis step holds no threshold of its
+own. it is scoped to modules that name AND define a chain, so two existing
+defaults are outside it and are recorded here rather than rewritten - changing a
+passing gate to satisfy a new lint is how a rule becomes a refactor.
+
+```
+eda.py:430        max_pct_negative=c["params"].get("max_pct_negative", 10.0)
+                  a cohort that declares `negative` but not `max_pct_negative`
+                  silently inherits 10%. the two-argument `.get` is the pattern
+                  the rule exists to stop: a default by another name
+
+inventory.py:455  PITCH_TOLERANCE = 0.02
+                  a module constant deciding whether a measured lattice pitch
+                  AGREES with the declared one. 2% was chosen on one platform's
+                  lattice and is applied to every cohort's geometry check
+```
+
+both are the third kind of threshold in `EVALUATION.md` section 8 - a bar chosen
+by looking, with no external basis and no null behind it. the fix is the same
+for each: read it through the declaration, refuse when absent, and let the seed
+cohort declare what it has been running at. the lint's scope then widens to
+`eda.py` and `inventory.py`.
+
+---
+
 ### TODO · a cohort has no declared WRITE root
 
 `settings.runs_dir` resolves under the PACKAGE repo root. that is right for this
