@@ -228,7 +228,9 @@ reordered chain raises before any data is touched.
 | `unit_inventory` | 201, 323 | states the `n_in` the intersection ran against |
 | `subject_resolution` | 128, 179-181 | an absent subject label is counted and marked, or refused - never a bare `None` |
 | `neighbourhood` | 218, 220, 221-224 | `present` is the set every pooled assay agrees on, and the list is capped at `k` |
-| `pool_continuous` | 231, 241-251, 153-166 | records the realised denominator per assay; data columns are declared, never inferred |
+| `pool_continuous` | 231, 241-251, 153-166 | records the realised denominator per assay; data columns are declared; which denominators must be uniform is declared |
+| `carry_per_unit` | 285, 234-238 | an already-pooled or per-unit vector is carried, never pooled twice |
+| `stack_unit_tokens` | 227-228, 286 | the (k+1, dim) block, centre first; a member absent from a token assay refuses rather than shortening the sequence |
 | `centre_labels` | 260-265, 267-276 | absence is a `{label}__present` column, not a sentinel inside the label's value space |
 | `assemble` | 278-292 | the provenance column is the members actually pooled |
 | `anchor_coverage` | 234-238, 301-305 | the anchor is declared and its width is never written down; an emptied sample refuses |
@@ -238,3 +240,39 @@ reordered chain raises before any data is touched.
 the arithmetic is unchanged and lives in `measures/`: `niche_members`,
 `pool_rows`, `zscore_per_group`, `stack_tokens`. `niche_members` already caps at
 `k`, so the port is not a transcription on that row.
+
+---
+
+## 10 · tier 2 · the diff against the published parquets
+
+`tests/test_join_slicediff.py`. four sections chosen for what they exercise:
+full label coverage, no `tls` table at all, 454 units with no discrete label,
+and the lowest retention in the cohort at 10.9%.
+
+```
+virchow2_niche        0 rows differ    max abs diff 0.000e+00
+virchow2_cell_tokens  0 rows differ    0.000e+00    (8,960 wide)
+gpath2vec_niche       0 rows differ    0.000e+00    (512)
+novae_niche           0 rows differ    0.000e+00    (64, standardised after the drop)
+mc_weights_niche      0 rows differ    0.000e+00    (14)
+tls                   exact at float32              (the script stored a python float)
+compartment           0 mismatches     mc_megacluster  0 mismatches
+unit set              identical on all four sections
+```
+
+the funnel is checked against `manifest.json#per_subarray`, which the SCRIPT
+wrote - so agreeing with it is not the chain agreeing with itself.
+
+two things tier 2 found that tier 1 could not:
+
+**three oracle columns had no path through the chain.** a per-unit vector
+carried unpooled, a per-unit anchor, and a token stack are three shapes that are
+not a mean, and the first version of `JOIN_STEPS` had only the mean. hence
+`carry_per_unit` and `stack_unit_tokens`.
+
+**the supervision table does not cover every unit**, so its pooled vector
+averages over a varying denominator - 1,039 of 1,075 units on the first
+section. the guard from tier-1 case 7 fired on real data and was right. the
+resolution is a declaration, `require_full_support`, naming the assays whose
+comparability is load-bearing: the published artifact has this property, the
+script never recorded it, and the chain now does.

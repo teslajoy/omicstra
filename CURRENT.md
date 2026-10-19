@@ -13,6 +13,12 @@ is not worked on, discussed, or measured until the task card is closed.
 
 **translate the niche-join into `protocols/join.py` as `JOIN_STEPS`.**
 
+**DONE 2026-10-19.** 11 steps, 54 tier-1 cases, 45 tier-2 cases against the
+published parquets - every vector column exact on four sections, the funnel
+checked against the manifest the build script wrote. the next card is
+`measures/evaluation.py`: the matrix's statistics, which no package code can
+produce today.
+
 a niche join takes per-unit outputs from N assays plus per-unit and per-subject
 label tables and emits one row per unit, fixed-width, with a funnel that
 explains every row it did not emit.

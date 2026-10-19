@@ -60,7 +60,12 @@ def _params(**over) -> dict:
                           "padding": "repeat_centre"},
         "pool_continuous": {"pooled_assays": (MORPH, MOLEC),
                             "data_columns": {MORPH: [f"c{i}" for i in range(DIM)],
-                                             MOLEC: [f"c{i}" for i in range(DIM)]}},
+                                             MOLEC: [f"c{i}" for i in range(DIM)]},
+                            "require_full_support": (MORPH, MOLEC)},
+        "carry_per_unit": {"per_unit_assays": (ANCHOR,),
+                           "data_columns": {ANCHOR: [f"c{i}" for i in range(DIM)]}},
+        "stack_unit_tokens": {"token_assays": (MORPH,),
+                              "data_columns": {MORPH: [f"c{i}" for i in range(DIM)]}},
         "centre_labels": {"centre_only_labels": ("cls",)},
         "assemble": {"provenance": "members_pooled"},
         "anchor_coverage": {"anchor_assay": ANCHOR, "on_absent": "drop"},
@@ -87,7 +92,8 @@ def test_a_well_formed_sample_joins_and_every_stage_states_both_ends():
     recs = _run(_cohort())
     assert [r["status"] for r in recs.values()] == ["pass"] * len(JOIN_STEPS)
     for step in ("unit_inventory", "neighbourhood", "pool_continuous",
-                 "centre_labels", "assemble", "anchor_coverage", "standardise"):
+                 "carry_per_unit", "stack_unit_tokens", "centre_labels",
+                 "assemble", "anchor_coverage", "standardise"):
         o = _obs(recs, step)
         assert "n_in" in o and "n_out" in o, f"{step} states only one end"
     stages = _obs(recs, "join_funnel")["stages"]
@@ -200,14 +206,16 @@ def test_the_data_columns_are_read_from_the_declaration_never_inferred():
 def test_an_assay_with_no_declared_columns_refuses():
     recs = _run(_cohort(), _params(pool_continuous={
         "pooled_assays": (MORPH, MOLEC),
-        "data_columns": {MORPH: ["c0", "c1", "c2"]}}))
+        "data_columns": {MORPH: ["c0", "c1", "c2"]},
+        "require_full_support": (MORPH, MOLEC)}))
     assert recs["pool_continuous"]["status"] == "not_run"
     assert MOLEC in recs["pool_continuous"]["result"]
 
 
 def test_a_declared_column_the_assay_does_not_have_refuses():
     recs = _run(_cohort(), _params(pool_continuous={
-        "pooled_assays": (MORPH,), "data_columns": {MORPH: ["c0", "nope"]}}))
+        "pooled_assays": (MORPH,), "data_columns": {MORPH: ["c0", "nope"]},
+        "require_full_support": (MORPH,)}))
     assert recs["pool_continuous"]["status"] == "not_run"
     assert "nope" in recs["pool_continuous"]["result"]
 
@@ -219,8 +227,9 @@ def test_standardising_before_the_drop_is_refused_at_build_time():
     reordered chain never gets to touch data."""
     by_id = {s.id: s for s in JOIN_STEPS}
     order = ["unit_inventory", "subject_resolution", "neighbourhood",
-             "pool_continuous", "centre_labels", "assemble",
-             "standardise", "anchor_coverage", "join_funnel"]
+             "pool_continuous", "carry_per_unit", "stack_unit_tokens",
+             "centre_labels", "assemble", "standardise", "anchor_coverage",
+             "join_funnel"]
     with pytest.raises(ProtocolOrderError) as e:
         build_protocol([by_id[i] for i in order], "reordered")
     assert "standardise" in str(e.value) and "table" in str(e.value)
@@ -268,6 +277,9 @@ def test_requiring_the_assay_restores_a_uniform_denominator():
     ("neighbourhood", "neighbour_source"),
     ("pool_continuous", "pooled_assays"),
     ("pool_continuous", "data_columns"),
+    ("pool_continuous", "require_full_support"),
+    ("carry_per_unit", "per_unit_assays"),
+    ("stack_unit_tokens", "token_assays"),
     ("centre_labels", "centre_only_labels"),
     ("anchor_coverage", "anchor_assay"),
     ("standardise", "standardise_assays"),
@@ -418,3 +430,97 @@ def test_a_subject_that_loses_every_unit_is_an_error_at_the_cohort_level():
     assert dist["eliminated_groups"] == ["S2"]
     with pytest.raises(ConfounderBiasedFunnel):
         assert_funnel_not_confounded(dist)
+
+
+# --------------------------------- the two shapes that are not a mean --------
+def test_an_already_pooled_assay_is_carried_not_pooled_again():
+    """map row 285. one encoder pools at EXTRACTION time, so pooling its output
+    over the neighbourhood would average a unit with its neighbours twice."""
+    ctx = _cohort()
+    recs = _run(ctx)
+    o = _obs(recs, "carry_per_unit")
+    assert o["per_unit_assays"] == [ANCHOR]
+    assert o["n_absent_per_assay"] == {ANCHOR: 0}
+
+
+def test_a_per_unit_absence_is_counted_and_left_for_the_policy_step():
+    """the same drop in two places is two answers to one question."""
+    ctx = _cohort(anchor_units=["u0", "u1", "u2"])
+    recs = _run(ctx)
+    assert recs["carry_per_unit"]["status"] == "pass"
+    assert _obs(recs, "carry_per_unit")["n_absent_per_assay"][ANCHOR] == 2
+    assert not _obs(recs, "carry_per_unit")["reason"]
+    # the decision is anchor_coverage's, and it took it
+    assert _obs(recs, "anchor_coverage")["n_dropped"] == 2
+
+
+def test_the_token_stack_is_centre_first_and_fixed_width():
+    """map rows 227-228. order is load-bearing: a model attending over these
+    positions reads a different unit if the order changes."""
+    from omicstra.measures import stack_tokens
+
+    ctx = _cohort()
+    recs = _run(ctx)
+    o = _obs(recs, "stack_unit_tokens")
+    assert o["tokens_per_unit"] == 3 and o["token_assays"] == [MORPH]
+
+    frame = ctx["assays"][MORPH]
+    row_of = {u: i for i, u in enumerate(frame.index)}
+    members = ["u0", "u1", "u4"]
+    blk = stack_tokens(frame.to_numpy(np.float32), row_of, members)
+    assert blk.shape == (3, DIM)
+    assert np.allclose(blk[0], frame.loc["u0"].to_numpy(np.float32))
+
+
+def test_a_token_assay_missing_a_member_refuses_rather_than_shortening():
+    ctx = _cohort()
+    ctx["assays"][MORPH] = ctx["assays"][MORPH].drop(index="u4")
+    recs = _run(ctx, _params(unit_inventory={"required_assays": (MOLEC,)}))
+    assert recs["stack_unit_tokens"]["status"] == "fail"
+    assert "absent from token assay" in recs["stack_unit_tokens"]["result"]
+
+
+def test_a_pooled_vector_and_a_token_stack_are_different_claims():
+    """the pooled vector says what the neighbourhood averages to; the stack
+    says what each member was. a chain that had only the first could not feed a
+    cross-attention arm at all."""
+    recs = _run(_cohort())
+    assert _obs(recs, "pool_continuous")["pooled_assays"] == [MORPH, MOLEC]
+    assert _obs(recs, "stack_unit_tokens")["token_assays"] == [MORPH]
+    cols = _obs(recs, "assemble")["columns"]
+    assert MORPH in cols and ANCHOR in cols
+
+
+def test_a_load_bearing_assay_with_a_short_denominator_refuses():
+    ctx = _cohort(molec_units=["u0", "u1", "u2"])
+    recs = _run(ctx, _params(unit_inventory={"required_assays": (MORPH,)}))
+    assert recs["pool_continuous"]["status"] == "fail"
+    assert MOLEC in _obs(recs, "pool_continuous")["require_full_support"]
+
+
+def test_an_assay_the_cohort_does_not_require_is_marked_and_passes():
+    """a feature pooled over four members and one pooled over seven are not
+    comparable. a label table that merely does not cover every unit is a
+    different situation, and only the cohort knows which is which."""
+    ctx = _cohort(molec_units=["u0", "u1", "u2"])
+    recs = _run(ctx, _params(
+        unit_inventory={"required_assays": (MORPH,)},
+        pool_continuous={"pooled_assays": (MORPH, MOLEC),
+                         "data_columns": {MORPH: ["c0", "c1", "c2"],
+                                          MOLEC: ["c0", "c1", "c2"]},
+                         "require_full_support": (MORPH,)}))
+    o = _obs(recs, "pool_continuous")
+    assert recs["pool_continuous"]["status"] == "pass"
+    assert o["partial_support_recorded_for"] == [MOLEC]
+    assert o["n_units_under_full_support"][MOLEC] > 0
+    # the count is recorded rather than averaged over silently
+    assert "partial support recorded" in recs["pool_continuous"]["result"]
+
+
+def test_requiring_full_support_on_an_assay_this_step_does_not_pool_refuses():
+    recs = _run(_cohort(), _params(pool_continuous={
+        "pooled_assays": (MORPH,),
+        "data_columns": {MORPH: ["c0", "c1", "c2"]},
+        "require_full_support": (MORPH, "nosuch")}))
+    assert recs["pool_continuous"]["status"] == "not_run"
+    assert "protects nothing" in recs["pool_continuous"]["decision"]

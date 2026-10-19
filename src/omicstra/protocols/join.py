@@ -558,6 +558,7 @@ def pool_continuous(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     """
     pooled_assays = _jdeclared(ctx, "pooled_assays")
     data_columns = _jdeclared(ctx, "data_columns")
+    require_full = _jdeclared(ctx, "require_full_support")
     if pooled_assays is None:
         return _jmissing("pool_continuous", "pooled_assays",
                          "which assays are pooled over a neighbourhood, and "
@@ -567,6 +568,13 @@ def pool_continuous(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                          "which of an assay's columns carry the measurement. a "
                          "frame also holds coordinates, ids and provenance, and "
                          "selecting by dtype pulls those into the vector"), {}
+    if require_full is None:
+        return _jmissing("pool_continuous", "require_full_support",
+                         "which assays' denominators must be uniform. a feature "
+                         "pooled over four members and one pooled over seven are "
+                         "not comparable; a label table that simply does not "
+                         "cover every unit is a different situation, and only "
+                         "the cohort knows which of its assays is which"), {}
 
     from omicstra.measures import pool_rows
 
@@ -615,25 +623,192 @@ def pool_continuous(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
 
     width = len(members[units[0]]) if units else 0
     short = {a: sum(1 for n in s.values() if n < width) for a, s in support.items()}
-    underpooled = sorted(a for a, n in short.items() if n)
-    return _jrec("pool_continuous", "pass" if not underpooled else "fail",
+    require_full = list(require_full)
+    if unknown := [a for a in require_full if a not in pooled_assays]:
+        return _jrec("pool_continuous", "not_run",
+                     f"require_full_support names {unknown}, which this step does "
+                     "not pool",
+                     "refused - a requirement on an assay that is not pooled here "
+                     "protects nothing and reads as though it did",
+                     {"require_full_support": require_full,
+                      "pooled_assays": pooled_assays}), {}
+
+    breached = sorted(a for a in require_full if short.get(a))
+    marked = sorted(a for a, n in short.items() if n and a not in require_full)
+    return _jrec("pool_continuous", "fail" if breached else "pass",
                  f"{len(units)} unit(s) pooled over {len(pooled_assays)} assay(s); "
-                 + (f"assay(s) {underpooled} pooled some units over fewer than "
-                    f"{width} members" if underpooled else
-                    f"every unit pooled over all {width} members in every assay"),
+                 + (f"assay(s) {breached} require a uniform denominator and "
+                    f"pooled some units over fewer than {width} members"
+                    if breached else
+                    f"every unit pooled over all {width} members in "
+                    f"{sorted(set(pooled_assays) - set(marked))}"
+                    + (f"; partial support recorded for {marked}" if marked else "")),
                  ("refused - a pooled vector whose denominator differs between "
-                  "units is not comparable between them, which is the defect the "
-                  "script's single-index filter hid"
-                  if underpooled else
-                  "the denominator is uniform, so pooled vectors are comparable "
-                  "across units"),
+                  "units is not comparable between them, and this cohort declares "
+                  "that comparability load-bearing here"
+                  if breached else
+                  "every assay the cohort requires a uniform denominator for has "
+                  "one. where it does not, the per-unit support is recorded rather "
+                  "than averaged over silently - which is what the script did"),
                  {"n_in": len(units), "n_out": len(units), "reason": "",
                   "members_per_unit": width, "pooled_assays": pooled_assays,
+                  "require_full_support": require_full,
                   "n_units_under_full_support": short,
+                  "partial_support_recorded_for": marked,
                   "data_columns": {a: list(data_columns[a]) for a in pooled_assays}},
-                 method="nan-safe mean over a unit's members, per assay",
-                 criterion="every unit pooled over the same number of members",
+                 method="nan-safe mean over a unit's members, per assay, with the "
+                        "realised denominator recorded per unit",
+                 criterion="every assay declared load-bearing has a uniform denominator",
                  ), {"pooled": pooled, "support": support}
+
+
+# ----------------------------------------- 4b · the assays that are not pooled --
+def carry_per_unit(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """assays that arrive per unit already, carried through rather than pooled.
+
+    mirrors map rows 285 and 234-238. two of the published join's columns are
+    this shape and neither is a mean: one encoder pools at EXTRACTION time and
+    hands back one vector per unit, and the pathway anchor is computed per unit
+    by its own chain. pooling either again would average a unit with its
+    neighbours twice.
+
+    absence is recorded and left in place. it is not this step's decision - a
+    unit the anchor does not cover is `anchor_coverage`'s question, and
+    answering it here would put the same drop in two places.
+    """
+    carried = _jdeclared(ctx, "per_unit_assays")
+    data_columns = _jdeclared(ctx, "data_columns")
+    if carried is None:
+        return _jmissing("carry_per_unit", "per_unit_assays",
+                         "which assays are already per unit, rather than pooled "
+                         "over a neighbourhood, is a property of how each "
+                         "encoder was run"), {}
+    if data_columns is None:
+        return _jmissing("carry_per_unit", "data_columns",
+                         "which of an assay's columns carry the measurement"), {}
+
+    import numpy as np
+
+    assays = _need(ctx, "assays", "carry_per_unit")
+    units = _need(ctx, "units", "carry_per_unit")
+    carried = list(carried)
+
+    if undeclared := [a for a in carried if a not in assays]:
+        return _jrec("carry_per_unit", "not_run",
+                     f"declared assay(s) {undeclared} are not on the context",
+                     "refused rather than skipped",
+                     {"declared": carried, "present": sorted(assays)}), {}
+    if no_cols := [a for a in carried if a not in data_columns]:
+        return _jrec("carry_per_unit", "not_run",
+                     f"assay(s) {no_cols} declare no data columns",
+                     "refused - selecting by dtype is what pulls coordinates "
+                     "into a vector",
+                     {"declared": carried}), {}
+
+    per_unit: dict[str, dict] = {}
+    absent: dict[str, int] = {}
+    for a in carried:
+        frame, cols = assays[a], list(data_columns[a])
+        if missing_cols := [c for c in cols if c not in frame.columns]:
+            return _jrec("carry_per_unit", "not_run",
+                         f"assay {a!r} declares column(s) {missing_cols} it does "
+                         "not have",
+                         "refused - a declaration that does not match the data",
+                         {"assay": a, "declared": cols}), {}
+        idx = set(frame.index)
+        sub = frame[cols]
+        per_unit[a] = {u: (sub.loc[u].to_numpy(dtype=np.float32) if u in idx
+                           else None) for u in units}
+        absent[a] = sum(1 for u in units if u not in idx)
+
+    return _jrec("carry_per_unit", "pass",
+                 f"{len(carried)} assay(s) carried per unit; absent counts {absent}",
+                 "carried as computed. an absence stays an absence here - the "
+                 "stage that decides on it is the one that declares a policy",
+                 {"n_in": len(units), "n_out": len(units), "reason": "",
+                  "per_unit_assays": carried, "n_absent_per_assay": absent,
+                  "data_columns": {a: list(data_columns[a]) for a in carried}},
+                 method="per-unit vector taken as computed, never re-pooled",
+                 criterion="an already-pooled vector is not pooled a second time",
+                 ), {"per_unit": per_unit, "per_unit_absent": absent}
+
+
+# --------------------------------------------- 4c · the ordered token stack ----
+def stack_unit_tokens(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """a (k+1, dim) block per unit, in member order, centre first.
+
+    mirrors map rows 227-228 and 286. this is the input a cross-attention arm
+    reads, and it is the one column where ORDER is load-bearing: a model that
+    attends over these positions sees a different input if the order changes,
+    so this is a sequence and not a set. `measures.stack_tokens` holds that
+    contract.
+
+    a token assay is declared separately from a pooled one because they are
+    different claims about the same tissue: the pooled vector says what the
+    neighbourhood averages to, the stack says what each member was.
+    """
+    token_assays = _jdeclared(ctx, "token_assays")
+    data_columns = _jdeclared(ctx, "data_columns")
+    if token_assays is None:
+        return _jmissing("stack_unit_tokens", "token_assays",
+                         "whether any arm reads per-member tokens rather than a "
+                         "pooled vector is a property of the grid, not of this "
+                         "code"), {}
+    if data_columns is None:
+        return _jmissing("stack_unit_tokens", "data_columns",
+                         "which of an assay's columns carry the measurement"), {}
+
+    import numpy as np
+
+    from omicstra.measures import stack_tokens
+
+    assays = _need(ctx, "assays", "stack_unit_tokens")
+    members = _need(ctx, "members", "stack_unit_tokens")
+    units = _need(ctx, "units", "stack_unit_tokens")
+    token_assays = list(token_assays)
+
+    if undeclared := [a for a in token_assays if a not in assays]:
+        return _jrec("stack_unit_tokens", "not_run",
+                     f"declared assay(s) {undeclared} are not on the context",
+                     "refused rather than skipped", {"declared": token_assays}), {}
+    if no_cols := [a for a in token_assays if a not in data_columns]:
+        return _jrec("stack_unit_tokens", "not_run",
+                     f"assay(s) {no_cols} declare no data columns",
+                     "refused", {"declared": token_assays}), {}
+
+    tokens: dict[str, dict] = {}
+    for a in token_assays:
+        frame, cols = assays[a], list(data_columns[a])
+        if missing_cols := [c for c in cols if c not in frame.columns]:
+            return _jrec("stack_unit_tokens", "not_run",
+                         f"assay {a!r} declares column(s) {missing_cols} it does "
+                         "not have", "refused", {"assay": a}), {}
+        row_of = {u: i for i, u in enumerate(frame.index)}
+        vectors = frame[cols].to_numpy(dtype=np.float32)
+        absent = [u for u in units
+                  if any(m not in row_of for m in members[u])]
+        if absent:
+            return _jrec("stack_unit_tokens", "fail",
+                         f"{len(absent)} unit(s) have a member absent from "
+                         f"token assay {a!r}",
+                         "refused - a stack that silently drops a member is a "
+                         "shorter sequence, and a fixed-width model reads it as "
+                         "a different unit",
+                         {"n_in": len(units), "n_out": 0, "assay": a,
+                          "reason": f"member absent from {a}"}), {}
+        tokens[a] = {u: stack_tokens(vectors, row_of, members[u]) for u in units}
+
+    width = len(members[units[0]]) if units else 0
+    return _jrec("stack_unit_tokens", "pass",
+                 f"{len(token_assays)} assay(s) stacked to ({width}, dim) per unit",
+                 "centre first, then the members in order - the stack is a "
+                 "sequence, and a model that attends over it reads the order",
+                 {"n_in": len(units), "n_out": len(units), "reason": "",
+                  "token_assays": token_assays, "tokens_per_unit": width,
+                  "data_columns": {a: len(data_columns[a]) for a in token_assays}},
+                 method="per-member vectors stacked in member order, centre first",
+                 criterion="every member present; the width is fixed",
+                 ), {"tokens": tokens}
 
 
 # ------------------------------------------------- 5 · the centre labels -----
@@ -717,6 +892,8 @@ def assemble(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     units = _need(ctx, "units", "assemble")
     members = _need(ctx, "members", "assemble")
     pooled = _need(ctx, "pooled", "assemble")
+    per_unit = ctx.get("per_unit") or {}
+    tokens = ctx.get("tokens") or {}
     values = ctx.get("label_values") or {}
     present = ctx.get("label_present") or {}
     subject_values = ctx.get("subject_values") or {}
@@ -728,6 +905,10 @@ def assemble(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                                "subject": ctx.get("subject"),
                                "members_pooled": list(members[u])}
         for a, by_unit in pooled.items():
+            row[a] = by_unit[u]
+        for a, by_unit in per_unit.items():
+            row[a] = by_unit[u]
+        for a, by_unit in tokens.items():
             row[a] = by_unit[u]
         for name, by_unit in values.items():
             row[name] = by_unit[u]
@@ -1025,13 +1206,21 @@ JOIN_STEPS: list[Step] = [
          params_space=("k_neighbors", "neighbour_source", "padding")),
     Step(id="pool_continuous", fn=pool_continuous,
          produces=frozenset({"pooled"}), requires=frozenset({"members"}),
-         params_space=("pooled_assays", "data_columns")),
+         params_space=("pooled_assays", "data_columns",
+                       "require_full_support")),
+    Step(id="carry_per_unit", fn=carry_per_unit,
+         produces=frozenset({"per_unit"}), requires=frozenset({"units"}),
+         params_space=("per_unit_assays", "data_columns")),
+    Step(id="stack_unit_tokens", fn=stack_unit_tokens,
+         produces=frozenset({"tokens"}), requires=frozenset({"members"}),
+         params_space=("token_assays", "data_columns")),
     Step(id="centre_labels", fn=centre_labels,
          produces=frozenset({"label_values"}), requires=frozenset({"units"}),
          params_space=("centre_only_labels",)),
     Step(id="assemble", fn=assemble,
          produces=frozenset({"rows"}),
-         requires=frozenset({"pooled", "label_values", "subject"}),
+         requires=frozenset({"pooled", "per_unit", "tokens", "label_values",
+                             "subject"}),
          params_space=("provenance",)),
     Step(id="anchor_coverage", fn=anchor_coverage,
          produces=frozenset({"table"}), requires=frozenset({"rows"}),
