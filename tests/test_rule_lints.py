@@ -234,6 +234,87 @@ def test_no_cohort_name_or_run_id_appears_in_package_CODE():
         "a cohort name or run id reached package code:\n  " + "\n  ".join(offenders))
 
 
+# --- no cohort MEASUREMENT reaches package code ----------------------------
+PROTOCOLS = ROOT / "src" / "omicstra" / "protocols"
+
+# a step may hold structural constants and nothing else. 0 and 1 are identities,
+# 2 is a pair, an epsilon guards a division. every other number in an analysis
+# step is a THRESHOLD, and a threshold is a cohort's to declare.
+STRUCTURAL = {0, 1, -1, 2, 0.0, 1.0, 2.0}
+
+# chains written to this rule. eda.py and inventory.py predate it and carry
+# defaults of their own - recorded in design/v1_3_scope.md rather than changed
+# here, because rewriting a passing gate to satisfy a new lint is how a rule
+# becomes a refactor.
+CHAIN_MODULES = ("pathway.py", "join.py", "fusion.py")
+
+
+def _is_epsilon(v) -> bool:
+    return isinstance(v, float) and 0 < abs(v) <= 1e-4
+
+
+def _numeric_thresholds(src: str) -> list[int]:
+    """numeric literals that are THRESHOLDS, not slices or formatting.
+
+    a slice bound and a `round()` precision are structure: they shape a
+    display, not a decision. a number compared against, defaulted to, or passed
+    as a parameter is a decision.
+    """
+    tree = ast.parse(src)
+    skip: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Subscript):          # x[:20], rows[:12]
+            for sub in ast.walk(node.slice):
+                skip.add(id(sub))
+        if isinstance(node, ast.Call) and getattr(node.func, "id", "") == "round":
+            for a in node.args[1:]:                  # round(x, 4) - precision
+                skip.add(id(a))
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant) or id(node) in skip:
+            continue
+        v = node.value
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            continue
+        if v in STRUCTURAL or _is_epsilon(v):
+            continue
+        out.append(node.lineno)
+    return out
+
+
+def test_an_analysis_step_holds_no_threshold_of_its_own():
+    """the cohort-name lint catches `tnbc-92` in a string. this catches the
+    other half: 0.25, 1000, 200 - numbers measured on one tissue, which reach
+    code as defaults rather than as names, and then travel to every cohort.
+
+    a step carries order and authority and gets its numbers from `_declared`,
+    which returns None when absent so the step can refuse.
+    """
+    offenders = []
+    for f in sorted(PROTOCOLS.glob("*.py")):
+        src = f.read_text()
+        # named as a chain AND defining one. `join.py` holds funnel helpers
+        # today and becomes subject to this the moment JOIN_STEPS lands.
+        if f.name not in CHAIN_MODULES or "list[Step]" not in src:
+            continue
+        offenders += [f"{f.relative_to(ROOT)}:{ln}" for ln in _numeric_thresholds(src)]
+    assert not offenders, (
+        "a numeric threshold reached an analysis step. it belongs in the "
+        "cohort's declaration, read through `_declared`:\n  "
+        + "\n  ".join(offenders))
+
+
+def test_the_lint_would_catch_a_threshold_if_one_appeared():
+    """a lint that passes on everything is not a lint."""
+    assert _numeric_thresholds("x = 0.25") == [1]
+    assert _numeric_thresholds("f(min_umi=1000)") == [1]
+    assert _numeric_thresholds("if n < 200: pass") == [1]
+    # and does not fire on structure
+    assert _numeric_thresholds("rows[:12]") == []
+    assert _numeric_thresholds("round(frac, 4)") == []
+    assert _numeric_thresholds("x / (y + 1e-9)") == []
+
+
 # --- a new cohort gets answers, not tracebacks ------------------------------
 def test_the_read_path_answers_a_cohort_whose_gate_has_never_run(tmp_path):
     """an unrun gate is an ANSWER. raising sends a client a ToolError carrying a
