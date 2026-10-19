@@ -11,71 +11,75 @@ is not worked on, discussed, or measured until the task card is closed.
 
 ## the task
 
-**translate the niche-join into `protocols/join.py` as `JOIN_STEPS`.**
+**the statistics the routing matrix cites, as `measures/evaluation.py`.**
 
-**DONE 2026-10-19.** 11 steps, 54 tier-1 cases, 45 tier-2 cases against the
-published parquets - every vector column exact on four sections, the funnel
-checked against the manifest the build script wrote. the next card is
-`measures/evaluation.py`: the matrix's statistics, which no package code can
-produce today.
+today the package can STATE a verdict over artifacts an evidence pack cites and
+cannot PRODUCE one of the numbers. `omicstra route` works because it reads a
+pack; a pack exists because someone ran 2,132 lines of cohort scripts by hand.
+that is the whole reason there is one cohort in `projects/`.
 
-a niche join takes per-unit outputs from N assays plus per-unit and per-subject
-label tables and emits one row per unit, fixed-width, with a funnel that
-explains every row it did not emit.
+`measures/` is the maths: pure functions, no ctx, no order, no authority,
+callable from a notebook. this task puts the matrix's statistics there. it does
+NOT build a chain over them - that is the next card.
 
 ### done-criterion
 
-all seven tier-1 synthetic cases pass, and nothing else counts as done:
+**three machines, each existing exactly once:**
 
 ```
-1  a unit with no pathway signal          -> dropped, counted, reason recorded
-2  a unit present in one assay only       -> dropped at the shared-unit step
-3  a subject absent from one assay         -> the whole sample is not_applicable
-4  a sample with zero units after the join -> refuses, does not emit an empty row set
-5  a non-data numeric column in an input   -> read from the declared list, never inferred
-6  normalise before vs after the drop      -> the two give different numbers; the
-                                              declared order is the one that runs
-7  a neighbour in one assay, absent from   -> the pooling counts its own
-   another                                    denominator; it never assumes k+1
+permutation z + p    z = (obs - null mean) / null sd
+                     p = (1 + #{null >= obs}) / (1 + n), one- AND two-sided,
+                     and the caller says which. never 0, never anti-conservative
+BH-FDR               over the family actually tested, and the family is an
+                     argument rather than whatever happened to be in scope
+bootstrap CI         resampled BY A DECLARED GROUP, not by unit
 ```
 
-case 7 was added after the map found it: the script filters a declared
-neighbour list against ONE assay's index, so a neighbour absent from another
-pooled assay still reached the pool and shrank that assay's mean denominator
-with no counter. assuming k+1 is a cohort assumption, and the package may not
-hold one.
+**the statistics, as pure functions over matrices:**
 
-plus, on every step:
+```
+paired retrieval     AUC, recall@k, MRR, alignment gap
+geometric agreement  linear CKA
+clustering           ARI, silhouette, rank-matched variant
+decodability         linear probe accuracy, kNN purity
+contrast             two-sample z between two groups of paired scores
+association          univariate CCA - the top canonical correlation, via
+                     least squares, with its permutation null
+```
 
-- every parameter is a declaration. absent means refuse with a reason, never a
-  default and never a `KeyError`
-- `n_in`, `n_out`, `reason` on every step. an unexplained drop is an error
-- no cohort constant anywhere in the module. not a subarray id, not a patient
-  id, not a dimension
+**and every one of them:**
+
+- takes arrays, returns a number or a small dict. no file paths, no run ids,
+  no cohort names, no DataFrame schema
+- states its own preconditions in the signature or refuses. the CKA trap below
+  is the reason this is a criterion and not a nicety
+- every threshold declared. `EVALUATION.md` §8 decides which kind each is
+- a test that FAILS if the statistic is computed a second way and disagrees
+
+**tier 2:** the cited artifacts are the oracle. the six that
+`routing_evidence.json` names all exist under `runs/tnbc-92_v3/eval/`, so each
+statistic is diffed against the published number it produced.
 
 ### inputs
 
-- `script_map/build_niche_join.md` - the line-by-line map. every step cites the
-  map rows it mirrors. a step that cites nothing is not a translation
-- `scripts/build_niche_join.py` - the specification. the script is the truth;
-  the docstrings, the design docs and the notebook prose are all downstream of
-  it and have each been stale
-- `src/omicstra/protocols/join.py` - already holds `FunnelStage` with a required
-  `reason`. reuse it
-- `src/omicstra/protocols/pathway.py` - the shape a chain takes here:
-  `list[Step]`, `_declared(ctx, field)`, `applicable_when`
+- `script_map/evaluation_maths.md` - the map. every statistic, which script
+  holds it, which artifact it produced, and its parameters
+- the six cited artifacts and their provenance, listed in the map
+- `EVALUATION.md` - what each test proves and the condition under which it does
+- `src/omicstra/configs/routing_contract.json` - the 7 task families and the
+  guards each requires. this task computes nothing new; it computes what the
+  contract already names
 
 ### out of scope
 
-not started, not measured, not discussed until the card closes:
-
 ```
-fusion                      early and late, both
-evaluate                    every hypothesis gate
-the seed cohort's numbers    tier 2. a regression test, after tier 1 passes
-hest                        tier 3. separate, and not in this repo's tests
-any new protocol            join.py is the only module this task touches
-any new guard or lint       except one the six cases force
+EVALUATE_STEPS        the chain over these measures. the next card
+fusion                after the chain, because an arm nothing can score
+                      is not an arm
+the DAG decomposition the v1-pathed task row. deferred, and recorded as such
+new task families     the three tests with no home are a contract edit,
+                      not a measures edit
+cohort two            the card after next
 ```
 
 ---
@@ -84,18 +88,19 @@ any new guard or lint       except one the six cases force
 
 real, written down so it stops re-entering the build, and not worked on:
 
+- the three tests the matrix cites with no home in the contract: the
+  rank-matched control, the categorical FTU contrast, and the
+  rotation-equivalence sanity check
+- `docs/v2/` holds the v3 numbers and `docs/v3/` does not exist; the fullest
+  report is a 1.6 MB hand-built HTML that `report.py` did not render
+- a cited artifact's writer lives in `scripts/_scratch/`
+- `align.py:_EVAL_STAGES` names four scripts; six wrote the cited artifacts
 - the two package defaults the threshold lint does not reach: `eda.py:430`
   `max_pct_negative`, `inventory.py:455` `PITCH_TOLERANCE`
-- `ddof` in the per-subarray z-score must match the script and be cited to it
-- a lint for `.get(key, <number>)` - a default supplied at the read site is the
-  same defect the threshold lint catches at the write site
-- an identifier guard: a cohort id, subject id or dimension literal inside
-  `src/` is a cohort constant in the package
-- inductive vs fitted at the transform boundary
-- a pathway-only arm, its probes, and permutation importance from the existing
-  checkpoint
-- how absence is ENCODED rather than dropped: a unit with no pathway signal is
-  information, not missingness
-- the docs commit that limits the reproduction claim to gene-set equivalence
+- a lint for `.get(key, <number>)` - a default at the read site is the same
+  defect the threshold lint catches at the write site
+- an identifier guard: a cohort id, subject id or dimension literal in `src/`
+- the docs commit limiting the join reproduction claim to the four sections
+  it was verified on
 - a scope row in the pack for the subjects and samples absent from every
   published number
