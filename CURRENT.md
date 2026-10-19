@@ -13,6 +13,12 @@ is not worked on, discussed, or measured until the task card is closed.
 
 **the statistics the routing matrix cites, as `measures/evaluation.py`.**
 
+**DONE 2026-10-19.** three machines and eight statistics, 45 synthetic cases
+and 17 against the published runs. the AUC, the permutation moments and p, and
+the BH q reproduce exactly; CKA, the alignment gap and the CI convention within
+the script's own float32 rounding; ARI and silhouette exactly at the dtype the
+artifact used. the next card is `EVALUATE_STEPS` - the chain over these.
+
 today the package can STATE a verdict over artifacts an evidence pack cites and
 cannot PRODUCE one of the numbers. `omicstra route` works because it reads a
 pack; a pack exists because someone ran 2,132 lines of cohort scripts by hand.

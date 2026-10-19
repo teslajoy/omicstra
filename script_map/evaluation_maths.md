@@ -231,3 +231,65 @@ rotation-equivalence sanity     two classical arms must agree on within-space
 
 these are a contract edit rather than a measures edit, and they are in the
 parking lot, not this card.
+
+---
+
+## 7 · tier 2 · what was diffed, and what each diff found
+
+`tests/test_evaluation_measures.py` (45 cases, synthetic) and
+`tests/test_evaluation_slicediff.py` (17 cases, against the published runs).
+
+| statistic | criterion | result |
+|:--|:--|:--|
+| AUC | exact | `roc_auc_score` on the run's stored labels and scores reproduces `metrics_h1_raw.json#auc` to all 16 digits |
+| negative ratio | exact | `neg_sample_cosines.size / matched_cosines.size` = 10, confirming the undeclared parameter |
+| permutation mean and sd | **bit-identical** | the stored `null_A_mean` and `null_A_std` on every pathway of three runs, which also pins the convention: **ddof=0** |
+| permutation p | exact to 1e-12 | `p_two_A` on every pathway of three runs |
+| BH-FDR | exact to 1e-12 | once the family is the right one - see below |
+| linear CKA | 1e-6 relative | the script accumulated over a materialised float32 matrix; this module sums in float64 |
+| alignment gap | 1e-6 relative | same cause. computed here from the column sums rather than a 35,594² matrix - same number, five orders of magnitude less memory |
+| ARI, silhouette | exact at float32 | see the dtype finding below |
+| bootstrap CI convention | 1e-6 relative | the central two-tailed quantile reproduces both published intervals from the run's stored 200 draws |
+
+### the published FDR family is the grid, not the run
+
+the matrix's cell reads "BH-FDR over 4 testable". over 4, the one significant
+pathway's q is **0.0479**. the artifact's `fdr_A` is **0.0227**, which is BH
+over **36** - nine runs times four testable pathways, one view. both are valid
+corrections; they are corrections of different claims, and only one is what the
+stored number means.
+
+this is the whole argument for the family being an argument. `bh_fdr`
+reproduces the artifact exactly when handed the 36-cell family and gives 0.0479
+when handed the 4-cell one, and a function that corrected over "whatever was in
+scope" could not have told the two apart.
+
+### precision is part of the method for an iterative estimator
+
+the first version of `cluster_agreement` upcast its input to float64, as every
+other measure here does. the published ARI is **0.2339287118** and that version
+returned **0.2338499031** - same seed, same `n_init`, same data.
+
+a seed makes KMeans deterministic at a GIVEN PRECISION and not across
+precisions, so the dtype selects which local optimum is found. the closed-form
+statistics are different: there float64 is strictly more accurate and the
+published float32 values differ from it only in the last bits.
+
+so `cluster_agreement`, `linear_probe` and `knn_purity` take the caller's dtype
+and record it, and the closed-form ones accumulate in float64. a port that had
+tidied the dtype would have moved a published number with nothing to show for it.
+
+### two artifacts of one run disagree about one statistic
+
+`metrics_h1_raw.json#cka_after` and `metrics_h1_ci.json#cka` are the same
+statistic on the same run, written by two scripts, and they differ in the last
+digits. so does the published `z_A` column against the quotient of its own
+stored `null_A_mean` and `null_A_std`, at 1e-10. neither moves a verdict - every
+q in the family is unchanged - and both are the drift that one implementation
+removes and three accumulate.
+
+### the parametric AUC interval is computed and not used
+
+`metrics_h1_ci.json` carries two AUC intervals: a Hanley-McNeil closed form and
+a bootstrap. the evidence pack cites the bootstrap. the closed form is not
+implemented here, because nothing routes on it.
