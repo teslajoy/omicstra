@@ -88,8 +88,14 @@ def _link(step: Step, producer_of: dict[str, str] | None = None) -> Callable[[Ct
         # here would read as a bug in this step when the real cause is that a
         # prerequisite failed. the chain still runs to the end so the record is
         # complete - only the reason changes.
+        # `not_applicable` belongs in this set. a step that did not apply
+        # produced no artifact, so a step requiring that artifact has nothing to
+        # read - and omitting the status here sent it into the `fn` anyway, where
+        # a missing ctx key surfaced as an error attributed to the wrong step.
+        # not applicable is a reason, and it propagates as one.
         failed_up = sorted({pof[p] for p in step.requires
-                            if p in pof and recs.get(pof[p], {}).get("status") in ("fail", "not_run", "error")})
+                            if p in pof and recs.get(pof[p], {}).get("status")
+                            in ("fail", "not_run", "error", "not_applicable")})
         if failed_up:
             rec = DiagnosticRecord(
                 step_id=step.id, status="not_run",

@@ -19,7 +19,7 @@ explains every row it did not emit.
 
 ### done-criterion
 
-all six tier-1 synthetic cases pass, and nothing else counts as done:
+all seven tier-1 synthetic cases pass, and nothing else counts as done:
 
 ```
 1  a unit with no pathway signal          -> dropped, counted, reason recorded
@@ -29,7 +29,15 @@ all six tier-1 synthetic cases pass, and nothing else counts as done:
 5  a non-data numeric column in an input   -> read from the declared list, never inferred
 6  normalise before vs after the drop      -> the two give different numbers; the
                                               declared order is the one that runs
+7  a neighbour in one assay, absent from   -> the pooling counts its own
+   another                                    denominator; it never assumes k+1
 ```
+
+case 7 was added after the map found it: the script filters a declared
+neighbour list against ONE assay's index, so a neighbour absent from another
+pooled assay still reached the pool and shrank that assay's mean denominator
+with no counter. assuming k+1 is a cohort assumption, and the package may not
+hold one.
 
 plus, on every step:
 

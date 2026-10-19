@@ -215,3 +215,26 @@ structural indices (`parts[1]`, `axis=0`, the `0`/`1` of a split) and `0.0` at
   `data/embeddings/niches/{key}.parquet`. that is the v1 default at 66; the
   published v3 build was written elsewhere via `--out-dir`. the path in the
   docstring is not the path of the artifact anything downstream reads.
+
+---
+
+## 9 · the translation, and which rows each step mirrors
+
+`protocols/join.py` · `JOIN_STEPS`. the order is asserted at build time, so a
+reordered chain raises before any data is touched.
+
+| step | mirrors | and corrects |
+|:--|:--|:--|
+| `unit_inventory` | 201, 323 | states the `n_in` the intersection ran against |
+| `subject_resolution` | 128, 179-181 | an absent subject label is counted and marked, or refused - never a bare `None` |
+| `neighbourhood` | 218, 220, 221-224 | `present` is the set every pooled assay agrees on, and the list is capped at `k` |
+| `pool_continuous` | 231, 241-251, 153-166 | records the realised denominator per assay; data columns are declared, never inferred |
+| `centre_labels` | 260-265, 267-276 | absence is a `{label}__present` column, not a sentinel inside the label's value space |
+| `assemble` | 278-292 | the provenance column is the members actually pooled |
+| `anchor_coverage` | 234-238, 301-305 | the anchor is declared and its width is never written down; an emptied sample refuses |
+| `standardise` | 307-315 | `requires={"table"}` makes the order a build-time assertion; `ddof` is declared and checked against the measure |
+| `join_funnel` | 318-331 | assembled from what the steps recorded, so a step that counted nothing fails |
+
+the arithmetic is unchanged and lives in `measures/`: `niche_members`,
+`pool_rows`, `zscore_per_group`, `stack_tokens`. `niche_members` already caps at
+`k`, so the port is not a transcription on that row.
