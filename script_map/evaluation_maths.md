@@ -392,8 +392,13 @@ signal is absent for 22,391 of 35,594 units and the supervision vector for
 4,353, so none is evaluable at a split shared with the others, and H3 is
 `not_run` on these inputs. the published H3 used pathway cosines built from a
 457 MB embedding pkl and the Reactome DAG - the CALLER's assembly, not this
-chain's statistic, and not persisted, which is why the transfer r has no
-diffable oracle either.
+chain's statistic.
+
+the transfer r is therefore **not diffable from the persisted artifacts**,
+which is a weaker statement than not diffable: the pkl and the DAG are both on
+disk, so re-deriving the member sets and the cosine tables would make it
+diffable. that is a day of the caller's assembly for one number, and it is
+recorded here as available rather than impossible.
 
 ### two defects the real data found
 
@@ -408,3 +413,9 @@ signal would give each signal its own split, which is the one condition section
 **a step with every signal unevaluable returned `pass`.** "0 of 0 significant"
 is not a clean sweep. it is `not_run` now, by the repo's own rule that a check
 measuring nothing is not a pass.
+
+both are now tier-1 cases as well. the first write-up of this said synthetic
+tier 1 COULD NOT have surfaced them, and that was wrong: no synthetic case had
+a gap in a signal, and one array with a NaN in it reaches both. the gap was in
+the cases written, not in what a fixture can reach - a distinction worth
+keeping, because the first version excuses not writing them.

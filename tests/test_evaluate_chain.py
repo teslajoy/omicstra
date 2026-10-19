@@ -497,3 +497,69 @@ def test_the_transfer_split_is_the_same_for_every_signal_and_every_view():
     o = _obs(recs, "association_and_specificity")
     assert set(o["per_view"]) == {"z_he", "z_other"}
     assert o["n_test"] > 0 and len(o["held_out_subjects"]) == 2
+
+
+# ------------------------------------- the two the cohort found, as fixtures --
+# these exist because the real cohort found them and tier 1 did not. the reason
+# was not that a synthetic case cannot reach them - it is that no synthetic case
+# had a gap in a signal. one array with a NaN in it reaches both.
+def test_a_signal_with_a_gap_is_refused_by_name_not_imputed():
+    """imputing a target invents the thing being tested for every unit it was
+    absent from; dropping units per signal gives each signal its own split."""
+    ctx = _cohort()
+    y = np.asarray(ctx["scores"]["signal_a"], float).copy()
+    y[:7] = np.nan
+    ctx["scores"] = {"gapped": y, "complete": ctx["scores"]["signal_b"]}
+    recs = _run(ctx)
+
+    o = _obs(recs, "association_and_specificity")
+    assert o["unevaluable_signals"] == ["gapped"]
+    rows = {r["signal"]: r for r in o["per_view"]["z_he"]["per_signal"]}
+    assert rows["gapped"]["unevaluable"] is True
+    assert "7 of" in rows["gapped"]["g5_not_run_because"]
+    assert np.isnan(rows["gapped"]["q"])
+    # and the complete signal is evaluated, over a family of one
+    assert not np.isnan(rows["complete"]["r_test"])
+    assert o["per_view"]["z_he"]["fdr_family"] == 1
+
+
+def test_a_step_with_every_signal_gapped_is_not_run_not_a_clean_sweep():
+    """0 of 0 significant is not a pass."""
+    ctx = _cohort()
+    gapped = {}
+    for name, sc in ctx["scores"].items():
+        y = np.asarray(sc, float).copy()
+        y[0] = np.nan
+        gapped[name] = y
+    ctx["scores"] = gapped
+    recs = _run(ctx)
+
+    rec = recs["association_and_specificity"]
+    assert rec["status"] == "not_run"
+    assert "every declared signal is unevaluable" in rec["result"]
+    assert _obs(recs, "association_and_specificity")["n_out"] == 0
+    # and the hypothesis is not_run rather than reported as unguarded
+    assert _verdicts(recs)["H3"]["verdict"] == "not_run"
+
+
+def test_the_cca_refuses_a_non_finite_input_naming_the_rows():
+    """the SVD's own message is 'did not converge', which reads as a numerical
+    problem and is a coverage problem."""
+    from omicstra.measures.evaluation import NotComparable, top_canonical_correlation
+
+    Z = np.arange(60.0).reshape(20, 3)
+    y = np.arange(20.0)
+    y[3] = np.nan
+    with pytest.raises(NotComparable, match="1 row\\(s\\) with a non-finite"):
+        top_canonical_correlation(Z, y)
+
+
+def test_the_split_is_reported_even_when_every_signal_refuses():
+    """the refusal is about the signals, not the split, so the reason stays
+    legible: a reader can see the split was taken and what it was."""
+    ctx = _cohort()
+    ctx["scores"] = {k: np.where(np.arange(N) == 0, np.nan, np.asarray(v, float))
+                     for k, v in ctx["scores"].items()}
+    o = _obs(_run(ctx), "association_and_specificity")
+    assert o["n_train"] > 0 and o["n_test"] > 0
+    assert o["n_train"] + o["n_test"] == N
