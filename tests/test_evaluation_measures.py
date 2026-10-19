@@ -78,9 +78,39 @@ def test_the_z_is_the_standardised_distance_from_the_null():
 
 
 # -------------------------------------------------- machine 2 · BH-FDR ------
+def test_bh_fdr_matches_the_hand_computed_values():
+    """the always-available correctness check: q = p * m / rank, then the
+    monotone step from the largest p down.
+
+    this family is chosen to exercise that step - the third and fourth raw
+    products are 0.065 and 0.05125, and both are pulled down to the 0.042 of
+    the largest p. a BH that skipped the monotone pass would report them as
+    they came out, and would still look plausible.
+
+        p = 0.001  0.008  0.039   0.041    0.042      m = 5
+        p*m/r  .005   .020   .065    .05125   .042
+        q      .005   .020   .042    .042     .042
+    """
+    p = [0.001, 0.008, 0.039, 0.041, 0.042]
+    r = bh_fdr(p, alpha=0.03)
+    assert r["q"] == pytest.approx([0.005, 0.020, 0.042, 0.042, 0.042])
+    assert r["rejected"] == [True, True, False, False, False]
+    assert r["n_family"] == 5
+
+
 def test_bh_fdr_agrees_with_statsmodels():
-    """a second implementation, from a library nobody here wrote."""
-    from statsmodels.stats.multitest import multipletests
+    """a second implementation, from a library nobody here wrote.
+
+    statsmodels is a dependency of the cohort SCRIPTS and not of this package -
+    `pyproject`'s `measure` extra declares numpy, scipy, scikit-learn and
+    anndata. so this skips where it is absent rather than pulling a dependency
+    in to make a test pass, and the hand-computed check above is what holds the
+    correctness claim everywhere.
+    """
+    multipletests = pytest.importorskip(
+        "statsmodels.stats.multitest",
+        reason="statsmodels is a script dependency, not a package one"
+    ).multipletests
 
     rng = np.random.default_rng(3)
     p = np.clip(rng.beta(0.3, 4.0, 40), 1e-9, 1.0)
