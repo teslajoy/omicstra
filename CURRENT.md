@@ -11,81 +11,93 @@ is not worked on, discussed, or measured until the task card is closed.
 
 ## the task
 
-**the statistics the routing matrix cites, as `measures/evaluation.py`.**
+**`EVALUATE_STEPS`: the chain that COMPUTES a verdict, in
+`protocols/evaluate.py`.**
 
-**DONE 2026-10-19.** three machines and eight statistics, 45 synthetic cases
-and 17 against the published runs. the AUC, the permutation moments and p, and
-the BH q reproduce exactly; CKA, the alignment gap and the CI convention within
-the script's own float32 rounding; ARI and silhouette exactly at the dtype the
-artifact used. the next card is `EVALUATE_STEPS` - the chain over these.
+the gates that already exist read a cohort's evidence pack and judge the numbers
+in it. four of their guards cannot run on a pack, and each one says so by name:
 
-today the package can STATE a verdict over artifacts an evidence pack cites and
-cannot PRODUCE one of the numbers. `omicstra route` works because it reads a
-pack; a pack exists because someone ran 2,132 lines of cohort scripts by hand.
-that is the whole reason there is one cohort in `projects/`.
+```
+evaluate.py:271   G2 held-out honesty   needs "a within-subject score to compare"
+evaluate.py:272   G5 noise floor        needs "a permutation null over ARI"
+evaluate.py:301   G4 specificity        needs "per-pathway axis vectors"
+evaluate.py:302   G5 noise floor        needs "the permutation null over CCA"
+evaluate.py:346   G5 noise floor        needs "the permutation nulls behind each z"
+evaluate.py:422   G4 specificity        needs "per-pathway axis vectors
+                                         (pathway_axes.parquet)"
+```
 
-`measures/` is the maths: pure functions, no ctx, no order, no authority,
-callable from a notebook. this task puts the matrix's statistics there. it does
-NOT build a chain over them - that is the next card.
+**the last one names a file that cannot satisfy it.** `pathway_axes.parquet`
+holds `pathway_name`, `pathway_id`, `coverage_frac`, `set_size` and `testable` -
+metadata, no vectors. so G4 has been unrunnable for a reason that reads as a
+missing file rather than as a statistic nobody computed.
+
+`measures/evaluation.py` can now produce every one of those inputs. this card
+is the chain that does it.
 
 ### done-criterion
 
-**three machines, each existing exactly once:**
+**the four guards stop being `not_run`, each for a real reason:**
 
 ```
-permutation z + p    z = (obs - null mean) / null sd
-                     p = (1 + #{null >= obs}) / (1 + n), one- AND two-sided,
-                     and the caller says which. never 0, never anti-conservative
-BH-FDR               over the family actually tested, and the family is an
-                     argument rather than whatever happened to be in scope
-bootstrap CI         resampled BY A DECLARED GROUP, not by unit
+G2  compute the within-subject score beside the cross-subject one, so
+    "held out" is a measured difference rather than a declared split
+G4  compute the per-pathway axis VECTORS - top_canonical_correlation with
+    with_weights=True - and pass them to the existing specificity_matrix
+G5  compute the permutation null for each statistic the chain reports, and
+    let the existing noise_floor guard read it
 ```
 
-**the statistics, as pure functions over matrices:**
+**and:**
+
+- every statistic comes from `measures/evaluation.py`. a number computed in a
+  protocol is a number no notebook can check
+- every parameter declared. absent means refuse with a reason
+- `n_in` / `n_out` / `reason` on every step, as `JOIN_STEPS` has
+- a verdict per hypothesis in the existing vocabulary:
+  `biological | diagnostic | unguarded | not_run`
+- the chain does not re-judge what the pack-reading gates judge. two answers to
+  one question is the defect; this answers the question they could not
+
+### tier 1
+
+synthetic, no cohort data:
 
 ```
-paired retrieval     AUC, recall@k, MRR, alignment gap
-geometric agreement  linear CKA
-clustering           ARI, silhouette, rank-matched variant
-decodability         linear probe accuracy, kNN purity
-contrast             two-sample z between two groups of paired scores
-association          univariate CCA - the top canonical correlation, via
-                     least squares, with its permutation null
+1  a statistic with no null reported  -> the verdict is `unguarded`, not a pass
+2  a label that encodes the subject   -> `diagnostic`, and the score is still
+                                         reported
+3  axes that alias                    -> the cosine travels with every
+                                         magnitude
+4  within beats cross                 -> the split is not holding anything out
+5  a guard whose input is absent      -> `not_run` NAMING the input, never a pass
+6  a hypothesis with no step that ran -> `not_run`, distinct from "no guard failed"
 ```
 
-**and every one of them:**
+### tier 2
 
-- takes arrays, returns a number or a small dict. no file paths, no run ids,
-  no cohort names, no DataFrame schema
-- states its own preconditions in the signature or refuses. the CKA trap below
-  is the reason this is a criterion and not a nicety
-- every threshold declared. `EVALUATION.md` §8 decides which kind each is
-- a test that FAILS if the statistic is computed a second way and disagrees
-
-**tier 2:** the cited artifacts are the oracle. the six that
-`routing_evidence.json` names all exist under `runs/tnbc-92_v3/eval/`, so each
-statistic is diffed against the published number it produced.
+the cohort's artifacts are the oracle. the chain's computed z, q and specificity
+are diffed against `per_pathway_cca.parquet`, `perm_nulls.parquet` and
+`mc_coherence.parquet` - all verified reachable by the previous card.
 
 ### inputs
 
-- `script_map/evaluation_maths.md` - the map. every statistic, which script
-  holds it, which artifact it produced, and its parameters
-- the six cited artifacts and their provenance, listed in the map
-- `EVALUATION.md` - what each test proves and the condition under which it does
-- `src/omicstra/configs/routing_contract.json` - the 7 task families and the
-  guards each requires. this task computes nothing new; it computes what the
-  contract already names
+- `protocols/evaluate.py` - the six guards, the gates, and the four `not_run`
+  lines above. this card extends the module, it does not replace it
+- `measures/evaluation.py` - the maths, as of the previous card
+- `script_map/evaluation_maths.md` - which statistic answers which hypothesis
+- `configs/routing_contract.json` - the 7 task families and the guards each
+  requires. the chain computes what the contract already names
+- `EVALUATION.md` - PROVES / ONLY IF / INSTEAD READS per test
 
 ### out of scope
 
 ```
-EVALUATE_STEPS        the chain over these measures. the next card
-fusion                after the chain, because an arm nothing can score
-                      is not an arm
-the DAG decomposition the v1-pathed task row. deferred, and recorded as such
-new task families     the three tests with no home are a contract edit,
-                      not a measures edit
-cohort two            the card after next
+fusion                 the card after this one
+new guards             G1-G6 are the set. this card makes four of them runnable
+new task families      the three tests with no home are a contract edit
+the DAG decomposition  deferred, and the task row is still v1-pathed
+cohort two             the last card
 ```
 
 ---
@@ -97,16 +109,19 @@ real, written down so it stops re-entering the build, and not worked on:
 - the three tests the matrix cites with no home in the contract: the
   rank-matched control, the categorical FTU contrast, and the
   rotation-equivalence sanity check
+- `pathway_axes.parquet` carries no axis vectors; whatever writes it should
+- the published FDR family is 36 cells and the matrix's prose says 4
+- two artifacts of one run disagree about CKA in the last digits, and the
+  published `z_A` disagrees with its own stored moments at 1e-10
+- the Hanley-McNeil AUC interval is computed and nothing routes on it
 - `docs/v2/` holds the v3 numbers and `docs/v3/` does not exist; the fullest
   report is a 1.6 MB hand-built HTML that `report.py` did not render
 - a cited artifact's writer lives in `scripts/_scratch/`
 - `align.py:_EVAL_STAGES` names four scripts; six wrote the cited artifacts
 - the two package defaults the threshold lint does not reach: `eda.py:430`
   `max_pct_negative`, `inventory.py:455` `PITCH_TOLERANCE`
-- a lint for `.get(key, <number>)` - a default at the read site is the same
-  defect the threshold lint catches at the write site
-- an identifier guard: a cohort id, subject id or dimension literal in `src/`
-- the docs commit limiting the join reproduction claim to the four sections
-  it was verified on
-- a scope row in the pack for the subjects and samples absent from every
-  published number
+- a lint for `.get(key, <number>)`; an identifier guard for cohort literals
+- the docs commit limiting the join reproduction claim to its four sections
+- a scope row in the pack for the subjects absent from every published number
+- ruff finds 30 pre-existing issues in files outside this work; they are not
+  this card's and a broad `--fix` has already cost a revert once
