@@ -461,6 +461,17 @@ def top_canonical_correlation(Z: np.ndarray, Y: np.ndarray, *,
             f"CCA relates two blocks over the SAME units: {A.shape[0]} rows "
             f"against {B.shape[0]}")
 
+    # a non-finite entry surfaces from the SVD as "did not converge", which
+    # reads as a numerical problem and is a data problem - a label table that
+    # does not cover every unit, usually. the message has to say which.
+    for nm, M in (("Z", A), ("Y", B)):
+        if not np.isfinite(M).all():
+            bad = int((~np.isfinite(M)).any(axis=1).sum())
+            raise NotComparable(
+                f"{nm} has {bad} row(s) with a non-finite value, out of "
+                f"{M.shape[0]}. a canonical correlation cannot be computed over "
+                "them, and imputing them would invent the signal being tested - "
+                "drop them, or declare the signal unevaluable at this split")
     Ac = A - A.mean(axis=0, keepdims=True)
     Bc = B - B.mean(axis=0, keepdims=True)
     Qa, Ra = np.linalg.qr(Ac, mode="reduced")

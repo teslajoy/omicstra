@@ -342,3 +342,69 @@ train poorly and test well has found noise in both.
 so tier 2 for the CHAIN is a smaller claim than tier 2 for the measures was:
 two of its five numbers have no oracle, because they are the numbers the chain
 exists to produce. they are pinned by property in tier 1 and reported as new.
+
+---
+
+## 9 · tier 2 for the CHAIN - what it closed, and what the cohort said
+
+`tests/test_evaluate_slicediff.py`, 18 cases at cohort scale (35,594 niches).
+the chain's own assembly is under test here, not only the arithmetic.
+
+### what had an oracle, and matched
+
+| through the chain | against | result |
+|:--|:--|:--|
+| ARI, silhouette | `mc_coherence.parquet` | exact at float32 |
+| AUC, CKA, alignment gap | `metrics_h1_raw.json` | within the script's float32 band |
+| R@1/5/10, MRR, median rank | same | within the same band |
+| NMI(archetype, subject) | the matrix's stated ~0.89 | **0.893** |
+
+### what had no oracle, and is reported as new
+
+```
+the within-subject AUC     the input G2 was recorded `not_run` for wanting
+the ARI permutation null    the input G5 was recorded `not_run` for wanting
+the axis specificity        `pathway_axes.parquet` holds no vectors
+```
+
+### three things the cohort said
+
+**the recommended label also sits above the bar.** the matrix routes clustering
+to `mc_megacluster` instead of `archetype` because archetype is patient-level
+pseudobulk at NMI 0.89. the chain measures `mc_megacluster` at **0.539**
+against a declared tau of **0.5** - far below archetype and still over. so by
+this chain's own guard the H2 clustering claim on this cohort is **diagnostic**
+rather than biological, and the ARI is still reported. the verdict turns on the
+bar, 0.539 against 0.5, and the bar is a declaration - section 8's middle kind,
+re-derived per cohort rather than inherited. the measurement is pinned; the
+conclusion about the biology is not.
+
+**the within-subject score is LOWER than the cross-subject one**, 0.736 against
+0.761, and the first version of the step documented the opposite as expected. a
+RANK statistic is inflated within subject because the pool is smaller; a
+DISCRIMINATION AUC can fall, because the mismatched pairs drawn within one
+subject are hard negatives - same patient, adjacent tissue. the guard measures
+the drop and does not assume a sign, which is why it passes. the docstring that
+assumed one is corrected.
+
+**no continuous signal in the niche table covers every unit.** the scalar
+signal is absent for 22,391 of 35,594 units and the supervision vector for
+4,353, so none is evaluable at a split shared with the others, and H3 is
+`not_run` on these inputs. the published H3 used pathway cosines built from a
+457 MB embedding pkl and the Reactome DAG - the CALLER's assembly, not this
+chain's statistic, and not persisted, which is why the transfer r has no
+diffable oracle either.
+
+### two defects the real data found
+
+**a non-finite input surfaced as "SVD did not converge".** that reads as a
+numerical problem and is a coverage problem. `top_canonical_correlation` now
+refuses non-finite input and names the row count, and the step refuses the
+SIGNAL by name and evaluates the others - imputing a target would invent the
+thing being tested for every unit it was absent from, and dropping units per
+signal would give each signal its own split, which is the one condition section
+4 names.
+
+**a step with every signal unevaluable returned `pass`.** "0 of 0 significant"
+is not a clean sweep. it is `not_run` now, by the repo's own rule that a check
+measuring nothing is not a pass.

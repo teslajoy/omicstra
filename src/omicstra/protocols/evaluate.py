@@ -1382,10 +1382,21 @@ def held_out_comparison(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     a subject and across subjects is a measurement, and it is the one that says
     whether the split held anything out.
 
-    the expected direction is within > cross: units from one subject are
-    near-copies, so a within-subject score is inflated. a cross score that
-    MATCHES or beats the within one is the finding - it says the split is not
-    separating subjects, usually because the label or the units leak.
+    the direction depends on the statistic, and assuming one was wrong:
+
+        a RANK statistic (R@k, MRR) is inflated within subject, because the
+        pool is smaller - fewer candidates to rank the matched one against
+
+        a DISCRIMINATION statistic (AUC against sampled mismatched pairs) can
+        go the other way, because the mismatched pairs drawn within one subject
+        are HARD negatives - same patient, adjacent tissue - so telling matched
+        from mismatched is harder there, not easier. on the seed cohort the
+        within-subject AUC is 0.736 against 0.761 across, a 3% rise rather than
+        a fall
+
+    so the guard measures the DROP and fails past its tau; it does not assume a
+    sign. what it catches is the collapse - a score that survives within and
+    dies across was the subject, as CCA's 0.667 within and 0.000 across was.
     """
     ks = _edeclared(ctx, "ks")
     ratio = _edeclared(ctx, "negative_ratio")
@@ -1555,8 +1566,27 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
         rows, axes, names = [], [], []
         for sname, sc in scores.items():
             y = np.asarray(sc, dtype=np.float64)
-            y_tr, y_te = y[train_mask], y[test_mask]
+            # a signal that does not cover every unit is UNEVALUABLE at this
+            # split, not a signal to impute. filling the gaps with a mean would
+            # invent the thing being tested for every unit it was absent from,
+            # and dropping those units per signal would give each signal its own
+            # split - which is the one condition EVALUATION.md section 4 names.
+            # so the signal is refused by name, counted, and the others proceed.
+            n_bad = int((~np.isfinite(y)).sum())
+            if n_bad:
+                rows.append({"signal": sname, "r_test": float("nan"),
+                             "r_train": float("nan"), "z": float("nan"),
+                             "p": float("nan"), "n_null": 0,
+                             "guard_g5": "not_run",
+                             "g5_not_run_because": (
+                                 f"{n_bad} of {y.size} units have no value for "
+                                 "this signal; unevaluable at a split shared "
+                                 "with the other signals"),
+                             "unevaluable": True,
+                             "within_cohort": None})
+                continue
 
+            y_tr, y_te = y[train_mask], y[test_mask]
             r_te, r_tr, a, _ = transfer_correlation(Z_tr, y_tr, Z_te, y_te)
             # the null refits on PERMUTED training labels and scores the same
             # held-out units, so it asks "could a direction fitted on noise
@@ -1591,11 +1621,16 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
             axes.append(a)
             names.append(sname)
 
-        fdr = bh_fdr([r["p"] for r in rows], alpha=float(vals["alpha"]),
-                     family=names)
-        for r, q, rej in zip(rows, fdr["q"], fdr["rejected"]):
-            r["q"] = q
-            r["significant"] = bool(rej)
+        # the family is the EVALUABLE signals. counting an unevaluable one would
+        # inflate the denominator every q is divided by - the same rule `bh_fdr`
+        # applies to a NaN p-value, applied one level up where the reason is known
+        fdr = bh_fdr([r["p"] for r in rows if not r.get("unevaluable")],
+                     alpha=float(vals["alpha"]), family=names)
+        q_of = dict(zip(names, fdr["q"]))
+        rej_of = dict(zip(names, fdr["rejected"]))
+        for r in rows:
+            r["q"] = q_of.get(r["signal"], float("nan"))
+            r["significant"] = bool(rej_of.get(r["signal"], False))
 
         spec = None
         if len(axes) >= 2:
@@ -1611,6 +1646,30 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     n_sig = sum(1 for v in out.values() for r in v["per_signal"] if r["significant"])
     aliased = sorted(v for v, r in out.items()
                      if (r["specificity"] or {}).get("guard_g4") == "fail")
+    unevaluable = sorted({r["signal"] for blk in out.values()
+                          for r in blk["per_signal"] if r.get("unevaluable")})
+
+    # a step where every declared signal was unevaluable measured NOTHING, and
+    # "0 of 0 significant" is not a pass - 0 == 0 is not agreement. this is the
+    # repo's own rule about a check that measures nothing, applied to the step
+    # that would otherwise report a clean sweep of an empty set.
+    if len(unevaluable) == len(scores):
+        return _erec("association_and_specificity", "not_run",
+                     f"every declared signal is unevaluable: {unevaluable}",
+                     "no association was measured, so there is nothing to "
+                     "report. a signal that does not cover every unit needs "
+                     "either a complete signal or a split declared for it",
+                     {"n_in": len(spaces) * len(scores), "n_out": 0,
+                      "reason": "no signal covers every unit",
+                      "unevaluable_signals": unevaluable,
+                      "per_view": out, "n_train": n_tr, "n_test": n_te,
+                      "guards": [{"guard": "G5_noise_floor",
+                                  "scope": f"{v}/{r['signal']}",
+                                  "status": "not_run",
+                                  "note": r.get("g5_not_run_because", "")}
+                                 for v, blk in out.items()
+                                 for r in blk["per_signal"]]}), {}
+
     return _erec("association_and_specificity", "pass",
                  f"{n_sig} signal-view transfer(s) survive BH-FDR at "
                  f"{float(vals['alpha'])} on {n_te} held-out units from "
@@ -1631,6 +1690,7 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                   "held_out_subjects": sorted(str(h) for h in held),
                   "statistic": "directions fitted on training subjects, "
                                "projected onto held-out subjects",
+                  "unevaluable_signals": unevaluable,
                   "fdr_family_note": "the family is the signals of ONE view; a "
                                      "caller correcting across views passes that "
                                      "family to bh_fdr instead",

@@ -17,13 +17,14 @@ is not worked on, discussed, or measured until the task card is closed.
 **DONE 2026-10-19 (tier 1).** 6 steps, 53 synthetic cases, 892 pass. G2, G4 and
 G5 all run, asserted by a test.
 
-tier 2 for the chain is a SMALLER claim than the card assumed, and the map's
-section 8 records why: of the five numbers, the permutation moments / p / q and
-the ARI are already diffed exactly at the measures level, the transfer r is
-diffable in principle, and **two have no oracle at all** - the ARI permutation
-null and the axis specificity have never been published, because they are the
-guards the gates record as `not_run`. those two are pinned by property and
-reported as new.
+**tier 2 DONE 2026-10-19.** 18 cases at cohort scale, map section 9. the ARI,
+silhouette, AUC, CKA, gap, recalls and NMI(archetype, subject) all match their
+artifacts; the within-subject AUC, the ARI null and the axis specificity have
+no oracle and are reported as new. the transfer r is not diffable - its input
+is the caller's assembly from a 457 MB pkl and the Reactome DAG, and is not
+persisted.
+
+the next card is FUSION_STEPS.
 
 the gates that already exist read a cohort's evidence pack and judge the numbers
 in it. four of their guards cannot run on a pack, and each one says so by name:
