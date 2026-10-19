@@ -480,6 +480,57 @@ def top_canonical_correlation(Z: np.ndarray, Y: np.ndarray, *,
     return top, _solve(Ra, U[:, 0]), _solve(Rb, Vt[0])
 
 
+
+def projected_correlation(Z: np.ndarray, Y: np.ndarray, a: np.ndarray,
+                          b: np.ndarray) -> float:
+    """the correlation of two blocks along DIRECTIONS FITTED ELSEWHERE.
+
+    this is the other half of a transfer test, and it is not a CCA: the
+    directions are given, so there is nothing to maximise and the answer is a
+    plain Pearson r between the two projections. a CCA computed on the same
+    units would refit and report the best possible correlation, which is the
+    number a transfer test exists to avoid.
+
+    both blocks are centred on their OWN rows. centring on the training rows
+    instead would leak the training mean into the held-out score.
+    """
+    A, B = np.asarray(Z, dtype=np.float64), np.asarray(Y, dtype=np.float64)
+    if A.ndim == 1:
+        A = A[:, None]
+    if B.ndim == 1:
+        B = B[:, None]
+    if A.shape[0] != B.shape[0]:
+        raise NotComparable(
+            f"a projection relates two blocks over the SAME units: "
+            f"{A.shape[0]} rows against {B.shape[0]}")
+    u = (A - A.mean(axis=0, keepdims=True)) @ np.asarray(a, dtype=np.float64)
+    v = (B - B.mean(axis=0, keepdims=True)) @ np.asarray(b, dtype=np.float64)
+    u, v = np.ravel(u), np.ravel(v)
+    if u.std() == 0 or v.std() == 0:
+        return float("nan")
+    return float(np.corrcoef(u, v)[0, 1])
+
+
+def transfer_correlation(Z_train: np.ndarray, Y_train: np.ndarray,
+                         Z_test: np.ndarray, Y_test: np.ndarray):
+    """fit the canonical directions on train, score them on held-out units.
+
+    PROVES, in `EVALUATION.md`'s terms: a signal carries to units the direction
+    was not fitted on. the within-cohort CCA proves something much weaker and
+    on the seed cohort proved it for every arm in the grid at once - ten of ten
+    runs significant, which orders nothing. the split is what makes the number
+    discriminate, so it is part of the statistic rather than a wrapper around it.
+
+    returns (r_test, r_train, a, b). `r_train` is not decoration: it is the
+    number `r_test` has to be read against, because a direction that fits train
+    poorly and test well has found noise in both.
+    """
+    a_b = top_canonical_correlation(Z_train, Y_train, with_weights=True)
+    _, a, b = a_b
+    return (projected_correlation(Z_test, Y_test, a, b),
+            projected_correlation(Z_train, Y_train, a, b), a, b)
+
 __all__ = ["NotComparable", "bh_fdr", "bootstrap_ci", "cluster_agreement",
            "knn_purity", "linear_cka", "linear_probe", "permutation_test",
-           "retrieval", "top_canonical_correlation", "two_sample_z"]
+           "projected_correlation", "retrieval", "top_canonical_correlation",
+           "transfer_correlation", "two_sample_z"]

@@ -64,7 +64,10 @@ def _params(**over) -> dict:
         "held_out_comparison": {"ks": (1, 5), "negative_ratio": 5,
                                 "negative_seed": 0, "min_units_per_subject": 10},
         "association_and_specificity": {"n_permutations": 40, "alpha": 0.05,
-                                        "tau_specificity": 0.5, "tail": "two_sided"},
+                                        "tau_specificity": 0.5, "tail": "two_sided",
+                                        "held_out_groups": 2, "transfer_seed": 42,
+                                        "within_cohort_seed": 7,
+                                        "min_units_per_side": 20},
         "hypothesis_verdict": {"hypotheses": {
             "H1": ("paired_identifiability", "held_out_comparison"),
             "H2": ("structure_and_its_null",),
@@ -257,6 +260,10 @@ def test_a_subject_floor_that_no_subject_meets_is_not_run_not_a_pass():
     ("association_and_specificity", "alpha"),
     ("association_and_specificity", "tau_specificity"),
     ("association_and_specificity", "tail"),
+    ("association_and_specificity", "held_out_groups"),
+    ("association_and_specificity", "transfer_seed"),
+    ("association_and_specificity", "within_cohort_seed"),
+    ("association_and_specificity", "min_units_per_side"),
     ("hypothesis_verdict", "hypotheses"),
 ])
 def test_an_absent_declaration_refuses_naming_the_field(step, field):
@@ -358,8 +365,10 @@ def test_a_guard_that_could_not_run_is_named_in_the_verdict():
     permutations should be able to read why nothing was guarded."""
     recs = _run(_cohort(), _params(
         association_and_specificity={"n_permutations": 5, "alpha": 0.05,
-                                     "tau_specificity": 0.5,
-                                     "tail": "two_sided"},
+                                     "tau_specificity": 0.5, "tail": "two_sided",
+                                     "held_out_groups": 2, "transfer_seed": 42,
+                                     "within_cohort_seed": 7,
+                                     "min_units_per_side": 20},
         hypothesis_verdict={"hypotheses": {"H3": ("association_and_specificity",)}}))
     rows = _obs(recs, "association_and_specificity")["per_view"]["z_he"]["per_signal"]
     assert all(r["guard_g5"] == "not_run" for r in rows)
@@ -405,3 +414,86 @@ def test_the_four_closed_guards_are_the_four_the_gates_could_not_run():
            for g in _obs(recs, step).get("guards", [])
            if g["status"] in ("pass", "fail")}
     assert {"G2_held_out_honesty", "G4_specificity", "G5_noise_floor"} <= ran
+
+
+# ------------------------------------- H3 is a TRANSFER test, not a within one --
+def test_the_association_is_fitted_on_some_subjects_and_scored_on_others():
+    """the split is part of the statistic. the within-cohort CCA was
+    significant for every arm of the published grid at once, so it orders
+    nothing - which is why the direction has to carry to subjects it was not
+    fitted on."""
+    recs = _run(_cohort())
+    o = _obs(recs, "association_and_specificity")
+    assert o["n_train"] + o["n_test"] == N
+    assert len(o["held_out_subjects"]) == 2
+    assert "projected onto held-out subjects" in o["statistic"]
+    row = o["per_view"]["z_he"]["per_signal"][0]
+    assert "r_test" in row and "r_train" in row
+
+
+def test_the_within_cohort_statistic_is_kept_and_labelled_non_discriminating():
+    """the published artifact stores both; a reader comparing them should not
+    have to re-derive why only one separates the arms."""
+    recs = _run(_cohort())
+    row = _obs(recs, "association_and_specificity")["per_view"]["z_he"]["per_signal"][0]
+    w = row["within_cohort"]
+    assert "non-discriminating" in w["note"]
+    assert "r" in w and "z" in w and "p" in w
+
+
+def test_a_signal_that_only_fits_the_training_subjects_does_not_transfer():
+    """the case the within-cohort test cannot see: a direction with a high
+    train correlation and a held-out correlation at chance."""
+    rng = np.random.default_rng(2)
+    ctx = _cohort()
+    subject = ctx["confounder"]
+    held = set(np.random.default_rng(42).choice(np.unique(subject), size=2,
+                                                replace=False))
+    noise = rng.normal(0, 1, N)
+    # the signal exists only on the TRAINING subjects
+    ctx["scores"] = {"train_only": np.where([c in held for c in subject],
+                                            noise, ctx["spaces"]["z_he"][:, 0] * 5),
+                     "other": rng.normal(0, 1, N)}
+    recs = _run(ctx)
+    rows = {r["signal"]: r
+            for r in _obs(recs, "association_and_specificity")["per_view"]["z_he"]["per_signal"]}
+    assert abs(rows["train_only"]["r_train"]) > abs(rows["train_only"]["r_test"])
+
+
+def test_a_cohort_with_too_few_subjects_to_hold_any_out_refuses():
+    ctx = _cohort()
+    ctx["confounder"] = np.zeros(N, dtype=int)
+    recs = _run(ctx)
+    assert recs["association_and_specificity"]["status"] == "not_run"
+    assert "cannot yield a held-out split" in recs["association_and_specificity"]["result"]
+    assert "within-cohort test under another name" in \
+        recs["association_and_specificity"]["decision"]
+
+
+def test_a_split_that_leaves_too_few_units_on_a_side_refuses():
+    recs = _run(_cohort(), _params(association_and_specificity={
+        "n_permutations": 25, "alpha": 0.05, "tau_specificity": 0.5,
+        "tail": "two_sided", "held_out_groups": 2, "transfer_seed": 42,
+        "within_cohort_seed": 7, "min_units_per_side": 10_000}))
+    assert recs["association_and_specificity"]["status"] == "not_run"
+    assert "noise with a p-value" in recs["association_and_specificity"]["decision"]
+
+
+def test_the_two_nulls_have_separate_declared_seeds():
+    """they are different tests, not variants of one, so one seed for both
+    would make the within-cohort null a function of the transfer null's."""
+    by_id = {s.id: s for s in EVALUATE_STEPS}
+    space = by_id["association_and_specificity"].params_space
+    assert "transfer_seed" in space and "within_cohort_seed" in space
+
+
+def test_the_transfer_split_is_the_same_for_every_signal_and_every_view():
+    """a split that varied by signal would make the comparison meaningless
+    before the statistic was chosen."""
+    ctx = _cohort()
+    ctx["spaces"] = {"z_he": ctx["spaces"]["z_he"],
+                     "z_other": ctx["spaces"]["z_he"][:, ::-1].copy()}
+    recs = _run(ctx)
+    o = _obs(recs, "association_and_specificity")
+    assert set(o["per_view"]) == {"z_he", "z_other"}
+    assert o["n_test"] > 0 and len(o["held_out_subjects"]) == 2

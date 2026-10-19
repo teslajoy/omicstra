@@ -423,3 +423,65 @@ def test_the_module_reads_nothing_and_names_no_cohort():
     for forbidden in ("open(", "read_parquet", "read_csv", "Path(", "tnbc",
                       "virchow", "novae", "gpath2vec"):
         assert forbidden not in src, f"{forbidden!r} reached a measure"
+
+
+# ------------------------------------------------- the transfer statistic -----
+def test_a_direction_fitted_on_train_is_scored_on_test_without_refitting():
+    """`projected_correlation` is a Pearson r along given directions, not a
+    CCA: a CCA on the held-out units would refit and report the best possible
+    correlation, which is the number a transfer test exists to avoid."""
+    from omicstra.measures.evaluation import (
+        projected_correlation,
+        top_canonical_correlation,
+        transfer_correlation,
+    )
+
+    rng = np.random.default_rng(30)
+    Z = rng.normal(0, 1, (300, 6))
+    y = Z[:, 0] * 2 + rng.normal(0, 1.0, 300)
+    tr, te = slice(0, 200), slice(200, 300)
+
+    r_test, r_train, a, b = transfer_correlation(Z[tr], y[tr], Z[te], y[te])
+    assert r_test == projected_correlation(Z[te], y[te], a, b)
+    refit = top_canonical_correlation(Z[te], y[te])
+    assert refit >= abs(r_test) - 1e-12, "a refit cannot do worse than a transfer"
+    assert 0.0 < abs(r_train) <= 1.0
+
+
+def test_a_signal_present_only_in_train_does_not_transfer():
+    from omicstra.measures.evaluation import transfer_correlation
+
+    rng = np.random.default_rng(31)
+    Z = rng.normal(0, 1, (400, 5))
+    y = np.r_[Z[:300, 0] * 5, rng.normal(0, 1, 100)]      # test half is noise
+    r_test, r_train, _, _ = transfer_correlation(Z[:300], y[:300], Z[300:], y[300:])
+    assert abs(r_train) > 0.8
+    assert abs(r_test) < 0.4
+
+
+def test_each_side_is_centred_on_its_own_rows():
+    """centring the held-out block on the training mean would leak it."""
+    from omicstra.measures.evaluation import projected_correlation
+
+    rng = np.random.default_rng(32)
+    Z = rng.normal(0, 1, (120, 4))
+    y = rng.normal(0, 1, 120)
+    a, b = rng.normal(0, 1, 4), np.array([1.0])
+    shifted = projected_correlation(Z + 100.0, y + 100.0, a, b)
+    assert shifted == pytest.approx(projected_correlation(Z, y, a, b), rel=1e-10)
+
+
+def test_a_constant_projection_has_no_correlation_and_says_nan():
+    from omicstra.measures.evaluation import projected_correlation
+
+    Z = np.ones((40, 3))
+    assert np.isnan(projected_correlation(Z, np.arange(40.0), np.ones(3),
+                                          np.array([1.0])))
+
+
+def test_projecting_two_different_unit_sets_refuses():
+    from omicstra.measures.evaluation import NotComparable, projected_correlation
+
+    with pytest.raises(NotComparable, match="SAME units"):
+        projected_correlation(np.zeros((10, 2)), np.zeros(9), np.ones(2),
+                              np.array([1.0]))

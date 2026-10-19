@@ -14,9 +14,16 @@ is not worked on, discussed, or measured until the task card is closed.
 **`EVALUATE_STEPS`: the chain that COMPUTES a verdict, in
 `protocols/evaluate.py`.**
 
-**DONE 2026-10-19 (tier 1).** 6 steps, 42 synthetic cases, 876 pass. G2, G4 and
-G5 all run, asserted by a test. tier 2 against the cohort's artifacts is NOT
-done and is the next card.
+**DONE 2026-10-19 (tier 1).** 6 steps, 53 synthetic cases, 892 pass. G2, G4 and
+G5 all run, asserted by a test.
+
+tier 2 for the chain is a SMALLER claim than the card assumed, and the map's
+section 8 records why: of the five numbers, the permutation moments / p / q and
+the ARI are already diffed exactly at the measures level, the transfer r is
+diffable in principle, and **two have no oracle at all** - the ARI permutation
+null and the axis specificity have never been published, because they are the
+guards the gates record as `not_run`. those two are pinned by property and
+reported as new.
 
 the gates that already exist read a cohort's evidence pack and judge the numbers
 in it. four of their guards cannot run on a pack, and each one says so by name:

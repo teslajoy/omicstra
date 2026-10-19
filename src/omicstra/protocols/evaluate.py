@@ -1463,43 +1463,56 @@ def held_out_comparison(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
 
 # ------------------------------------- 5 · the association, and its specificity --
 def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
-    """H3. per-signal CCA with its null, and the axes' off-diagonal cosine.
+    """H3. does a signal direction fitted on some subjects carry to others.
 
-    this closes two `not_run`s at once, and the second is the one whose stated
+    the statistic is a TRANSFER test and the split is part of it: fit the
+    canonical directions on training subjects, project held-out subjects onto
+    them, and correlate. the null permutes the TRAINING labels and refits, so
+    what is being tested is whether the direction generalises rather than
+    whether one exists.
+
+    the first version of this step ran the within-cohort CCA instead -
+    `top_canonical_correlation` over every unit, permuting every label. that is
+    a real statistic and on the seed cohort it was significant for ten runs out
+    of ten at FDR < 0.001, which orders nothing. it is computed here too and
+    recorded as `within_cohort`, labelled non-discriminating, because the
+    published artifact stores both and a reader comparing the two should not
+    have to re-derive why only one of them separates the arms.
+
+    this step also closes the second of the four guards, and that one's recorded
     reason named a file that could not satisfy it: G4 asked for "per-pathway
     axis vectors (pathway_axes.parquet)", and that artifact carries
     `pathway_name`, `pathway_id`, `coverage_frac`, `set_size` and `testable` -
     metadata, no vectors. the vectors are the CCA's own weights, which nothing
-    was asking the CCA for.
-
-    with them, "this axis encodes signal X" becomes a checkable claim: if the
-    axes for five signals sit at 0.97 mutual cosine, the five magnitudes are one
-    direction wearing five labels. the guard reports the cosine and fails only
-    past tau, because aliasing at one resolution was an artifact and at a finer
-    one was real biology.
+    was asking the CCA for. with them, "this axis encodes signal X" becomes
+    checkable: five axes at 0.97 mutual cosine are one direction wearing five
+    labels.
     """
-    n_perms = _edeclared(ctx, "n_permutations")
-    alpha = _edeclared(ctx, "alpha")
-    tau = _edeclared(ctx, "tau_specificity")
-    tail = _edeclared(ctx, "tail")
-    if n_perms is None or alpha is None or tau is None or tail is None:
-        for f, v in (("n_permutations", n_perms), ("alpha", alpha),
-                     ("tau_specificity", tau), ("tail", tail)):
-            if v is None:
-                return _emissing("association_and_specificity", f,
-                                 "the null size, the FDR level, the aliasing "
-                                 "bar and the tail are each a declaration"), {}
+    needed = ("n_permutations", "alpha", "tau_specificity", "tail",
+              "held_out_groups", "transfer_seed", "within_cohort_seed",
+              "min_units_per_side")
+    vals = {f: _edeclared(ctx, f) for f in needed}
+    for f, v in vals.items():
+        if v is None:
+            return _emissing("association_and_specificity", f,
+                             "the split, both permutation seeds, the null size, "
+                             "the FDR level, the aliasing bar and the tail are "
+                             "each a declaration. the two seeds are separate "
+                             "because the two nulls are separate tests"), {}
 
     import numpy as np
 
     from omicstra.measures.evaluation import (
         bh_fdr,
         permutation_test,
+        projected_correlation,
         top_canonical_correlation,
+        transfer_correlation,
     )
 
     spaces = _eneed(ctx, "spaces", "association_and_specificity")
     scores = _eneed(ctx, "scores", "association_and_specificity")
+    confounder = np.asarray(_eneed(ctx, "confounder", "association_and_specificity"))
     if not scores:
         return _erec("association_and_specificity", "not_applicable",
                      "this cohort declares no continuous signals to associate",
@@ -1507,33 +1520,87 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                      "nothing to carry",
                      {"n_out": 0, "reason": "no scores declared"}), {}
 
+    # the split is BY SUBJECT and is the same for every signal and every view -
+    # a split that varied would make the comparison meaningless before the
+    # statistic was chosen, which is EVALUATION.md section 4's condition.
+    subjects = np.unique(confounder)
+    n_held = int(vals["held_out_groups"])
+    if subjects.size <= n_held:
+        return _erec("association_and_specificity", "not_run",
+                     f"{subjects.size} subject(s) cannot yield a held-out split "
+                     f"of {n_held}",
+                     "refused - a transfer test with nothing held out is the "
+                     "within-cohort test under another name",
+                     {"n_subjects": int(subjects.size), "held_out_groups": n_held,
+                      "n_out": 0, "reason": "too few subjects to hold any out"}), {}
+    held = set(np.random.default_rng(int(vals["transfer_seed"])).choice(
+        subjects, size=n_held, replace=False))
+    test_mask = np.array([c in held for c in confounder])
+    train_mask = ~test_mask
+    n_tr, n_te = int(train_mask.sum()), int(test_mask.sum())
+    floor = int(vals["min_units_per_side"])
+    if n_tr < floor or n_te < floor:
+        return _erec("association_and_specificity", "not_run",
+                     f"the split gives {n_tr} train and {n_te} held-out units "
+                     f"against a floor of {floor}",
+                     "refused - a correlation over a handful of units is noise "
+                     "with a p-value",
+                     {"n_train": n_tr, "n_test": n_te, "floor": floor,
+                      "n_out": 0, "reason": "a side of the split is too small"}), {}
+
     out: dict[str, dict] = {}
     for view, X in spaces.items():
         Z = np.asarray(X)
-        rng = np.random.default_rng(len(scores))
+        Z_tr, Z_te = Z[train_mask], Z[test_mask]
         rows, axes, names = [], [], []
-        for sname, s in scores.items():
-            y = np.asarray(s, dtype=np.float64)
-            obs, a, _ = top_canonical_correlation(Z, y, with_weights=True)
-            nulls = [top_canonical_correlation(Z, rng.permutation(y))
-                     for _ in range(int(n_perms))]
-            null = permutation_test(obs, nulls, tail=str(tail))
-            g5, why = _guarded_null(obs, nulls, tail=str(tail))
-            rows.append({"signal": sname, "r": obs, **null,
-                         "guard_g5": "pass" if (g5 and g5.passed)
-                                     else "fail" if g5 else "not_run",
-                         "g5_not_run_because": why})
+        for sname, sc in scores.items():
+            y = np.asarray(sc, dtype=np.float64)
+            y_tr, y_te = y[train_mask], y[test_mask]
+
+            r_te, r_tr, a, _ = transfer_correlation(Z_tr, y_tr, Z_te, y_te)
+            # the null refits on PERMUTED training labels and scores the same
+            # held-out units, so it asks "could a direction fitted on noise
+            # transfer this well" - which is the question the observation answers
+            rng_t = np.random.default_rng(int(vals["transfer_seed"]) + 1)
+            t_nulls = []
+            for _ in range(int(vals["n_permutations"])):
+                idx = rng_t.permutation(n_tr)
+                _, _, a_s, b_s = transfer_correlation(Z_tr, y_tr[idx], Z_te, y_te)
+                t_nulls.append(projected_correlation(Z_te, y_te, a_s, b_s))
+            t_null = permutation_test(r_te, t_nulls, tail=str(vals["tail"]))
+            g5, why = _guarded_null(r_te, t_nulls, tail=str(vals["tail"]))
+
+            # the within-cohort statistic, kept and labelled. its own seed,
+            # because it is a different test rather than a variant of this one.
+            rng_w = np.random.default_rng(int(vals["within_cohort_seed"]))
+            w_obs = top_canonical_correlation(Z, y)
+            w_nulls = [top_canonical_correlation(Z, rng_w.permutation(y))
+                       for _ in range(int(vals["n_permutations"]))]
+            within = permutation_test(w_obs, w_nulls, tail=str(vals["tail"]))
+
+            rows.append({
+                "signal": sname, "r_test": r_te, "r_train": r_tr, **t_null,
+                "guard_g5": "pass" if (g5 and g5.passed)
+                            else "fail" if g5 else "not_run",
+                "g5_not_run_because": why,
+                "within_cohort": {"r": w_obs, "z": within["z"], "p": within["p"],
+                                  "note": "non-discriminating on the seed cohort - "
+                                          "significant for every arm at once, so "
+                                          "it orders nothing"},
+            })
             axes.append(a)
             names.append(sname)
 
-        fdr = bh_fdr([r["p"] for r in rows], alpha=float(alpha), family=names)
+        fdr = bh_fdr([r["p"] for r in rows], alpha=float(vals["alpha"]),
+                     family=names)
         for r, q, rej in zip(rows, fdr["q"], fdr["rejected"]):
             r["q"] = q
             r["significant"] = bool(rej)
 
         spec = None
         if len(axes) >= 2:
-            g4 = specificity_matrix(np.vstack(axes), names=names, tau=float(tau))
+            g4 = specificity_matrix(np.vstack(axes), names=names,
+                                    tau=float(vals["tau_specificity"]))
             spec = {"guard_g4": "pass" if g4.passed else "fail", **g4.model_dump()}
         out[view] = {"per_signal": rows, "fdr_family": fdr["n_family"],
                      "specificity": spec,
@@ -1545,34 +1612,47 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     aliased = sorted(v for v, r in out.items()
                      if (r["specificity"] or {}).get("guard_g4") == "fail")
     return _erec("association_and_specificity", "pass",
-                 f"{n_sig} signal-view association(s) survive BH-FDR at "
-                 f"{float(alpha)}"
+                 f"{n_sig} signal-view transfer(s) survive BH-FDR at "
+                 f"{float(vals['alpha'])} on {n_te} held-out units from "
+                 f"{n_held} subject(s)"
                  + (f"; axes alias in {aliased}" if aliased else ""),
                  ("the axes alias, so each magnitude is one direction wearing "
                   "several labels - the cosine travels with every magnitude"
                   if aliased else
-                  "each association carries its own null, its q over the stated "
+                  "each transfer carries its own null, its q over the stated "
                   "family, and the cosine between its axis and the others"),
                  {"n_in": len(spaces) * len(scores), "n_out": n_sig,
                   "reason": "did not survive the null or the correction",
-                  "per_view": out, "n_permutations": int(n_perms),
-                  "alpha": float(alpha), "tau_specificity": float(tau),
-                  "tail": str(tail),
+                  "per_view": out, "n_permutations": int(vals["n_permutations"]),
+                  "alpha": float(vals["alpha"]),
+                  "tau_specificity": float(vals["tau_specificity"]),
+                  "tail": str(vals["tail"]),
+                  "n_train": n_tr, "n_test": n_te,
+                  "held_out_subjects": sorted(str(h) for h in held),
+                  "statistic": "directions fitted on training subjects, "
+                               "projected onto held-out subjects",
                   "fdr_family_note": "the family is the signals of ONE view; a "
                                      "caller correcting across views passes that "
                                      "family to bh_fdr instead",
-                  "guards": [{"guard": "G5_noise_floor", "scope": f"{v}/{r['signal']}",
+                  "guards": [{"guard": "G5_noise_floor",
+                              "scope": f"{v}/{r['signal']}",
                               "status": r["guard_g5"],
                               "note": r.get("g5_not_run_because", "")}
                              for v, blk in out.items() for r in blk["per_signal"]]
+                            + [{"guard": "G2_held_out_honesty", "scope": v,
+                                "status": "pass",
+                                "note": f"fitted on {n_tr} units, scored on "
+                                        f"{n_te} from subjects never fitted on"}
+                               for v in out]
                             + [{"guard": "G4_specificity", "scope": v,
                                 "status": blk["specificity_status"],
                                 "note": blk["specificity_missing"] or ""}
                                for v, blk in out.items()]},
-                 method="top canonical correlation per signal, permutation null, "
-                        "BH-FDR over the declared family, and the off-diagonal "
-                        "cosine between the CCA's own axis weights",
-                 criterion="G5 runs per signal and G4 runs over the axes",
+                 method="canonical directions fitted on training subjects and "
+                        "scored on held-out subjects, against a null that "
+                        "refits on permuted training labels; BH-FDR over the "
+                        "declared family; off-diagonal cosine between the axes",
+                 criterion="the direction generalises, and the axes are distinct",
                  ), {"association": out}
 
 
@@ -1688,7 +1768,9 @@ EVALUATE_STEPS: list[Step] = [
                        "min_units_per_subject")),
     Step(id="association_and_specificity", fn=association_and_specificity,
          produces=frozenset({"association"}),
-         params_space=("n_permutations", "alpha", "tau_specificity", "tail")),
+         params_space=("n_permutations", "alpha", "tau_specificity", "tail",
+                       "held_out_groups", "transfer_seed", "within_cohort_seed",
+                       "min_units_per_side")),
     # requires NOTHING, deliberately. the first version required the three
     # products, so a cohort with no paired modality - a legitimate state the
     # steps above report as `not_applicable` - got no verdict at all instead of

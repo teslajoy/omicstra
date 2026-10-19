@@ -293,3 +293,52 @@ removes and three accumulate.
 `metrics_h1_ci.json` carries two AUC intervals: a Hanley-McNeil closed form and
 a bootstrap. the evidence pack cites the bootstrap. the closed form is not
 implemented here, because nothing routes on it.
+
+---
+
+## 8 · H3 is a transfer test, and the artifact stores two statistics
+
+`eval_h3_pathway_cca_gpath2vec_v2.py:442-466`. the two are not variants of one
+test and the artifact keeps them in separate columns.
+
+```
+obs_A / null_A        THE CLAIM. fit the canonical directions on TRAIN
+  z_A, p_two_A        subjects, project held-out subjects onto them, Pearson r.
+                      the null permutes the TRAIN labels and refits, so it asks
+                      whether a direction fitted on noise could transfer this
+                      well. rng seed SEED + 1
+
+obs_B / null_B        the within-cohort CCA over every unit, permuting every
+  z_B, p_one_B        label. a real statistic, and on the seed cohort it was
+                      significant for ten runs out of ten at FDR < 0.001 - the
+                      report's own words are "universally positive -
+                      non-discriminating". rng seed SEED
+```
+
+**the split is part of the statistic, not a wrapper around it.** a port that
+took the CCA and the permutation null without the split computes B and calls it
+H3, which is exactly what the first version of `EVALUATE_STEPS` did. the maths
+was right and the design was the one the report says orders nothing.
+
+`measures/evaluation.py` carries the two halves separately so a notebook can
+check each: `transfer_correlation` fits on one block and scores another, and
+`projected_correlation` is a Pearson r along GIVEN directions - deliberately
+not a CCA, because a CCA on the held-out units would refit and report the best
+possible correlation, which is the number a transfer test exists to avoid.
+
+`r_train` travels with `r_test` for the same reason: a direction that fits
+train poorly and test well has found noise in both.
+
+### what of this is diffable, and what is not
+
+| statistic | oracle | diffable |
+|:--|:--|:--|
+| the permutation moments, p, q | `perm_nulls.parquet`, `per_pathway_cca.parquet` | **yes, already exact** - verified in section 7 by feeding the stored nulls |
+| the transfer r | `per_pathway_cca.parquet#top_corr_test` | yes in principle: the split is `default_rng(42)` over subjects and the null is `default_rng(43)`, both recoverable |
+| ARI, silhouette | `mc_coherence.parquet` | **yes, already exact** at float32 |
+| the ARI permutation null | none | **no.** this is one of the guards the gates record as `not_run`; the number has never been published |
+| the axis specificity | none | **no.** `pathway_axes.parquet` carries no vectors, so the cosine has never been computed for this cohort |
+
+so tier 2 for the CHAIN is a smaller claim than tier 2 for the measures was:
+two of its five numbers have no oracle, because they are the numbers the chain
+exists to produce. they are pinned by property in tier 1 and reported as new.
