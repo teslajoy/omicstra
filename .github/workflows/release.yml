@@ -69,6 +69,13 @@ jobs:
           omicstra init --project-dir /tmp/ci_bare > /dev/null
           mkdir -p /tmp/ci_bare/data/canonical
           : > /tmp/ci_bare/data/canonical/s1.h5ad
+          # the `platform` step runs BEFORE `shape` and is pure stdlib, so
+          # without a declaration it fails first and the reader is never
+          # reached. every sample must name a defined platform - an undeclared
+          # sample is a halt, not a guess - so the fixture declares one.
+          cat > /tmp/ci_bare/platform.json <<'JSON'
+          {"platforms": {"ci": {}}, "samples": {"s1": "ci"}}
+          JSON
           set +e
           out=$(omicstra inventory --project-dir /tmp/ci_bare 2>&1); rc=$?
           set -e
