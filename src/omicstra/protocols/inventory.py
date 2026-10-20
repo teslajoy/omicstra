@@ -27,8 +27,6 @@ import os
 from collections import Counter
 from pathlib import Path
 
-import numpy as np
-
 from omicstra.protocols import Step
 from omicstra.records import DiagnosticRecord
 
@@ -145,6 +143,8 @@ def _index(o) -> list[str]:
 
 
 def _matrix(o):
+    import numpy as np
+
     X = o.X if hasattr(o, "X") else next(iter(o.values())).to_numpy()
     x = X[:200]
     return x.toarray() if hasattr(x, "toarray") else np.asarray(x)
@@ -233,6 +233,12 @@ def shape(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
             _CACHE[str(p)] = o
             rows.append({"sample": sid, "n_obs": int(n_obs), "n_var": int(n_var),
                          "platform": ctx["platform_by_sample"].get(sid)})
+        except ImportError:
+            # NOT a per-sample error. a missing reader is a missing dependency,
+            # and recording it here reported "0/1 readable" on a bare install -
+            # which blames the cohort's data for an absent package. the CLI
+            # turns this into a refusal naming the `measure` extra.
+            raise
         except Exception as e:
             rows.append({"sample": sid, "error": f"{type(e).__name__}: {e}"})
     ok = [r for r in rows if "n_obs" in r]
@@ -291,6 +297,8 @@ def coords(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     coordinates table the canonical contract names. both satisfy the contract;
     neither does not.
     """
+    import numpy as np
+
     rows = []
     for sid, _p in ctx["paths_by_sid"].items():
         o = _CACHE[_p]
@@ -365,6 +373,8 @@ def join_key(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
 # ------------------------------------------------------------- 6 · counts ---
 def counts(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     """TESTED per sample. an all-zero slice must not pass trivially."""
+    import numpy as np
+
     rows = []
     for sid, _p in ctx["paths_by_sid"].items():
         o = _CACHE[_p]
@@ -457,6 +467,7 @@ PITCH_TOLERANCE = 0.02
 
 def _lattice(xy) -> dict:
     """spacing and grid from coordinates alone. no units, no assumptions."""
+    import numpy as np
     from scipy.spatial import KDTree
 
     xy = np.asarray(xy, dtype=float).reshape(-1, 2)
@@ -494,6 +505,8 @@ def geometry(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     `pitch_authority`, the same way a cohort pre-answers a preflight gate: one
     recorded human decision instead of one prompt per sample.
     """
+    import numpy as np
+
     rows, escalate, resolved = [], [], []
     for sid, _p in ctx["paths_by_sid"].items():
         o = _CACHE[_p]

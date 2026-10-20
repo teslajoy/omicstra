@@ -37,8 +37,34 @@ CI's `a bare install serves` job asserts `--help` works and the server lists
 tools. it never asserts that a numerics command REFUSES legibly, which is why
 this is green.
 
-done: the import is inside the functions, the refusal names the `measure`
-extra, and the CI job asserts the refusal.
+**DONE 2026-10-20.** three causes, not one:
+
+- `protocols/inventory.py` imported numpy at module level, so the crash came
+  before any step ran. the five functions that need it import it themselves
+- `shape`'s per-sample `except Exception` recorded a missing reader as an
+  unreadable SAMPLE, reporting `0/1 readable` - which blames the cohort's data
+  for an absent package. it re-raises `ImportError` now
+- `build_protocol`'s `_link` catches everything by design, so nothing reached a
+  `try` in the CLI. the CLI reads the records and translates
+
+and `error` now counts as failure at the write gate - it did not, so a chain
+whose reader was absent still wrote an `inventory.json` with one step errored
+and six `not_run`.
+
+proof, in a clean venv with no numerics:
+
+```
+$ omicstra inventory --project-dir /tmp/ci_bare
+Error: `omicstra inventory` measures data, which needs the numerics extra -
+'anndata' is not installed.
+
+    pip install 'omicstra[measure]'
+exit 1, and no inventory.json written
+```
+
+CI's `a bare install REFUSES legibly` job asserts the non-zero exit, that the
+message names the extra, that it is not a traceback, and that nothing was
+written.
 
 ### 2 · one join, wired
 
