@@ -251,7 +251,50 @@ work lands via a branch and a PR      the template states the scope, because
 read the ANALYSIS LOGIC before        a doc describes what a chain was; the
   porting it                          script is what it IS. every port that
                                       started from prose was wrong - see below
+a working doc is never cited          the pack is what a claim resolves to. a
+  against the pack                     design/ note raising a concern the pack
+                                       later answered is not a contradiction
+quote the enclosing header with       a scoped number read as a global one is a
+  any line                             contradiction that is not there
 ```
+
+### document precedence
+
+a claim about this cohort's results resolves in this order, and a lower source
+never overrides a higher one:
+
+```
+1  projects/{id}/routing_evidence.json   the PACK. adjudicated, with its own
+                                         caveats and open_flags. a number here
+                                         resolves to an artifact
+2  docs/v2/tnbc92_results_summary.md     the stated verdict per hypothesis
+3  docs/v2/*.md, docs/reports/           methods and reports
+4  design/*.md                           WORKING docs. a concern raised here may
+                                         already be answered at 1 or 2
+```
+
+design/ is where a question is thought through, so it holds concerns in the
+state they were in when written. three times in one session a design/ line was
+read as a live defect that the pack had already resolved - the "5x vs raw_st"
+baseline and the B.1 direction column both sit in the pack with their scope.
+check 1 and 2 before reporting anything from 4 as open.
+
+### scope before quote
+
+a number in this repo is almost always scoped - to one arm, one view, one
+section, one subarray. the scope is usually the line or header ABOVE it, not the
+line itself:
+
+```
+design/v1_3_scope.md:649   "on R4_v3:"        <- the scope
+                    :650+  a table of six contrasts, three INVERTED
+results_summary.md:107     "R4 fails every contrast (0/6 pass, 3 inverted)"
+```
+
+read as a global result the table contradicts a published "B.1 holds for TLS";
+read with its header it IS that published result, for the arm it names. so: when
+quoting a line, quote the section header that scopes it, and name the arm, the
+view and the split. a claim with no scope is not a claim.
 
 ### reading the analysis before building it
 

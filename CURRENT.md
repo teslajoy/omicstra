@@ -11,85 +11,99 @@ is not worked on, discussed, or measured until the task card is closed.
 
 ## the task
 
-**make `EVALUATE_STEPS` reachable: a client asks, and a verdict is COMPUTED.**
+**one MCP call on a cohort returns a verdict.**
 
-**DONE 2026-10-20.** `adapters/evaluation.py` reads the declaration and refuses
-by field; `graphs/evaluate.py` gained a `measure` arm routed at entry;
-`mcp/server.py` exposes `evaluate_measure` (20 tools). 20 tier-1 cases, 4 at
-cohort scale, and the graph's verdicts match the chain invoked directly:
-H1 biological, H2 diagnostic, H3 not_run on R1_v3.
+that sentence is the whole card. today a client can reach a computed verdict
+only on a cohort that already has fitted runs and a built join - which means
+the seed cohort and nothing else. four things stand in the way, in this order.
 
-the next card is the JOIN duplication - one join instead of
-run_niche_join(compute=True) shelling out to the script.
-
-the chain exists, has 57 tier-1 cases and 18 at cohort scale, and no client can
-reach it - `grep` finds no caller outside its own module and its tests. the
-evaluate graph reads an evidence pack and recomputes nothing; its own note says
-so. so a cohort with no pack still needs a script.
-
-the blocker looked like a missing contract and is not. `project.json` already
-declares every input the chain needs:
+### 1 · the bare install crashes on its second command
 
 ```
-niches_dir        the join parquets - labels and continuous signals
-runs_dir          {run}/embeddings_test.parquet - the views
-h2_label          which label the clustering is scored against
-headline_view     which view carries the claim
-supervision       the G6 target, which must not be a feature
-k_neighbors seed  the geometry and the seed
+$ pip install omicstra && omicstra init --project-dir X
+$ omicstra inventory --project-dir X
+  File ".../omicstra/protocols/inventory.py", line 30
+    import numpy as np
+ModuleNotFoundError: No module named 'numpy'
 ```
 
-so this is a contract READER, not a new contract.
+a traceback where `omicstra gate` says *"no eda_summary.json in X - the EDA gate
+has not been run for this cohort"*. the encoder registry gets this right -
+`EncoderUnavailable` naming the extra - so the pattern exists and one module
+missed it. three modules import numpy at module level; `protocols/inventory.py`
+is the one on a CLI path.
 
-### done-criterion
+CI's `a bare install serves` job asserts `--help` works and the server lists
+tools. it never asserts that a numerics command REFUSES legibly, which is why
+this is green.
+
+done: the import is inside the functions, the refusal names the `measure`
+extra, and the CI job asserts the refusal.
+
+### 2 · one join, wired
+
+`JOIN_STEPS` is 11 steps and 99 tests, exact against the 259 published
+parquets, and nothing calls it. the graph calls `run_niche_join`, which
+resolves a cached directory or shells out to `scripts/build_niche_join.py` - a
+script that names this cohort 27 times.
+
+done: `run_niche_join(compute=True)` runs `JOIN_STEPS` through a declared
+file-to-assay reader, the same shape as `adapters/evaluation.py`. the script
+keeps its historical role and stops being the method. the 45 tier-2 cases still
+pass.
+
+note: `scripts/build_niche_join.py:54` hardcodes a path that no longer exists
+after the 2026-05-14 rename. fix before any rebuild through the old path.
+
+### 3 · evaluate reachable - DONE 2026-10-20
+
+`adapters/evaluation.py` reads the declaration and refuses by field;
+`graphs/evaluate.py` has a `measure` arm routed at entry; `mcp/server.py`
+exposes `evaluate_measure` as the 20th tool. 20 tier-1 cases, 4 at cohort
+scale, and the graph's verdicts match the chain invoked directly.
+
+what it does NOT yet do is work on a cohort without fitted runs, which is 2.
+
+### 4 · one call, end to end
+
+done: on a cohort scaffolded by `omicstra init`, with canonical input and its
+declarations filled in, a single MCP call returns a verdict per hypothesis -
+`biological | diagnostic | unguarded | not_run` - with no script in the path
+and every absent declaration refused by name.
+
+that is the release claim for 1.3, and the second cohort's pack is what proves
+it. the record already says so: *"the second cohort's evidence pack did NOT
+ship and is 1.3's whole claim."*
+
+---
+
+## not in this card
 
 ```
-1  a declared reader turns a cohort's files into the chain's arrays. it reads
-   project.json and refuses, naming the field, when one is absent
-2  graphs/evaluate.py gains a COMPUTE arm. compute=False stays the default and
-   stays the pack-reading path - a node that computes by default turns every
-   caller into a 4-minute job
-3  the two arms do not re-judge each other. the pack arm states what the pack
-   claims; the compute arm states what this run measured
-4  an MCP tool reaches the compute arm, and a client gets a verdict with no
-   script
-5  tier 1: the reader refuses every absent declaration by name; the compute arm
-   on synthetic arrays reaches a verdict; the pack arm is unchanged
-6  tier 2: the computed verdict on tnbc-92 matches what the chain already
-   produced directly - same ARI, same AUC, same NMI
-```
-
-### out of scope
-
-```
-the JOIN duplication   run_niche_join(compute=True) shells out to
-                       build_niche_join.py, and JOIN_STEPS is the package's
-                       port of that script. one join needs the same reader
-                       shape, one level further back, and it is the next card
-fusion                 still parked
-gpath2vec steps 2-3    blocked on the one-line fix in that package
-cohort two             after the join reader
+any science review          the record is ahead of it. document precedence and
+                            scope-before-quote are now rules in CLAUDE.md
+fusion                      an arm nothing can score is not an arm
+the gpath2vec fix           that package's call. the bug is unfixed on main at
+                            0bdd9c6, so there is nothing to install from
+promote / route on cohort 2  a pack is a curated human act, by design
 ```
 
 ---
 
 ## parking lot
 
-- the TF gene filter is an undeclared input: `knowledge/pathway_commons/
-  tf_genes_controls_expression.json`, 1,658 PathwayCommons v12 symbols, reached
-  the published build through a hand-written command. step 1 reproduces exactly
-  with it (680 pathways, 252 zero-sig niches on TNBC1_CN1_C1) and does not
-  without it (781, 274). it belongs in the cohort's contract
-- gpath2vec: `cli.py:305` `r._w` cannot resolve - pandas renames any
-  leading-underscore column in `itertuples`. deterministic, input-independent.
-  and its `__version__` says 1.0.0 while the distribution says 3.0.0
+the project's own open-items ledger is the authority; these are the entries this
+card touched or created. everything else lives where the record puts it.
+
 - `noise_floor` passes at a hardcoded `p < 0.05` while the chain declares its
   BH alpha
-- the full gpath2vec fit is an 80 GB / 11.4 h cluster job that OOM'd once
-- measured on this mac, CPU: virchow2 206 s / 11.3 GB per section, novae 17 s /
-  4.3 GB. 11.3 GB peak is what rules out laptop parallelism
-- scope row owed: 259 of 281 subarrays, 92 of 94 patients
-- the three tests the matrix cites with no home: rank-matched control, the
-  categorical FTU contrast, the rotation-equivalence sanity check
-- `docs/v2/` holds the v3 numbers; `docs/v3/` does not exist
-- the two package defaults the threshold lint does not reach
+- three cohort strings are package defaults on `ProjectConfig` - `h2_label`,
+  `supervision`, `headline_view`. the threshold lint is numeric-only and cannot
+  see them
+- 86 slice-diff tests are data-gated, so no reproduction claim runs in CI. a
+  committed downsampled fixture would let CI assert the shape of each diff
+- the TF gene filter is an undeclared input and reached the published build
+  through a hand-written command
+- `measures/evaluation.py` has no Hanley-McNeil interval and should not grow one
+  - nothing routes on it
+- gpath2vec has no CI and no test on `cli.py`, which is why the `_w` bug shipped
