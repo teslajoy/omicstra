@@ -34,19 +34,61 @@ from typing import Any
 
 PLACES = 4
 
-CHAINS = {
-    "evaluate": ("omicstra.protocols.evaluate", "EVALUATE_STEPS"),
-    "join": ("omicstra.protocols.join", "JOIN_STEPS"),
+# the unit is an ANALYSIS UNIT, not a run. a run id is an execution artifact -
+# nobody opens `eval-a3f2.ipynb` - and this cohort's own committed notebooks are
+# already named for topics: `h3_gpath2vec_v3`, `proposal_h1h2h3_evaluation`. so
+# one file per unit, per cohort, regenerated to the latest state, and the run
+# that produced the numbers is provenance INSIDE the header.
+#
+# unit -> (module, step list, adapter, what the unit answers)
+UNITS = {
+    "eda": ("omicstra.protocols.eda", "EDA_STEPS", None,
+            "is this cohort admissible"),
+    "inventory": ("omicstra.protocols.inventory", "INVENTORY_STEPS", None,
+                  "what is this data"),
+    "join": ("omicstra.protocols.join", "JOIN_STEPS", "join",
+             "one row per unit of analysis, with every unit accounted for"),
+    "evaluate": ("omicstra.protocols.evaluate", "EVALUATE_STEPS", "evaluation",
+                 "what each hypothesis may claim"),
+    # the pathway assay is two chains, not one, and they FORK AT AGGREGATION -
+    # one collapses a niche's spots into a single profile before doing anything,
+    # the other never collapses them because MAD/mean needs them as several
+    # observations of one niche. so they are two units: a notebook holding both
+    # would imply a single method where there are two.
+    "assay_pathway_genesets": ("omicstra.protocols.pathway",
+                               "VARIABLE_GENE_STEPS", None,
+                               "which genes vary within a niche"),
+    "assay_pathway_aucell": ("omicstra.protocols.pathway", "AUCELL_STEPS", None,
+                             "how enriched a niche is, over the whole universe"),
+    "assay_niche_membership": ("omicstra.protocols.pathway",
+                               "NICHE_MEMBERSHIP_STEPS", None,
+                               "which spots form a niche"),
 }
 
+# the two assays with no unit here are the ENCODERS. they are not step chains -
+# a shard loads a 631M-parameter model and writes an array - so a notebook for
+# them re-runs the encoder, at 206 s and 11.3 GB per section on a laptop. that
+# is the `--from-raw` case and it is deliberately not the default.
 
-def _md(text: str) -> dict:
-    return {"cell_type": "markdown", "metadata": {}, "source": text}
+
+def _cell_id(kind: str, n: int) -> str:
+    """nbformat 4.5 requires an id per cell and will hard-error without one.
+
+    derived from the position rather than random, so regenerating a unit's
+    notebook produces the same ids and a diff shows what CHANGED rather than
+    every cell.
+    """
+    return f"{kind}-{n:03d}"
 
 
-def _code(src: str) -> dict:
+def _md(text: str, n: int = 0) -> dict:
+    return {"cell_type": "markdown", "metadata": {}, "source": text,
+            "id": _cell_id("md", n)}
+
+
+def _code(src: str, n: int = 0) -> dict:
     return {"cell_type": "code", "metadata": {}, "source": src,
-            "execution_count": None, "outputs": []}
+            "execution_count": None, "outputs": [], "id": _cell_id("code", n)}
 
 
 def _numbers(observed: dict, places: int = PLACES) -> dict[str, float]:
@@ -77,17 +119,19 @@ def _producers(steps_list) -> dict[str, list[str]]:
 
 
 def header_cells(b: dict) -> list[dict]:
-    chain = b.get("chain") or "evaluate"
-    mod, steps_name = CHAINS.get(chain, CHAINS["evaluate"])
-    adapter = "join" if chain == "join" else "evaluation"
+    unit = b.get("unit") or "evaluate"
+    mod, steps_name, adapter, asks = UNITS[unit]
     # the join reads one SAMPLE; the evaluation chain reads one fitted RUN
-    second = repr(b.get("sample")) if chain == "join" else repr(b.get("run"))
+    second = repr(b.get("sample")) if unit == "join" else repr(b.get("run"))
     return [
-        _md(f"# {b.get('run_id') or 'run'}\n\n"
-            "re-derives every number this run recorded. one cell per step, each "
-            "calling the step that ran with the parameters it recorded.\n\n"
-            f"- cohort `{b.get('project_id')}` · chain `{chain}` · "
-            f"{len(_steps(b))} steps\n"
+        _md(f"# {unit} - {asks}\n\n"
+            f"cohort `{b.get('project_id')}`. re-derives every number this unit "
+            "recorded: one cell per step, each calling the step that ran with "
+            "the parameters it recorded.\n\n"
+            f"- produced by run `{b.get('run_id') or 'unrecorded'}`"
+            + (f", sample `{b.get('sample')}`" if b.get("sample") else "")
+            + (f", fitted run `{b.get('run')}`" if b.get("run") else "") + "\n"
+            f"- {len(_steps(b))} steps\n"
             f"- numbers are compared at {PLACES} decimals, the precision the "
             "method supports: float32 kernels differ by ~1e-6 between backends, "
             "so asserting past that compares rounding rather than science\n"
@@ -163,20 +207,29 @@ def build(b: dict) -> dict:
     """the notebook, as an nbformat v4 dict. no cohort in the generator."""
     import importlib
 
-    chain = b.get("chain") or "evaluate"
-    mod, steps_name = CHAINS.get(chain, CHAINS["evaluate"])
+    unit = b.get("unit") or "evaluate"
+    if unit not in UNITS:
+        raise ValueError(f"unknown unit {unit!r}. known: {sorted(UNITS)}")
+    mod, steps_name, _, _ = UNITS[unit]
     b = {**b, "waits_on": _producers(getattr(importlib.import_module(mod),
                                              steps_name))}
     return {
-        "cells": header_cells(b) + step_cells(b) + footer_cells(b),
+        "cells": _numbered(header_cells(b) + step_cells(b) + footer_cells(b)),
         "metadata": {"kernelspec": {"display_name": "Python 3",
                                     "language": "python", "name": "python3"},
                      "language_info": {"name": "python"},
-                     "omicstra": {"run_id": b.get("run_id"),
-                                  "chain": b.get("chain"),
+                     "omicstra": {"unit": unit,
+                                  "produced_by_run": b.get("run_id"),
+                                  "project_id": b.get("project_id"),
                                   "places": PLACES}},
         "nbformat": 4, "nbformat_minor": 5,
     }
+
+
+def _numbered(cells: list[dict]) -> list[dict]:
+    """stable ids by position, so a regenerated notebook diffs cleanly."""
+    return [{**c, "id": _cell_id("md" if c["cell_type"] == "markdown" else "code", i)}
+            for i, c in enumerate(cells)]
 
 
 def _steps(b: dict) -> list[dict]:
@@ -196,4 +249,13 @@ def _json(obj: Any) -> str:
     return json.dumps(obj, indent=1, default=str)
 
 
-__all__ = ["CHAINS", "PLACES", "build"]
+def filenames(unit: str) -> tuple[str, str]:
+    """where the pair lands. named for the unit, so re-running replaces it.
+
+    a run-keyed name would leave fifty files nobody opens; this is the cohort's
+    living record of that unit, which is what `notebooks/` already holds.
+    """
+    return f"{unit}.ipynb", f"{unit}.trace.md"
+
+
+__all__ = ["PLACES", "UNITS", "build", "filenames"]
