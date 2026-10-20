@@ -73,13 +73,35 @@ parquets, and nothing calls it. the graph calls `run_niche_join`, which
 resolves a cached directory or shells out to `scripts/build_niche_join.py` - a
 script that names this cohort 27 times.
 
-done: `run_niche_join(compute=True)` runs `JOIN_STEPS` through a declared
-file-to-assay reader, the same shape as `adapters/evaluation.py`. the script
-keeps its historical role and stops being the method. the 45 tier-2 cases still
-pass.
+**DONE 2026-10-20.** `run_niche_join(compute=True)` runs `JOIN_STEPS` through
+`adapters/join.py`, a declared reader with four loaders resolved by name.
+`dispatch` owns the loop; the manifest is written from what the chain recorded.
 
-note: `scripts/build_niche_join.py:54` hardcodes a path that no longer exists
-after the 2026-05-14 rename. fix before any rebuild through the old path.
+verified on two sections, through the function the align graph calls: every
+vector column EXACT against the published parquet - `virchow2_niche`, the
+8,960-wide token block, `gpath2vec_niche`, `novae_niche` standardised after the
+drop, `mc_weights_niche` - the scalar column exact at float32, the unit sets
+identical, and the funnel counts equal to the published manifest's.
+
+the one intended difference: where the script wrote `-1` into the label's own
+value space, the chain writes NaN and a `{label}__present` column. a test
+asserts the two agree about which units are absent and about every unit that is
+present. that is open defect #7 closed in the package, with the published
+artifact left alone.
+
+ledger `#22` is mooted: the wired join never reads
+`scripts/build_niche_join.py:54`, and the script keeps its historical role as
+the record of what produced the published parquets.
+
+three defects the real data found, all in the reader:
+- a label table's declared column selection did not apply to an EMPTY slice, so
+  a sample the table does not cover came back three columns wide and its pooled
+  value was 3 NaNs where the artifact has one
+- 280 token arrays have no meta of their own; they borrow the niche assay's
+  index, which only a comment recorded. declared as `index_from`, with a length
+  check, because reading it wrong silently permutes every vector against its unit
+- a token block is (k+1, dim) and parquet stores 1-D, so the flatten belongs in
+  the writer and the shape goes in the manifest
 
 ### 3 · evaluate reachable - DONE 2026-10-20
 

@@ -41,7 +41,9 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-from omicstra.contracts.project import ProjectConfig  # merges into settings - deferred item 2
+from omicstra.contracts.project import (
+    ProjectConfig,  # merges into settings - deferred item 2
+)
 from omicstra.records import TransformRecord
 from omicstra.settings import settings
 
@@ -202,7 +204,7 @@ def run_niche_join(cfg: ProjectConfig, project_id: str | None = None, *,
             # partial table cannot be mistaken for the cohort's join by anything
             # that reads the counts - which is every stage downstream.
             args += ["--subarrays", *subarrays]
-        _run_script("build_niche_join.py", args)
+        _build_join(cfg, project_id, d, subarrays)
     if d is None or not d.is_dir():
         raise ComputeUnavailable(
             f"no niche join at {d}. it is built by scripts/build_niche_join.py, "
@@ -225,6 +227,137 @@ def run_niche_join(cfg: ProjectConfig, project_id: str | None = None, *,
                     n_niches=nj.n_niches, n_dropped=nj.n_dropped_no_coverage,
                     out_dir=str(d))
 
+
+
+
+def _build_join(cfg: ProjectConfig, project_id: str | None, out: Path,
+                subarrays: list[str] | None) -> None:
+    """build the join by running JOIN_STEPS, once per sample.
+
+    this is what `compute=True` used to shell out to `scripts/build_niche_join.py`
+    for. the script stays as the historical record of what produced the published
+    parquets - and `script_map/build_niche_join.md` maps all 489 lines of it -
+    but it is no longer the method: it names this cohort 27 times, and a second
+    cohort could not call it.
+
+    `dispatch` owns the loop: one shard per sample, idempotent on the output
+    file, three attempts, and a total failure refused rather than reported as a
+    bad cohort. the chain owns the funnel, and the manifest is written from what
+    the chain recorded rather than from a second count.
+    """
+    import json as _j
+
+    from omicstra.adapters.join import JoinDeclarationMissing
+    from omicstra.adapters.join import arrays as join_arrays
+    from omicstra.adapters.join import samples as join_samples
+    from omicstra.dispatch import Shard, atomic_write, run_shards
+    from omicstra.protocols import build_protocol
+    from omicstra.protocols.join import JOIN_STEPS
+
+    root = settings.project_root(project_id)
+    params = (_cohort(project_id) or {}).get("join_params")
+    if not params:
+        raise ComputeUnavailable(
+            "this cohort declares no `join_params`. every step of the join - the "
+            "niche width, which assay is the anchor, which denominators must be "
+            "uniform, the standardisation group - is the cohort's to declare, "
+            "and a default here would be the seed cohort's answer.")
+    try:
+        ids = subarrays or join_samples(root)
+    except JoinDeclarationMissing as e:
+        raise ComputeUnavailable(str(e)) from e
+
+    chain = build_protocol(JOIN_STEPS, "niche_join")
+    records: dict[str, dict] = {}
+    shapes: dict[str, dict] = {}
+
+    def body(shard: Shard, heartbeat) -> None:
+        import pandas as pd
+
+        ctx = join_arrays(root, shard.id)
+        # the data columns are a property of the frames the reader produced, so
+        # they are derived here rather than declared a second time - two sources
+        # for one column list is how they come to disagree.
+        p = {k: dict(v) for k, v in params.items() if k != "note"}
+        cols = {a: list(f.columns) for a, f in ctx["assays"].items()}
+        for step, key in (("pool_continuous", "pooled_assays"),
+                          ("carry_per_unit", "per_unit_assays"),
+                          ("stack_unit_tokens", "token_assays")):
+            if step in p:
+                p[step]["data_columns"] = {a: cols[a] for a in p[step][key]
+                                           if a in cols}
+        heartbeat(shard.id)
+        recs = chain.invoke({**ctx, "params": p})
+        failed = {k: v["result"] for k, v in recs.items()
+                  if v["status"] in ("fail", "error")}
+        if failed:
+            raise ComputeUnavailable(f"{shard.id}: {failed}")
+
+        c = dict(ctx)
+        for st in JOIN_STEPS:
+            if st.id in p:
+                o = st.fn({**c, "params": p[st.id]})
+                if isinstance(o, tuple):
+                    c.update(o[1])
+        table = c.get("table") or []
+        if not table:
+            raise ComputeUnavailable(f"{shard.id}: the join produced no rows")
+        # a token block is (k+1, dim) and parquet stores 1-D values, so it is
+        # FLATTENED on the way to disk - which is what the published build did.
+        # the flatten belongs here and not in the step: the step's ordered
+        # (k+1, dim) shape is load-bearing, since a model attending over those
+        # positions reads a different unit if the order changes. the shape goes
+        # in the manifest so a reader can restore it rather than guess.
+        import numpy as np
+
+        token_shapes: dict[str, list[int]] = {}
+        rows = []
+        for r in table:
+            out_row = {}
+            for k, v in r.items():
+                arr = np.asarray(v) if isinstance(v, np.ndarray) else v
+                if isinstance(arr, np.ndarray) and arr.ndim > 1:
+                    token_shapes[k] = list(arr.shape)
+                    out_row[k] = arr.ravel()
+                else:
+                    out_row[k] = v
+            rows.append(out_row)
+        shapes[shard.id] = token_shapes
+        df = pd.DataFrame(rows).set_index("unit_id")
+        atomic_write(shard.output, lambda path: df.to_parquet(path))
+        records[shard.id] = recs
+
+    shards = [Shard(id=s, output=out / f"{s}.parquet") for s in ids]
+    report = run_shards(shards, body, project_id=project_id)
+
+    # the manifest is written from what the CHAIN recorded. the funnel is a
+    # property of the build, and a manifest that recounted it would be a second
+    # source for one number.
+    per_sample = []
+    for sid, recs in sorted(records.items()):
+        f = (recs.get("join_funnel") or {}).get("observed") or {}
+        anc = (recs.get("anchor_coverage") or {}).get("observed") or {}
+        per_sample.append({"subarray": sid, "status": "ok",
+                           "n_niches": anc.get("n_out"),
+                           "n_niches_pre_intersection": anc.get("n_in"),
+                           "n_intersection_dropped_no_gpath2vec": anc.get("n_dropped"),
+                           "stages": f.get("stages")})
+    (out / "manifest.json").write_text(_j.dumps({
+        "run_type": "niche_join_table",
+        "built_by": "omicstra.protocols.join.JOIN_STEPS",
+        "n_subarrays_enumerated": len(ids),
+        "n_ok": len(report.done) + len(report.skipped),
+        "n_failed": len(report.failed),
+        "n_niches_total_post_intersection": sum(
+            r["n_niches"] or 0 for r in per_sample),
+        "n_niches_dropped_no_gpath2vec_coverage": sum(
+            r["n_intersection_dropped_no_gpath2vec"] or 0 for r in per_sample),
+        "sources": {"declared_by": "project.json#join_inputs"},
+        # the on-disk form of any column the chain produced as (k+1, dim).
+        # without it a reader cannot tell 8,960 numbers from 7 x 1,280.
+        "flattened_shapes": next(iter(shapes.values()), {}),
+        "per_subarray": per_sample,
+    }, indent=2) + "\n")
 
 # --- the two COMPUTE-OR-RESOLVE stages --------------------------------------
 def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = None,

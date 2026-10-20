@@ -173,9 +173,12 @@ def _table_one_file(spec, sample, root, *, assays=None):
             raise JoinDeclarationMissing(
                 f"{p.name} has no {c!r} column; it has {list(df.columns)[:8]}")
     sub = df[df[key] == want]
-    if sub.empty:
-        return sub.set_index(unit)
-    cols = spec.get("columns") or [c for c in sub.columns if c not in (key, unit)]
+    # the column selection applies to an EMPTY slice too. it did not, so a
+    # sample this table does not cover came back with every column of the file -
+    # three wide instead of one - and the pooled vector was 3 NaNs where the
+    # published artifact has one. a frame's WIDTH is part of its contract, and
+    # an absent sample must still have the declared shape.
+    cols = spec.get("columns") or [c for c in df.columns if c not in (key, unit)]
     return sub.set_index(unit)[cols]
 
 

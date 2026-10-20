@@ -107,5 +107,68 @@
         ]
       }
     }
+  },
+  "join_params": {
+    "note": "what the join chain reads. every value is the script's own, cited to script_map/build_niche_join.md. the package holds no default for any of them.",
+    "unit_inventory": {
+      "required_assays": [
+        "virchow2_niche",
+        "novae_niche"
+      ]
+    },
+    "subject_resolution": {
+      "subject_labels": [],
+      "on_absent": "mark"
+    },
+    "neighbourhood": {
+      "k_neighbors": 6,
+      "neighbour_source": "novae_niche",
+      "padding": "repeat_centre"
+    },
+    "pool_continuous": {
+      "pooled_assays": [
+        "novae_niche",
+        "tls",
+        "mc_weights_niche"
+      ],
+      "require_full_support": [
+        "novae_niche"
+      ]
+    },
+    "carry_per_unit": {
+      "per_unit_assays": [
+        "virchow2_niche",
+        "gpath2vec_niche"
+      ]
+    },
+    "stack_unit_tokens": {
+      "token_assays": [
+        "virchow2_cell_tokens"
+      ]
+    },
+    "centre_labels": {
+      "centre_only_labels": [
+        "compartment",
+        "mc_megacluster"
+      ]
+    },
+    "assemble": {
+      "provenance": "members_pooled"
+    },
+    "anchor_coverage": {
+      "anchor_assay": "gpath2vec_niche",
+      "on_absent": "drop"
+    },
+    "standardise": {
+      "standardise_assays": [
+        "novae_niche"
+      ],
+      "group_by": "sample",
+      "eps": 1e-08,
+      "ddof": 0
+    },
+    "join_funnel": {
+      "confounder_axis": "subject"
+    }
   }
 }

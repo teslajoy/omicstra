@@ -294,3 +294,117 @@ def test_the_cohort_declares_the_published_parameters_and_the_package_none():
     for n in (6, 512, 1280, 1000, 0.25):
         assert f"= {n}" not in src, f"{n} reached the package"
     assert DECLARED["k_neighbors"] == 6 and DECLARED["ddof"] == 0
+
+
+# ----------------------------------- the WIRED path, through run_niche_join ---
+# everything above drives JOIN_STEPS with an adapter written in this file. these
+# go through `run_niche_join(compute=True)` - the function the align graph calls
+# - with the arrays assembled by the DECLARED reader. if the two disagree, the
+# reachable path builds something else.
+WIRED = ["TNBC1_CN1_C1", "TNBC26_CN13_E2"]
+
+
+def _wired(tmp_path_factory):
+    if "wired" not in _CACHE:
+        from omicstra.contracts.project import ProjectConfig
+        from omicstra.protocols.align import run_niche_join
+
+        out = tmp_path_factory.mktemp("wired_join")
+        nj, rec = run_niche_join(ProjectConfig.load("tnbc-92"), "tnbc-92",
+                                 compute=True, out_dir=out, subarrays=WIRED)
+        _CACHE["wired"] = (out, nj, rec)
+    return _CACHE["wired"]
+
+
+def test_the_wired_join_builds_without_the_cohort_specific_script(tmp_path_factory):
+    """`compute=True` used to shell out to scripts/build_niche_join.py, which
+    names this cohort 27 times. it runs JOIN_STEPS now."""
+    out, nj, rec = _wired(tmp_path_factory)
+    assert rec.params.get("resolves_only") is False
+    assert nj.n_subarrays == len(WIRED)
+    man = json.loads((out / "manifest.json").read_text())
+    assert man["built_by"] == "omicstra.protocols.join.JOIN_STEPS"
+    assert man["sources"]["declared_by"] == "project.json#join_inputs"
+
+
+@pytest.mark.parametrize("sub", WIRED)
+@pytest.mark.parametrize("col", [HE, CELL, PATH, ST, MCW])
+def test_the_wired_build_is_exact_against_the_published_parquet(
+        tmp_path_factory, sub, col):
+    out, _, _ = _wired(tmp_path_factory)
+    mine = pd.read_parquet(out / f"{sub}.parquet")
+    oracle = pd.read_parquet(ORACLE / f"{sub}.parquet")
+    assert list(mine.index) == list(oracle.index)
+    bad, worst = _eq([mine.at[u, col] for u in oracle.index],
+                     list(oracle.loc[oracle.index, col]))
+    assert (bad, worst) == (0, 0.0), f"{sub}/{col}: {bad} rows, worst {worst:.3e}"
+
+
+@pytest.mark.parametrize("sub", WIRED)
+def test_the_wired_scalar_column_is_exact_at_float32(tmp_path_factory, sub):
+    """and it is scalar even where the label table does not cover the sample.
+    the column selection did not apply to an empty slice, so an uncovered
+    sample came back three wide and the pooled value was 3 NaNs where the
+    artifact has one."""
+    out, _, _ = _wired(tmp_path_factory)
+    mine = pd.read_parquet(out / f"{sub}.parquet")
+    oracle = pd.read_parquet(ORACLE / f"{sub}.parquet")
+    got = np.asarray([mine.at[u, TLS] for u in oracle.index], np.float32).ravel()
+    want = np.asarray(oracle.loc[oracle.index, TLS].to_numpy(), np.float32)
+    assert got.shape == want.shape
+    assert np.array_equal(got, want, equal_nan=True)
+
+
+@pytest.mark.parametrize("sub", WIRED)
+def test_the_wired_build_marks_absence_where_the_script_wrote_a_sentinel(
+        tmp_path_factory, sub):
+    """the ONE intended difference. the script wrote -1 into the label's own
+    value space - open defect #7 in docs/open_items.md - and the chain writes
+    NaN plus a `{label}__present` column. the two must agree about WHICH units
+    are absent, and about every unit that is present."""
+    out, _, _ = _wired(tmp_path_factory)
+    mine = pd.read_parquet(out / f"{sub}.parquet").loc[
+        pd.read_parquet(ORACLE / f"{sub}.parquet").index]
+    oracle = pd.read_parquet(ORACLE / f"{sub}.parquet")
+
+    sentinel = oracle["mc_megacluster"] == -1
+    assert (mine["mc_megacluster"].isna() == sentinel).all()
+    present = ~sentinel
+    assert (mine.loc[present, "mc_megacluster"].astype(int)
+            == oracle.loc[present, "mc_megacluster"]).all()
+    assert int((~mine["mc_megacluster__present"]).sum()) == int(sentinel.sum())
+
+
+def test_the_token_block_shape_is_recorded_so_it_can_be_restored(tmp_path_factory):
+    """8,960 numbers on disk are 7 x 1,280, and nothing in the column says so."""
+    out, _, _ = _wired(tmp_path_factory)
+    man = json.loads((out / "manifest.json").read_text())
+    assert man["flattened_shapes"] == {CELL: [7, 1280]}
+
+
+def test_the_wired_funnel_matches_the_published_counts(tmp_path_factory):
+    out, _, _ = _wired(tmp_path_factory)
+    man = json.loads((out / "manifest.json").read_text())
+    published = json.loads((ORACLE / "manifest.json").read_text())["per_subarray"]
+    for row in man["per_subarray"]:
+        want = next(r for r in published if r["subarray"] == row["subarray"])
+        assert row["n_niches"] == want["n_niches"]
+        assert row["n_niches_pre_intersection"] == want["n_niches_pre_intersection"]
+        assert (row["n_intersection_dropped_no_gpath2vec"]
+                == want["n_intersection_dropped_no_gpath2vec"])
+
+
+def test_a_cohort_that_declares_no_join_params_is_refused(tmp_path):
+    from omicstra.contracts.project import ProjectConfig
+    from omicstra.protocols.align import ComputeUnavailable, run_niche_join
+
+    cfg = ProjectConfig.load("tnbc-92")
+    with pytest.raises(ComputeUnavailable, match="join_params"):
+        import omicstra.protocols.align as A
+        orig = A._cohort
+        A._cohort = lambda pid=None: {}
+        try:
+            run_niche_join(cfg, "tnbc-92", compute=True, out_dir=tmp_path,
+                           subarrays=["TNBC1_CN1_C1"])
+        finally:
+            A._cohort = orig
