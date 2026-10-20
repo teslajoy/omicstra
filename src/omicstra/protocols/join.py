@@ -449,6 +449,11 @@ def subject_resolution(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                      "kept and marked absent; the split must exclude it explicitly"),
                     {"sample": sample, "subject": None,
                      "reason": "sample absent from the subject map",
+                     # the funnel rule applies to this branch too. it did not
+                     # record either end, so `join_funnel` refused the whole
+                     # chain for a step that had dropped nothing - which is the
+                     # rule working, on the step that forgot it.
+                     "n_in": len(labels), "n_out": 0,
                      "n_absent_labels": len(labels)})
         return rec, {"subject": None, "subject_values": {},
                      "subject_absent": list(labels)}
