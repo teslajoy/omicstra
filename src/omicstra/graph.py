@@ -98,6 +98,15 @@ class OmicstraState(TypedDict, total=False):
     compute: bool            # False resolves and reports what WOULD run
     platform: str | None     # whose tile geometry - a cohort may carry several
     samples: list[str] | None  # an explicit subset, or every ingested sample
+    # --- the evaluate subgraph's compute arm -------------------------------
+    # which fitted run a COMPUTED verdict measures, and which continuous signals
+    # to test for association. `signals` is the caller's question rather than the
+    # cohort's declaration - a cohort declares what it HAS, not what somebody
+    # will ask of it. both are here because the boundary drops what it is not
+    # told about, which the test above this file's own rule asserts.
+    run: str                 # the fitted run the compute arm measures
+    signals: list[str]       # continuous signals to associate, caller-chosen
+    paired_view: str | None  # the other modality's view, for identifiability
     gates: list[dict]
     answers: dict
     hypotheses: list[str]    # which hypotheses the evaluate stage returns a verdict on

@@ -46,5 +46,66 @@
       "why_it_matters": "novae zero-shot resolves var_names against a symbol vocabulary, so unreached ids are genes the model never sees. the shortfall is a property of this table, not of the tissue."
     },
     "observed_vs_declared": "the identifier SPACE is observed per section at ingest.json#counts.<id>.gene_id; strip_version is derived from it. only the release and its policy are declared here."
+  },
+  "evaluate_params": {
+    "note": "what the computing evaluate chain reads. each value is measured out of this cohort's own artifacts or declared with its reason - see script_map/evaluation_maths.md section 4. the permutation counts here are the GUARD's floor, not the published 500/10,000: a chain run is a check that the path executes, and a reduced null is never a candidate for a published number.",
+    "label_granularity": {
+      "labels": [
+        "mc_megacluster"
+      ],
+      "tau_label_nmi": 0.5
+    },
+    "paired_identifiability": {
+      "ks": [
+        1,
+        5,
+        10
+      ],
+      "negative_ratio": 10,
+      "negative_seed": 0
+    },
+    "structure_and_its_null": {
+      "k": 14,
+      "n_init": 10,
+      "seed": 42,
+      "silhouette_sample": 5000,
+      "n_permutations": 20,
+      "probe_max_iter": 200,
+      "held_out_groups": 2
+    },
+    "held_out_comparison": {
+      "ks": [
+        1,
+        5,
+        10
+      ],
+      "negative_ratio": 10,
+      "negative_seed": 0,
+      "min_units_per_subject": 50
+    },
+    "association_and_specificity": {
+      "n_permutations": 20,
+      "alpha": 0.05,
+      "tau_specificity": 0.5,
+      "tail": "two_sided",
+      "held_out_groups": 3,
+      "transfer_seed": 42,
+      "within_cohort_seed": 42,
+      "min_units_per_side": 100
+    },
+    "hypothesis_verdict": {
+      "hypotheses": {
+        "H1": [
+          "paired_identifiability",
+          "held_out_comparison"
+        ],
+        "H2": [
+          "structure_and_its_null"
+        ],
+        "H3": [
+          "association_and_specificity"
+        ]
+      }
+    }
   }
 }

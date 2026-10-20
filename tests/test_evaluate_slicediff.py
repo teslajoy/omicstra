@@ -369,3 +369,67 @@ def test_the_within_subject_auc_is_lower_than_the_cross_subject_one():
     assert v["cross_subject_auc"] > v["within_subject_auc"]
     assert v["guard_g2"] == "pass"
     assert v["g2"]["value"] < 0, "a negative drop is a rise"
+
+
+# ------------------------------- the same verdict, reached through the graph ---
+# the chain above is invoked directly. these reach it the way a CLIENT does -
+# through the graph's compute arm, with the arrays assembled by the declared
+# reader rather than by this file's own adapter. if the two disagree, the
+# reachable path is measuring something else.
+def _through_the_graph():
+    if "graph" not in _CACHE:
+        import json as _json
+
+        from omicstra.graphs.evaluate import build_evaluate_graph
+
+        cohort = _json.loads((ROOT / "projects/tnbc-92/cohort.json").read_text())
+        if "evaluate_params" not in cohort:
+            pytest.skip("this cohort declares no evaluate_params")
+        _CACHE["graph"] = build_evaluate_graph().invoke(
+            {"project_id": "tnbc-92", "arm": "evaluate", "compute": True,
+             "run": RUN, "paired_view": "z_st", "signals": ["tls"],
+             "cohort": cohort})
+    return _CACHE["graph"]
+
+
+def test_the_graphs_compute_arm_measures_the_same_units():
+    r = _through_the_graph()["report"]
+    assert r["status"] == "measured"
+    assert r["run"] == RUN and r["view"] == "z_he"
+    ctx, _ = _ctx_and_params()
+    assert r["n_units"] == ctx["spaces"]["z_he"].shape[0]
+    assert r["n_samples"] == 38
+
+
+def test_the_graph_reaches_the_same_verdicts_as_the_chain_directly():
+    """the reachability claim, as a test: a client's path and a notebook's path
+    answer the same question with the same answer."""
+    theirs = _through_the_graph()["report"]["verdicts"]
+    mine = _obs("hypothesis_verdict")["verdicts"]
+    assert {h: d["verdict"] for h, d in theirs.items()} == \
+           {h: d["verdict"] for h, d in mine.items()}
+
+
+def test_the_declared_reader_finds_the_sentinel_the_join_writes():
+    """882 units carry -1 for the label, which the join writes for ABSENCE while
+    its own comment says the eval code filters `< 0`. it does not - the
+    published eval filters `notna()` only. the reader reports it rather than
+    scoring it unknowingly."""
+    r = _through_the_graph()["report"]
+    assert r["label_sentinels"] == {"mc_megacluster": 882}
+    assert "ABSENCE" in r["label_note"]
+
+
+def test_the_cohorts_declared_params_are_what_the_arm_used():
+    """not the package's. every threshold travelled from cohort.json."""
+    import json as _json
+
+    cohort = _json.loads((ROOT / "projects/tnbc-92/cohort.json").read_text())
+    p = cohort["evaluate_params"]
+    assert p["structure_and_its_null"]["k"] == PUBLISHED["k"]
+    assert p["structure_and_its_null"]["n_init"] == PUBLISHED["n_init"]
+    assert p["paired_identifiability"]["negative_ratio"] == PUBLISHED["negative_ratio"]
+    assert p["paired_identifiability"]["negative_seed"] == PUBLISHED["negative_seed"]
+    # the null is the GUARD's floor, not the published 500 - and says so
+    assert p["structure_and_its_null"]["n_permutations"] == 20
+    assert "reduced null is never a candidate" in p["note"]

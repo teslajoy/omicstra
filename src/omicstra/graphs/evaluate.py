@@ -49,6 +49,16 @@ class EvaluateState(TypedDict, total=False):
                                # its arm resumes into the wrong graph
     cohort: dict[str, Any]
     hypotheses: list[str]
+    compute: bool              # False reads the pack and is the DEFAULT. True
+                               # runs EVALUATE_STEPS over the cohort's own
+                               # arrays, which is minutes rather than
+                               # milliseconds - the same convention align uses
+    run: str                   # which fitted run the compute arm measures
+    signals: list[str]         # which continuous signals to test. the caller's
+                               # question, not the cohort's declaration
+    paired_view: str | None    # the other modality's view. absent means
+                               # identifiability is not_applicable, which is a
+                               # true answer for a single-modality cohort
     verdict: dict              # computed in `gates`, reported in `evaluate`
     gates: list[dict]
     answers: dict[str, str]
@@ -236,6 +246,88 @@ _DECISION = {
 }
 
 
+def measure(state: EvaluateState) -> dict:
+    """the COMPUTE arm: run `EVALUATE_STEPS` over this cohort's own arrays.
+
+    the pack arm above states what an evidence pack claims and recomputes
+    nothing. this one measures, and the two do not re-judge each other - a
+    cohort with no pack has nothing for the gates to judge, and four of the
+    guards say so by name.
+
+    the arrays come from `adapters/evaluation`, which reads the cohort's
+    declaration and refuses by field. so the one thing that stood between the
+    chain and a client is closed here: the chain takes matrices, MCP carries
+    JSON, and nothing could have handed it a 35,594 x 512 matrix over stdio.
+    """
+    from omicstra.adapters.evaluation import DeclarationMissing, arrays
+    from omicstra.protocols import build_protocol
+    from omicstra.protocols.evaluate import EVALUATE_STEPS
+
+    run = state.get("run")
+    if not run:
+        return {"report": {"status": "refused",
+                           "why": ("the compute arm measures ONE fitted run and "
+                                   "none was named. a verdict over an unnamed "
+                                   "run is a verdict nobody can reproduce")}}
+
+    cohort = state.get("cohort") or {}
+    params = (cohort.get("evaluate_params") or {})
+    if not params:
+        return {"report": {"status": "refused",
+                           "why": ("this cohort declares no `evaluate_params`. "
+                                   "every step's thresholds - the null size, the "
+                                   "FDR level, the aliasing bar, the split - are "
+                                   "the cohort's, and a default here is a choice "
+                                   "made on one tissue")}}
+
+    from omicstra.settings import settings
+
+    try:
+        # `project_root` has refusals of its own - a project_id that does not
+        # match a bound OMICSTRA_PROJECT_DIR is refused rather than silently
+        # serving another cohort's data - and they are not DeclarationMissing.
+        # uncaught, that boundary refusal left `invoke` rather than becoming a
+        # report, so a caller saw a traceback where the server had an answer.
+        ctx = arrays(settings.project_root(state.get("project_id")), run,
+                     paired_view=state.get("paired_view"),
+                     signals=tuple(state.get("signals") or ()))
+    except (DeclarationMissing, ValueError, FileNotFoundError, KeyError) as e:
+        return {"report": {"status": "unavailable", "stage": "arrays", "why": str(e)},
+                "records": [*state.get("records", []),
+                            {"step_id": "evaluate_measure", "kind": "gate",
+                             "status": "not_run", "actor": "deterministic",
+                             "reason": str(e)}]}
+
+    recs = build_protocol(EVALUATE_STEPS, "evaluate").invoke({**ctx, "params": params})
+    verdicts = ((recs.get("hypothesis_verdict") or {}).get("observed") or {}
+                ).get("verdicts") or {}
+    return {"records": [*state.get("records", []), *recs.values()],
+            "report": {"status": "measured",
+                       "run": run,
+                       "view": ctx["view"],
+                       "n_units": ctx["n_units_labelled"],
+                       "n_samples": ctx["sample_count"],
+                       "verdicts": verdicts,
+                       "steps": {k: v["status"] for k, v in recs.items()},
+                       "label_sentinels": ctx.get("label_sentinels"),
+                       "label_note": ctx.get("label_note"),
+                       "note": ("COMPUTED from this cohort's arrays, not read "
+                                "from a pack. the pack arm answers the other "
+                                "question - what a curated number may claim")}}
+
+
+def _route_entry(state: EvaluateState) -> str:
+    """which arm answers, decided before the gates rather than after.
+
+    the compute arm BYPASSES the pack gates deliberately. those gates judge what
+    a curated number may claim - its scope, its pins, its guard failures - and
+    `gates` refuses a cohort with no evidence pack, which is precisely the
+    cohort the compute arm exists for. a freshly measured number has no pins to
+    check; the guards it needs are G1-G5, and they run inside the chain.
+    """
+    return "measure" if state.get("compute") else "gates"
+
+
 def _route_gates(state: EvaluateState) -> str:
     if state.get("halted"):
         return "halt"
@@ -247,20 +339,28 @@ def _route_answer(state: EvaluateState) -> str:
 
 
 def build_evaluate_graph(checkpointer=None):
-    """gates -> (ask) -> evaluate, with halt on refusal or an unfillable scope."""
+    """two arms, chosen at entry.
+
+        compute=False   gates -> (ask) -> evaluate     the pack's verdict
+        compute=True    measure                        this run's verdict
+    """
     g = StateGraph(EvaluateState)
     g.add_node("gates", timed_node(gates))
     g.add_node("ask", timed_node(ask))
     g.add_node("evaluate", timed_node(evaluate))
+    g.add_node("measure", timed_node(measure))
     g.add_node("halt", timed_node(halt))
 
-    g.add_edge(START, "gates")
+    g.add_conditional_edges(START, _route_entry,
+                            {"gates": "gates", "measure": "measure"})
     g.add_conditional_edges("gates", _route_gates,
                             {"ask": "ask", "evaluate": "evaluate", "halt": "halt"})
-    g.add_conditional_edges("ask", _route_answer, {"evaluate": "evaluate", "halt": "halt"})
+    g.add_conditional_edges("ask", _route_answer,
+                            {"evaluate": "evaluate", "halt": "halt"})
     g.add_edge("evaluate", END)
+    g.add_edge("measure", END)
     g.add_edge("halt", END)
     return g.compile(checkpointer=checkpointer)
 
 
-__all__ = ["build_evaluate_graph", "evaluate"]
+__all__ = ["build_evaluate_graph", "evaluate", "measure"]

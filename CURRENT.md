@@ -13,6 +13,15 @@ is not worked on, discussed, or measured until the task card is closed.
 
 **make `EVALUATE_STEPS` reachable: a client asks, and a verdict is COMPUTED.**
 
+**DONE 2026-10-20.** `adapters/evaluation.py` reads the declaration and refuses
+by field; `graphs/evaluate.py` gained a `measure` arm routed at entry;
+`mcp/server.py` exposes `evaluate_measure` (20 tools). 20 tier-1 cases, 4 at
+cohort scale, and the graph's verdicts match the chain invoked directly:
+H1 biological, H2 diagnostic, H3 not_run on R1_v3.
+
+the next card is the JOIN duplication - one join instead of
+run_niche_join(compute=True) shelling out to the script.
+
 the chain exists, has 57 tier-1 cases and 18 at cohort scale, and no client can
 reach it - `grep` finds no caller outside its own module and its tests. the
 evaluate graph reads an evidence pack and recomputes nothing; its own note says

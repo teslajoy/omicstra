@@ -940,6 +940,47 @@ def evaluate_run(project_id: str | None = None,
 
 
 @srv.tool(description=(
+    "COMPUTE a verdict on H1 / H2 / H3 from a cohort's own arrays, rather than "
+    "reading one from a curated evidence pack. This is the other half of "
+    "evaluate_run and answers a different question: evaluate_run states what a "
+    "pack's numbers may claim, and this measures what one fitted run actually "
+    "shows. A cohort with no pack is the case it exists for. It assembles the "
+    "views, the label and the confounder axis from the fields the cohort's "
+    "project.json declares - niches_dir, runs_dir, h2_label, headline_view, "
+    "supervision, seed - and refuses by FIELD NAME when one is absent rather "
+    "than defaulting to the seed cohort's value. Every threshold is the "
+    "cohort's evaluate_params: the permutation counts, the FDR level, the "
+    "aliasing bar and the by-subject split. It runs the guards the pack arm "
+    "cannot - the within-subject comparison, the permutation null over the "
+    "clustering score, and the off-diagonal cosine between association axes - "
+    "and states biological, diagnostic, unguarded or not_run per hypothesis. "
+    "Minutes, not milliseconds, and it calls no model."))
+def evaluate_measure(run: str, project_id: str | None = None,
+                     paired_view: str | None = None,
+                     signals: list[str] | None = None,
+                     run_id: str | None = None) -> dict:
+    import uuid
+
+    from omicstra.graph import _load_cohort
+    from omicstra.tracing import assert_may_trace
+
+    app, spec = _runner("evaluate")
+    rid = run_id or f"measure-{uuid.uuid4().hex[:12]}"
+    cohort = _load_cohort(project_id)
+    # BEFORE the graph runs, for the same reason evaluate_run does it: node
+    # inputs are cohort content, and this arm's inputs are the arrays themselves.
+    assert_may_trace(cohort, project_id)
+    cfg = {"configurable": {"thread_id": rid}}
+    out = app.invoke({"project_id": project_id, "arm": "evaluate",
+                      "cohort": cohort, "compute": True, "run": run,
+                      "paired_view": paired_view,
+                      # the caller's question, not the cohort's declaration: a
+                      # cohort declares what it HAS, not what will be asked of it
+                      "signals": list(signals or [])}, cfg)
+    return {**_handle(app, rid, out), "checkpointer": spec}
+
+
+@srv.tool(description=(
     "Answer the open gate on a run and continue it, or - on a run with no open "
     "gate whose shards are incomplete - re-dispatch the ones still missing. "
     "The run handle is an ordinary parameter, so a run started by one request "

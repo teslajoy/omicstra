@@ -574,7 +574,7 @@ omicstra/
 │   · models/encoders.py             # the encoder registry, resolved by declared name.
 │   │                                #   spec() is metadata; only load() needs torch
 │   · agents/modality.py             # he / st / pathway agents - read recorded evidence
-│   · mcp/server.py                  # 19 tools, 2 resources, stdio + http. zero model calls
+│   · mcp/server.py                  # 20 tools, 2 resources, stdio + http. zero model calls
 │   · records.py  artifacts.py       # the record contract - inventory/eda_summary io
 │   · settings.py  cli.py            # 8 commands. settings imports nothing from omicstra
 │   · routing.py  eda.py  figures.py # resolve + ledger · gate · plots
