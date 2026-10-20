@@ -170,6 +170,23 @@
         ],
         "role": "centre"
       }
+    },
+    "subject": {
+      "loader": "table_one_file",
+      "path": "../../data/embeddings/biological_signals/mc_weights.tsv",
+      "key_column": "subarray",
+      "unit_column": "spot_id",
+      "strip_prefix_before": "_",
+      "columns": [
+        "patient_id"
+      ],
+      "subject_column": "patient_id",
+      "note": "the subject this sample belongs to. the script read it from the same table (line 364, first row per sample) and every split and confounder check is taken on it.",
+      "labels_path": "../../data/embeddings/biological_signals/clinical_labels.tsv",
+      "labels_key": "patient_id",
+      "labels": [
+        "spatial_archetype"
+      ]
     }
   }
 }

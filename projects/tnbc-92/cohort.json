@@ -117,8 +117,10 @@
       ]
     },
     "subject_resolution": {
-      "subject_labels": [],
-      "on_absent": "mark"
+      "subject_labels": [
+        "spatial_archetype"
+      ],
+      "on_absent": "refuse"
     },
     "neighbourhood": {
       "k_neighbors": 6,

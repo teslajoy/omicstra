@@ -319,15 +319,46 @@ def arrays(project_dir: str | Path, sample: str) -> dict[str, Any]:
     subject_of, subject_labels = {}, {}
     if subj:
         frame = LOADERS[subj["loader"]](subj, sample, root, assays=assays)
-        sid_col = subj.get("subject_column")
-        if sid_col and sid_col in frame.columns and len(frame):
+        sid_col = _need(subj, "subject_column", "subject",
+                        "which column names the subject this sample belongs to")
+        if sid_col in frame.columns and len(frame):
             sid = frame[sid_col].iloc[0]
             subject_of[sample] = sid
-            subject_labels[sid] = {k: v for k, v in (subj.get("labels") or {}).items()}
-
+            subject_labels[sid] = _subject_labels(subj, sid, root)
     return {"sample": sample, "assays": assays, "neighbours": neighbours,
             "unit_labels": labels, "subject_of": subject_of,
             "subject_labels": subject_labels, "declared": spec}
+
+
+def _subject_labels(subj: dict, sid: Any, root: Path) -> dict[str, Any]:
+    """this subject's declared labels, from a table keyed by subject id.
+
+    the seed cohort's subject label was read from an .RDS via Rscript at join
+    time. a cohort's native format is converted in `scripts/`, once, so the
+    package reads the DERIVED table and `labels_path` names it. absent, the
+    subject carries no labels rather than the package inventing one.
+    """
+    path = subj.get("labels_path")
+    if not path:
+        return {}
+
+    import pandas as pd
+
+    p = root / path
+    if not p.is_file():
+        raise JoinDeclarationMissing(
+            f"the subject label table {p} does not exist. `labels_path` names "
+            "the DERIVED table, written by this cohort's ingest - the package "
+            "reads no native format")
+    key = _need(subj, "labels_key", "subject",
+                "which column of the label table names the subject")
+    want = subj.get("labels") or []
+    df = pd.read_csv(p, sep=subj.get("labels_sep", "\t"))
+    row = df[df[key] == sid]
+    if row.empty:
+        return {}
+    cols = want or [c for c in df.columns if c != key]
+    return {c: row.iloc[0][c] for c in cols if c in row.columns}
 
 
 __all__ = ["LOADERS", "REQUIRED", "JoinDeclarationMissing", "arrays",

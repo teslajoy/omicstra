@@ -408,3 +408,70 @@ def test_a_cohort_that_declares_no_join_params_is_refused(tmp_path):
                            subarrays=["TNBC1_CN1_C1"])
         finally:
             A._cohort = orig
+
+
+# --------------------------------- every oracle column must be accounted for --
+# the wired build silently omitted `patient_id` and `archetype` for a while,
+# because the subject source was never declared and the tests above compare a
+# NAMED LIST of columns. a list cannot catch an absence. so this maps every
+# column of the published parquet onto the wired one, and a column in neither
+# the map nor the reproduced set fails.
+ORACLE_TO_WIRED = {
+    # reproduced under the same name
+    "virchow2_niche": "virchow2_niche",
+    "virchow2_cell_tokens": "virchow2_cell_tokens",
+    "gpath2vec_niche": "gpath2vec_niche",
+    "novae_niche": "novae_niche",
+    "mc_weights_niche": "mc_weights_niche",
+    "tls": "tls",
+    "compartment": "compartment",
+    "mc_megacluster": "mc_megacluster",
+    # renamed, because the chain names things for what they are rather than for
+    # one cohort's vocabulary
+    "patient_id": "subject",
+    "archetype": "spatial_archetype",
+    "subarray": "sample",
+    # CORRECTED, not renamed: the script stored the pre-filter neighbour list,
+    # so recomputing the pool from it did not reproduce the row. the chain
+    # stores the members it actually pooled.
+    "neighbor_spot_ids": "members_pooled",
+}
+
+
+def test_every_published_column_is_accounted_for(tmp_path_factory):
+    out, _, _ = _wired(tmp_path_factory)
+    oracle = pd.read_parquet(ORACLE / f"{WIRED[0]}.parquet")
+    mine = pd.read_parquet(out / f"{WIRED[0]}.parquet")
+
+    unmapped = sorted(set(oracle.columns) - set(ORACLE_TO_WIRED))
+    assert not unmapped, f"published columns with no stated counterpart: {unmapped}"
+
+    absent = sorted(c for c, w in ORACLE_TO_WIRED.items() if w not in mine.columns)
+    assert not absent, f"mapped to a column the wired build does not have: {absent}"
+
+
+def test_the_renamed_subject_columns_carry_the_published_values(tmp_path_factory):
+    """the omission these two tests exist for: declared nowhere, so built
+    silently without them."""
+    out, _, _ = _wired(tmp_path_factory)
+    for sub in WIRED:
+        oracle = pd.read_parquet(ORACLE / f"{sub}.parquet")
+        mine = pd.read_parquet(out / f"{sub}.parquet").loc[oracle.index]
+        assert (mine["subject"].astype(int)
+                == oracle["patient_id"].astype(int)).all()
+        assert (mine["spatial_archetype"].astype(int)
+                == oracle["archetype"].astype(int)).all()
+        assert (mine["sample"] == oracle["subarray"]).all()
+
+
+def test_the_provenance_column_is_the_corrected_one_not_a_rename(tmp_path_factory):
+    """`members_pooled` is what the pooling used; the script's
+    `neighbor_spot_ids` was the raw declared list, before its own filter and
+    before padding, so a reader recomputing from it did not get the row back."""
+    out, _, _ = _wired(tmp_path_factory)
+    oracle = pd.read_parquet(ORACLE / f"{WIRED[0]}.parquet")
+    mine = pd.read_parquet(out / f"{WIRED[0]}.parquet").loc[oracle.index]
+    k = oracle.index[0]
+    assert len(mine.at[k, "members_pooled"]) == 7, "centre plus k members"
+    assert len(oracle.at[k, "neighbor_spot_ids"]) == 6, "the script stored k"
+    assert mine.at[k, "members_pooled"][0] == k, "centre first"
