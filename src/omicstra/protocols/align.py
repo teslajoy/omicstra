@@ -44,7 +44,8 @@ from pydantic import BaseModel
 from omicstra.contracts.project import (
     ProjectConfig,  # merges into settings - deferred item 2
 )
-from omicstra.records import TransformRecord
+from omicstra.protocols import Ctx, Step, build_protocol
+from omicstra.records import DiagnosticRecord, TransformRecord
 from omicstra.settings import settings
 
 
@@ -359,15 +360,284 @@ def _build_join(cfg: ProjectConfig, project_id: str | None, out: Path,
         "per_subarray": per_sample,
     }, indent=2) + "\n")
 
+# --- contrastive alignment: five LCEL steps ----------------------------------
+#
+# the chain is load_data | split | train | embed_test | evaluate_and_save.
+# each step calls the extracted functions in adapters/alignment_data.py and
+# training/alignment.py. the functions are unchanged; the steps give them a
+# record, timing, and an order assertion.
+
+def _step_load_data(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    from omicstra.adapters.alignment_data import discover_subarrays, load_subarray
+
+    p = ctx["params"]
+    niches_dir = Path(p["niches_dir"])
+    st_features = tuple(p["st_features"])
+    subset_n = p.get("subset_n")
+
+    paths = discover_subarrays(niches_dir)
+    if not paths:
+        return DiagnosticRecord(
+            step_id="load_data", status="fail",
+            result=f"no parquets under {niches_dir}",
+            decision="cannot train without data"), {}
+
+    if subset_n:
+        paths = paths[:subset_n]
+
+    subarrays = [load_subarray(path, st_features) for path in paths]
+    n_spots = sum(len(s["spot_id"]) for s in subarrays)
+    n_dropped = sum(s["n_dropped_nan"] for s in subarrays)
+
+    return DiagnosticRecord(
+        step_id="load_data", status="pass",
+        method="load niche-join parquets, materialise feature tensors",
+        observed={"n_subarrays": len(subarrays), "n_spots_total": n_spots,
+                  "n_dropped_nan": n_dropped, "st_features": list(st_features)},
+        result=f"{len(subarrays)} subarrays, {n_spots} spots",
+        decision="data loaded",
+    ), {"subarrays": subarrays}
+
+
+def _step_split(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    from omicstra.adapters.alignment_data import split_by_patient
+
+    p = ctx["params"]
+    subarrays = ctx["subarrays"]
+    val_frac = p["val_frac"]
+    test_frac = p["test_frac"]
+    seed = p["seed"]
+    run_dir = Path(ctx.get("run_dir") or p.get("run_dir", "."))
+
+    train_p, val_p, test_p = split_by_patient(subarrays, val_frac, test_frac, seed)
+    train_subs = [s for s in subarrays if s["patient_id"] in set(train_p)]
+    val_subs = [s for s in subarrays if s["patient_id"] in set(val_p)]
+    test_subs = [s for s in subarrays if s["patient_id"] in set(test_p)]
+
+    split_info = {"train_patients": train_p, "val_patients": val_p,
+                  "test_patients": test_p, "seed": seed}
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "split.json").write_text(json.dumps(split_info, indent=2))
+
+    return DiagnosticRecord(
+        step_id="split", status="pass",
+        method="three-way patient split, stratified by archetype when counts allow",
+        observed={"n_train_patients": len(train_p), "n_val_patients": len(val_p),
+                  "n_test_patients": len(test_p),
+                  "n_train_subs": len(train_subs), "n_val_subs": len(val_subs),
+                  "n_test_subs": len(test_subs), "seed": seed},
+        result=f"{len(train_p)}/{len(val_p)}/{len(test_p)} patients",
+        decision="split written",
+    ), {"split": {"train": train_subs, "val": val_subs, "test": test_subs,
+                  "train_patients": train_p, "val_patients": val_p,
+                  "test_patients": test_p}}
+
+
+def _step_train(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    from omicstra.training.alignment import train_model
+
+    p = ctx["params"]
+    split = ctx["split"]
+    train_subs, val_subs = split["train"], split["val"]
+    run_dir = Path(ctx.get("run_dir") or p["run_dir"])
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    he_dim = p.get("he_dim") or train_subs[0]["x_he_niche"].shape[1]
+    st_dim = p.get("st_dim") or train_subs[0]["x_st"].shape[1]
+
+    model = train_model(
+        he_dim=he_dim, st_dim=st_dim,
+        shared_dim=p.get("shared_dim", 512),
+        dropout=p.get("dropout", 0.3),
+        fusion=p.get("fusion", "late"),
+        anisotropic=p.get("anisotropic", False),
+        he_tile_dim=p.get("he_tile_dim", 1280),
+        loss_name=p["loss"],
+        lr=p.get("lr", 5e-4),
+        weight_decay=p.get("weight_decay", 1e-3),
+        epochs=p.get("epochs", 50),
+        patience=p.get("patience", 10),
+        seed=p["seed"],
+        device=p.get("device", "cpu"),
+        train_subs=train_subs,
+        val_subs=val_subs,
+        run_dir=run_dir,
+        tau=p.get("tau", 0.07),
+        tau_target=p.get("tau_target", 0.1),
+        lam=p.get("barlow_lambda", 5e-3),
+    )
+
+    import csv
+    log_path = run_dir / "training_log.csv"
+    best_cos, epochs_run = 0.0, 0
+    if log_path.is_file():
+        with log_path.open() as f:
+            rows = list(csv.DictReader(f))
+            if rows:
+                epochs_run = len(rows)
+                best_cos = max(float(r["val_cos_sim"]) for r in rows)
+
+    return DiagnosticRecord(
+        step_id="train", status="pass",
+        method=f"{p.get('fusion', 'late')} fusion, {p['loss']} loss",
+        observed={"best_val_cos": best_cos, "epochs_run": epochs_run,
+                  "checkpoint": str(run_dir / "checkpoint.pt"),
+                  "he_dim": he_dim, "st_dim": st_dim},
+        result=f"trained {epochs_run} epochs, best val cos {best_cos:.4f}",
+        decision="checkpoint saved",
+    ), {"model": model}
+
+
+def _step_embed_test(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    from omicstra.training.alignment import embed_test
+
+    p = ctx["params"]
+    model = ctx["model"]
+    test_subs = ctx["split"]["test"]
+    device = p.get("device", "cpu")
+
+    emb_df, Z_he, Z_st, X_he, X_st = embed_test(model, test_subs, device=device)
+
+    return DiagnosticRecord(
+        step_id="embed_test", status="pass",
+        method="forward pass on held-out test subarrays",
+        observed={"n_test_spots": len(emb_df),
+                  "n_test_subarrays": len(test_subs),
+                  "z_dim": Z_he.shape[1] if Z_he.shape[0] else 0},
+        result=f"{len(emb_df)} spots embedded",
+        decision="test embeddings computed",
+    ), {"embeddings": {"emb_df": emb_df, "Z_he": Z_he, "Z_st": Z_st,
+                       "X_he": X_he, "X_st": X_st}}
+
+
+def _step_evaluate_and_save(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    from omicstra.training.alignment import save_test_artifacts
+
+    p = ctx["params"]
+    emb = ctx["embeddings"]
+    run_dir = Path(ctx.get("run_dir") or p["run_dir"])
+
+    metrics = save_test_artifacts(
+        emb["emb_df"], emb["Z_he"], emb["Z_st"], emb["X_he"], emb["X_st"],
+        run_dir=run_dir,
+        ks=tuple(p.get("ks", (1, 5, 10))),
+        negative_ratio=p.get("negative_ratio", 10),
+        negative_seed=p.get("negative_seed", 0),
+    )
+
+    return DiagnosticRecord(
+        step_id="evaluate_and_save", status="pass",
+        method="cross-modal retrieval + CKA on test set",
+        observed=metrics,
+        result=f"R@1={metrics.get('recall_at_1', 'n/a')}, "
+               f"MRR={metrics.get('mrr', 'n/a')}, "
+               f"CKA={metrics.get('cka_after', 'n/a'):.4f}"
+               if isinstance(metrics.get("cka_after"), float) else
+               f"R@1={metrics.get('recall_at_1', 'n/a')}",
+        decision="metrics and embeddings written",
+    ), {"metrics": metrics}
+
+
+ALIGN_TRAIN_STEPS: list[Step] = [
+    Step(id="load_data", fn=_step_load_data,
+         produces=frozenset({"subarrays"}),
+         params_space=("niches_dir", "st_features", "subset_n")),
+    Step(id="split", fn=_step_split,
+         produces=frozenset({"split"}),
+         requires=frozenset({"subarrays"}),
+         params_space=("val_frac", "test_frac", "seed", "run_dir")),
+    Step(id="train", fn=_step_train,
+         produces=frozenset({"model"}),
+         requires=frozenset({"split"}),
+         params_space=("fusion", "he_dim", "st_dim", "shared_dim", "dropout",
+                       "he_tile_dim", "anisotropic", "loss", "lr",
+                       "weight_decay", "epochs", "patience", "seed",
+                       "device", "tau", "tau_target", "barlow_lambda",
+                       "run_dir")),
+    Step(id="embed_test", fn=_step_embed_test,
+         produces=frozenset({"embeddings"}),
+         requires=frozenset({"model", "split"}),
+         params_space=("device",)),
+    Step(id="evaluate_and_save", fn=_step_evaluate_and_save,
+         produces=frozenset({"metrics"}),
+         requires=frozenset({"embeddings"}),
+         params_space=("run_dir", "ks", "negative_ratio", "negative_seed")),
+]
+
+
+def _train_contrastive_chain(run_cfg: dict, niches_dir: str, run_dir: Path) -> dict:
+    """invoke the five-step LCEL chain for one contrastive run.
+
+    returns the records dict from build_protocol - one entry per step id,
+    each with status, duration_s, params, observed.
+    """
+    chain = build_protocol(ALIGN_TRAIN_STEPS, "align_train")
+
+    ctx_params = {
+        "load_data": {
+            "niches_dir": niches_dir,
+            "st_features": tuple(run_cfg.get("st_features", ("novae_niche", "gpath2vec_niche"))),
+            "subset_n": run_cfg.get("subset_n_subarrays"),
+        },
+        "split": {
+            "val_frac": run_cfg.get("val_frac", 0.15),
+            "test_frac": run_cfg.get("test_frac", 0.15),
+            "seed": run_cfg["seed"],
+            "run_dir": str(run_dir),
+        },
+        "train": {
+            "fusion": run_cfg.get("fusion", "late"),
+            "he_dim": None,
+            "st_dim": None,
+            "shared_dim": run_cfg.get("shared_dim", 512),
+            "dropout": run_cfg.get("dropout", 0.3),
+            "he_tile_dim": 1280,
+            "anisotropic": run_cfg.get("anisotropic", False),
+            "loss": run_cfg["loss"],
+            "lr": run_cfg.get("lr", 5e-4),
+            "weight_decay": run_cfg.get("weight_decay", 1e-3),
+            "epochs": run_cfg.get("epochs", 50),
+            "patience": run_cfg.get("patience", 10),
+            "seed": run_cfg["seed"],
+            "device": run_cfg.get("device", "cpu"),
+            "tau": run_cfg.get("tau", 0.07),
+            "tau_target": run_cfg.get("tau_target", 0.1),
+            "barlow_lambda": run_cfg.get("barlow_lambda", 5e-3),
+            "run_dir": str(run_dir),
+        },
+        "embed_test": {
+            "device": run_cfg.get("device", "cpu"),
+        },
+        "evaluate_and_save": {
+            "run_dir": str(run_dir),
+            "ks": [1, 5, 10],
+            "negative_ratio": 10,
+            "negative_seed": 0,
+        },
+    }
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "run_config.json").write_text(json.dumps(
+        {**run_cfg, **{"method": "package", "params": ctx_params}}, indent=2))
+
+    return chain.invoke({"params": ctx_params, "run_dir": run_dir})
+
+
 # --- the two COMPUTE-OR-RESOLVE stages --------------------------------------
 def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = None,
               project_id: str | None = None, *, compute: bool = False,
-              runs_root: Path | None = None) -> tuple[AlignGrid, TransformRecord]:
+              runs_root: Path | None = None,
+              use_package: bool = False) -> tuple[AlignGrid, TransformRecord]:
     """resolve the grid, or train the runs that are missing.
 
     contrastive runs are driven by their config; classical baselines are driven
     against a reference split, because a baseline must see exactly the split its
     leader saw or the comparison is between two different held-out sets.
+
+    use_package=True routes contrastive runs through the five-step LCEL chain
+    (ALIGN_TRAIN_STEPS) instead of shelling out to scripts/align.py. the chain
+    produces per-step DiagnosticRecords with timing, resolved params and outcome.
+    the script path remains the default.
     """
     root = Path(runs_root) if runs_root else _project_rel(cfg.runs_dir, project_id)
     ids = run_ids or (list(cfg.contrastive_runs) + list(cfg.classical_runs))
@@ -382,13 +652,20 @@ def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = Non
         _refuse_protected(cfg, root, "train into")
 
     computed: list[str] = []
+    chain_records: dict[str, dict] = {}
     for rid in missing:
         base = rid.split("_")[0]
         cfg_path = settings.resolve(Path("configs/v3")) / f"{rid}.json"
         if cfg_path.is_file():                                  # contrastive
-            _run_script("align.py", ["--config", str(cfg_path),
-                                     "--niches-dir", nj.niches_dir,
-                                     "--runs-root", str(root)])
+            if use_package:
+                run_cfg = json.loads(cfg_path.read_text())
+                recs = _train_contrastive_chain(
+                    run_cfg, nj.niches_dir, root / rid)
+                chain_records[rid] = recs
+            else:
+                _run_script("align.py", ["--config", str(cfg_path),
+                                         "--niches-dir", nj.niches_dir,
+                                         "--runs-root", str(root)])
         else:
             # a baseline must see EXACTLY the split its leader saw, or the
             # comparison is between two different held-out sets.
@@ -396,9 +673,6 @@ def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = Non
             common = ["--reference-split", str(ref), "--run-id", rid,
                       "--niches-dir", nj.niches_dir, "--runs-root", str(root)]
             if base == "B4":
-                # random-init has its own script and takes no --baseline.
-                # routing it through align_classical would produce a CCA number
-                # wearing B4's name - a fabricated control.
                 _run_script("align_b4.py", common)
             elif base in _BASELINE_OF:
                 _run_script("align_classical.py", ["--baseline", _BASELINE_OF[base], *common])
@@ -411,9 +685,12 @@ def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = Non
 
     refs = {r: str(root / r / "embeddings_test.parquet")
             for r in ids if (root / r / "embeddings_test.parquet").is_file()}
-    return (AlignGrid(runs_root=str(root), run_refs=refs, computed=computed),
-            _rec("align", "pass", resolves_only=not computed,
-                 n_runs=len(refs), computed=computed))
+    rec = _rec("align", "pass", resolves_only=not computed,
+               n_runs=len(refs), computed=computed,
+               method="package" if use_package else "script")
+    if chain_records:
+        rec.params["chain_records"] = chain_records
+    return AlignGrid(runs_root=str(root), run_refs=refs, computed=computed), rec
 
 
 _BASELINE_OF = {"B1": "cca", "B2": "procrustes", "B3": "unaligned"}

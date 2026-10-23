@@ -1,0 +1,1 @@
+"""reusable training loops - callable from notebooks without importing orchestration."""
