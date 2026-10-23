@@ -1352,9 +1352,15 @@ def structure_and_its_null(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                   "reason": "" if len(ran) == len(out) else "unscoreable pairs",
                   "per_pair": out, "n_permutations": int(vals["n_permutations"]),
                   "null": "the LABEL is permuted, not the space",
+                  # G5's note is G5's. it read `why_diagnostic`, which is G1's
+                  # finding, so the guard table said the permutation null passed
+                  # BECAUSE the label encodes the confounder - two independent
+                  # guards reported as one reason. `reason` is the fallback
+                  # because that is what a G5 that could not run carries.
                   "guards": [{"guard": "G5_noise_floor", "scope": key,
                               "status": b["guard_g5"],
-                              "note": b.get("why_diagnostic") or b.get("reason", "")}
+                              "note": ((b.get("g5") or {}).get("note")
+                                       or b.get("reason", ""))}
                              for key, b in out.items()]
                             + [{"guard": "G1_label_granularity", "scope": key,
                                 "status": "fail",

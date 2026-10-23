@@ -18,7 +18,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, Field
 
@@ -252,7 +252,18 @@ _KINDS: dict[str, type[Record]] = {
     "dispatch": DispatchRecord,
 }
 
-_ACTORS: tuple[str, ...] = ("deterministic", "model", "human", "client", "system")
+# DERIVED from `Actor`, not hand-copied beside it. this was a second literal
+# listing the same five strings, which existed only because a `Literal` cannot
+# be iterated at runtime - the same cause as the routing arm being an
+# unenumerable Literal, and `test_one_ledger.py` names the risk in its own
+# words: "a closed set declared in one file and enforced in another is two
+# sets". `actor_ratio` counts from this, so a drift between the two would have
+# been a KeyError on the one actor the ledger was extended to carry.
+#
+# the field TYPE stays a Literal rather than becoming a StrEnum: these are
+# pydantic fields on every record in the ledger, and changing their type is a
+# serialisation question for the whole committed store, not a cleanup.
+_ACTORS: tuple[str, ...] = get_args(Actor)
 _VOLATILE = ("started_at", "duration_s", "code_version", "record_id")
 
 
@@ -313,9 +324,14 @@ def timed_node(fn):
         # default only fires in `coerce`, on the way into the ledger. so the
         # checkpoint and the ledger disagreed about whether a step had a time,
         # and the two are meant to be two VIEWS of one store.
+        # `is None`, not `or`. a step that did not run takes ~0 s, which rounds
+        # to 0.0 and is FALSY - so `or` replaced three known zeros with the
+        # node's 148.1 s and the trace summed 588.6 s for a 150 s run. a zero is
+        # a measurement; only None means nobody measured.
         out["records"] = [*out["records"][:before],
                           *({**r, "started_at": r.get("started_at") or now,
-                             "duration_s": r.get("duration_s") or d}
+                             "duration_s": (d if r.get("duration_s") is None
+                                            else r["duration_s"])}
                             for r in out["records"][before:])]
         return out
 

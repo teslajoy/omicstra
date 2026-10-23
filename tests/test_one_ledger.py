@@ -300,3 +300,84 @@ def test_the_trace_refuses_a_handle_from_another_layer(monkeypatch, tmp_path):
     import omicstra.mcp.server as S
     S = importlib.reload(S)
     assert S.runs_trace("never-existed")["steps"] == []
+
+
+# --- the time is the STEP's, because that is the only additive reading -------
+def test_each_step_carries_its_own_duration_not_the_nodes():
+    """`timed_node` stamps every record a node added with the NODE's duration,
+    which is not additive: the evaluate node runs a six-step chain, so all six
+    records read 145.7s and the three places that sum the field reported 874.3s
+    for a run that took 145.7."""
+    import time
+
+    from omicstra.protocols import Step, build_protocol
+    from omicstra.records import DiagnosticRecord
+
+    def slow(ctx):
+        time.sleep(0.05)
+        return DiagnosticRecord(step_id="slow", status="pass")
+
+    def quick(ctx):
+        return DiagnosticRecord(step_id="quick", status="pass")
+
+    recs = build_protocol([Step("slow", slow, authority="deterministic"),
+                           Step("quick", quick, authority="deterministic")],
+                          "t").invoke({"params": {"slow": {}, "quick": {}}})
+    assert recs["slow"]["duration_s"] >= 0.05
+    assert recs["quick"]["duration_s"] < recs["slow"]["duration_s"], \
+        "a fast step must not inherit a slow one's cost"
+
+
+def test_a_step_that_times_its_own_work_keeps_that_number():
+    """several measures already time themselves, and that is the tighter figure."""
+    from omicstra.protocols import Step, build_protocol
+    from omicstra.records import DiagnosticRecord
+
+    def own(ctx):
+        return DiagnosticRecord(step_id="own", status="pass", duration_s=9.5)
+
+    recs = build_protocol([Step("own", own, authority="deterministic")],
+                          "t").invoke({"params": {"own": {}}})
+    assert recs["own"]["duration_s"] == 9.5
+
+
+def test_a_step_a_prerequisite_blocked_is_timed_as_well():
+    """it took no time, and that is a KNOWN time - different from an unknown
+    one, which the trace reports as missing rather than as zero."""
+    from omicstra.protocols import Step, build_protocol
+    from omicstra.records import DiagnosticRecord
+
+    def boom(ctx):
+        raise RuntimeError("no")
+
+    def after(ctx):
+        return DiagnosticRecord(step_id="after", status="pass")
+
+    recs = build_protocol(
+        [Step("boom", boom, produces={"x"}, authority="deterministic"),
+         Step("after", after, requires={"x"}, authority="deterministic")],
+        "t").invoke({"params": {"boom": {}, "after": {}}})
+    assert recs["after"]["status"] == "not_run"
+    assert recs["after"]["duration_s"] is not None
+
+
+def test_a_known_zero_is_not_replaced_by_the_nodes_duration():
+    """a step a prerequisite blocked takes ~0 s, which rounds to 0.0 and is
+    FALSY - so `or` replaced three known zeros with the node's 148.1 s and the
+    trace summed 588.6 s for a run that took 150. a zero is a measurement; only
+    None means nobody measured."""
+    import time
+
+    from omicstra.records import timed_node
+
+    @timed_node
+    def node(state):
+        time.sleep(0.05)
+        return {"records": [{"step_id": "blocked", "kind": "diagnostic",
+                             "status": "not_run", "duration_s": 0.0},
+                            {"step_id": "untimed", "kind": "diagnostic",
+                             "status": "pass"}]}
+
+    recs = node({"records": []})["records"]
+    assert recs[0]["duration_s"] == 0.0, "a known zero stands"
+    assert recs[1]["duration_s"] >= 0.05, "an unmeasured step gets the node's"

@@ -433,3 +433,17 @@ def test_the_cohorts_declared_params_are_what_the_arm_used():
     # the null is the GUARD's floor, not the published 500 - and says so
     assert p["structure_and_its_null"]["n_permutations"] == 20
     assert "reduced null is never a candidate" in p["note"]
+
+
+def test_each_guards_note_is_its_own_finding():
+    """G5's note read `why_diagnostic`, which is G1's finding - so the guard
+    table said the permutation null passed BECAUSE the label encodes the
+    confounder, reporting two independent guards as one reason."""
+    rows = [g for step in (s.id for s in EVALUATE_STEPS)
+            for g in _obs(step).get("guards", [])]
+    g5 = [g for g in rows if g["guard"] == "G5_noise_floor"
+          and g["status"] in ("pass", "fail")]
+    assert g5, "G5 did not run, so there is no note to check"
+    for g in g5:
+        assert "encodes the confounder" not in (g.get("note") or ""), g
+        assert "permutation" in (g.get("note") or ""), g
