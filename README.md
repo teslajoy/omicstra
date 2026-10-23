@@ -574,7 +574,7 @@ omicstra/
 │   · models/encoders.py             # the encoder registry, resolved by declared name.
 │   │                                #   spec() is metadata; only load() needs torch
 │   · agents/modality.py             # he / st / pathway agents - read recorded evidence
-│   · mcp/server.py                  # 20 tools, 2 resources, stdio + http. zero model calls
+│   · mcp/server.py                  # 21 tools, 2+2 resources, stdio + http. zero model calls
 │   · records.py  artifacts.py       # the record contract - inventory/eda_summary io
 │   · settings.py  cli.py            # 8 commands. settings imports nothing from omicstra
 │   · routing.py  eda.py  figures.py # resolve + ledger · gate · plots
@@ -642,12 +642,15 @@ omicstra families        # which questions it can answer, and which it cannot ye
 omicstra route cross_modal_retrieval
 ```
 
-`omicstra --help` lists all twelve. Four answer *what is this cohort* -
+`omicstra --help` lists all fifteen. Four answer *what is this cohort* -
 `describe`, `inventory`, `gate`, `families`. Four answer *what does it say* -
-`route`, `selftest`, `decisions`, `report`. Three do the work - `eda`, `run`,
-`promote`. One starts a cohort - `init`. **`selftest` first** - it tells a new
-cohort owner whether their declarations and evidence hang together before they
-spend time on anything else.
+`route`, `selftest`, `decisions`, `report`. Five do the work - `eda`, `align`'s
+grid through `run`, the whole walk through `chain`, `promote`, and `worker` for
+the encode queue. One starts a cohort - `init`. One writes the record a reader
+opens - `notebook`, which emits an analysis unit as a rerunnable notebook plus
+its trace. **`selftest` first** - it tells a new cohort owner whether their
+declarations and evidence hang together before they spend time on anything
+else.
 
 **stdio** - the usual client config:
 

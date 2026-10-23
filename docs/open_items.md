@@ -87,6 +87,14 @@ not work.
 |---|---|---|---|---|---|
 | 34 | the second cohort's evidence pack did not ship | memory `project_session_handoff.md:20` | deferred | "the second cohort's evidence pack did NOT ship and is 1.3's whole claim." | open / deferred |
 
+## found while building, not yet acted on
+
+| # | item | where | kind | the record's own words | status |
+|---|---|---|---|---|---|
+| 41 | a scaffolded cohort writes under the PACKAGE, not its own project root | `src/omicstra/settings.py:121` `work_root` | defect | "the fallback resolves under `repo_root`, which is right for a source checkout and wrong for an installed server" | open - the default cannot simply be changed: several tests isolate by redirecting `runs_dir`, and a declared `work_dir` ignores that redirect, so a seed-cohort test would write into the ledger a report reads. fix belongs with the isolation mechanism |
+| 42 | `omicstra inventory` overwrites the committed full-cohort record with a capped run | `src/omicstra/cli.py:213` `inventory` | defect | `--max-samples 2` rewrote `projects/tnbc-92/inventory.json` from 280 samples to 2, and the only warning was "CAPPED" in the console | open - a capped run should not be able to replace an uncapped record. either write capped output to a separate name or refuse the overwrite |
+| 43 | the CLI step chains write no ledger records | `src/omicstra/cli.py` `inventory`, `eda` | gap | `inventory` ran 8 steps and `runs/{id}/records/decisions.jsonl` stayed empty; only the graph arms persist, through `mcp/server.py:_persist` | open - so `report`, `trace` and `omicstra notebook` see nothing for a cohort driven from the CLI. the one-ledger rule covers the arms and not this path |
+
 ## hygiene
 
 | # | item | where | kind | the record's own words | status |

@@ -169,7 +169,8 @@ to do:
   name. `spec()` is metadata only and needs no tensor library; only `load()` does
 - `src/omicstra/adapters/canonical.py` — the package's input contract: .h5ad plus
   a coordinates table. no format-specific reader lives in the package
-- `src/omicstra/mcp/server.py` — 20 tools, 2 resources, stdio + http, zero model
+- `src/omicstra/mcp/server.py` — 21 tools, 2 resources + 2 per-cohort
+  templates, stdio + http, zero model
   calls. two compute agents (`he_encode`, `st_encode`), each with its own gate set,
   plus `align_run` (resolves a grid) and `evaluate_run` (states a verdict on
   H1/H2/H3 over the artifacts the pack cites), and
@@ -256,6 +257,14 @@ a working doc is never cited          the pack is what a claim resolves to. a
                                        later answered is not a contradiction
 quote the enclosing header with       a scoped number read as a global one is a
   any line                             contradiction that is not there
+a record carries what its step        `_link` filters a cohort's declaration to
+  was GIVEN                            each step's params_space, so that frame
+                                       is the only one that knows. the field was
+                                       empty in every chain and no rerun was
+                                       possible
+a reported time is the STEP's         `timed_node` stamps the NODE's duration on
+                                       every record it adds, and three places
+                                       SUM the field - 874.3s for a 147.8s run
 ```
 
 ### document precedence

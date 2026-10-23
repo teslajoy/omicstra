@@ -123,6 +123,82 @@ that is the release claim for 1.3, and the second cohort's pack is what proves
 it. the record already says so: *"the second cohort's evidence pack did NOT
 ship and is 1.3's whole claim."*
 
+### 5 · the verdict as something a reader opens - DONE 2026-10-20
+
+a verdict in a JSON tool result is not a deliverable. `unit_notebook` (21st
+tool) and `omicstra notebook UNIT` write an ANALYSIS UNIT as a rerunnable
+notebook plus a markdown trace, from the cohort's own decision ledger. the unit
+is the key, not the run: one current record per unit, regenerated, with the run
+named in the header.
+
+verified on tnbc-92/R4_v3, generated and EXECUTED:
+
+```
+pass             label_granularity          reproduced 5 of 6 step(s)
+not_applicable   paired_identifiability
+pass             structure_and_its_null     H1: not_run, H2: diagnostic, H3: not_run
+not_run          held_out_comparison        - identical to the recorded run
+not_applicable   association_and_specificity
+pass             hypothesis_verdict
+```
+
+four defects the execution found, three of them in the record rather than in the
+notebook:
+
+- a record's `params` was empty for every step in every chain. `_link` filters a
+  cohort's declaration to each step's `params_space`, so only that frame knows
+  what the step saw, and nothing wrote it down - the first rerun re-derived
+  nothing and said `reproduced`
+- `duration_s` was the NODE's time on every record it added, and three places
+  sum the field: 874.3s reported for a 147.8s run. timed per step now, and
+  `timed_node`'s `or` fallback - which replaced a known 0.0 - tests `is None`
+- `structure_and_its_null` put G1's finding in G5's note, so the guard table
+  read "G5_noise_floor pass - the label encodes the confounder"
+- the footer printed `reproduced` when every step was `not_run`, and the setup
+  cell formatted an adapter name of `None` into a module path for five of the
+  seven units
+
+---
+
+## where the next session starts
+
+```
+branch        v1.3-design-and-catalogue
+suite         1055 passed, 1 skipped   (venv/bin/python -m pytest tests/ -q)
+tree          DIRTY - two commits prepared, neither made. messages written at
+              design/_scratch/commit_records.txt and commit_notebook.txt
+              (git-ignored). commit the record fixes FIRST:
+                protocols/__init__.py  records.py  protocols/evaluate.py
+                tests/test_one_ledger.py  tests/test_evaluate_slicediff.py
+              then everything else.
+```
+
+sections 1-5 above are done and each carries its proof. what is left of the card
+is the one thing a package cannot do for itself:
+
+```
+cohort two      the release claim. `omicstra init`, canonical input, the
+                declarations filled in, then ONE MCP call to a verdict. the two
+                human decisions that block it are the marker panels and whether
+                cross_modal_registration / model_tissue_fit /
+                multi_section_alignment get built or get declared unanswerable
+publish         1.3 is not on PyPI; latest there is 1.2.0
+```
+
+three items this card surfaced and did NOT fix, all in `docs/open_items.md`:
+
+```
+41  a cohort with no declared work_dir writes under the PACKAGE. the default
+    cannot be changed in passing - several tests isolate by redirecting
+    runs_dir, and a declared work_dir ignores that redirect
+42  `omicstra inventory --max-samples 2` REPLACED the committed 280-sample
+    projects/tnbc-92/inventory.json. restored from git. a capped run must not
+    be able to overwrite an uncapped record
+43  the CLI step chains persist nothing to the ledger - only the graph arms do,
+    through mcp/server.py:_persist. so report, trace and notebook see nothing
+    for a cohort driven from the CLI
+```
+
 ---
 
 ## not in this card
