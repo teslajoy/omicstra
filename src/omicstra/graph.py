@@ -38,6 +38,8 @@ from typing import Annotated, Any, Literal, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from omicstra.contracts.project import ProjectConfig
+from omicstra.labels import (HandleArm, Resolution, Route, StageStatus,
+                             UnknownLabel, parse)
 from omicstra.routing import load_routing_evidence
 from omicstra.settings import settings
 
@@ -46,7 +48,12 @@ _log = logging.getLogger(__name__)
 # "refuse" is a third arm and not an error state. a question the contract does
 # not declare has no method behind it, so neither resolving nor computing is
 # available - and saying so is the answer rather than a failure to answer.
-Arm = Literal["ask", "compute", "refuse"]
+#
+# the vocabulary is `labels.Route` rather than a Literal: a Literal is checked by
+# a type checker and by nothing at runtime, so it could not be iterated for the
+# exhaustiveness lint and could not refuse an unknown value at a boundary. `Arm`
+# stays as an alias because the name is published in tool descriptions.
+Arm = Route
 
 
 # MUST be module level. under `from __future__ import annotations` a
@@ -62,15 +69,32 @@ class OmicstraState(TypedDict, total=False):
     # discovery
     has_evidence: bool            # does the cohort hold ANY evidence
     has_evidence_for_task: bool   # does it hold evidence for the task asked
-    # ask | compute | refuse. NOT the same `arm` the gate subgraphs carry, which
-    # is the run handle's he | st | align | evaluate - two meanings, one key, and
-    # the key is shared with every subgraph BY NAME. a subgraph wired here
-    # therefore receives `compute` in a field the MCP would read as a handle arm,
-    # so `_runner_for` refuses an arm it does not know rather than defaulting to
-    # the H&E graph. the collision is named here because the names are published
-    # on both sides and renaming either would make two names for one idea.
-    arm: Arm
-    arm_reason: str
+    # ask | compute | refuse, and the field is `route` because `arm` meant this
+    # AND the run handle's he | st | align | evaluate - two enums in one key,
+    # shared with every subgraph BY NAME, so a subgraph wired here received
+    # `compute` in the field the MCP reads as a handle arm.
+    #
+    # renaming THIS side is what removes the collision: the subgraphs keep `arm`
+    # and it now has exactly one meaning in the codebase. renaming their side
+    # too would read better and would invalidate every persisted checkpoint for
+    # no additional safety, since `labels.parse` already refuses a value from
+    # the wrong vocabulary at every boundary.
+    #
+    # `arm` is NOT declared here, and that is the fix rather than a detail.
+    # langgraph filters state by the declared keys in BOTH directions, so a
+    # declared `arm` would take the subgraph's handle value on the way back up -
+    # measured: a child writing arm="st" lands in the parent when the parent
+    # declares the key, and is dropped when it does not. the field would then be
+    # typed Route and hold a HandleArm.
+    #
+    # no deprecated read alias either. it would have existed for one case - a
+    # level-0 thread checkpointed before the rename, resumed after - and in that
+    # case the subgraph has already overwritten `arm` with its own vocabulary, so
+    # the fallback reads "he" and `parse` refuses it. a fallback that fails in
+    # the one case it exists for is worse than its absence, because the absence
+    # is a legible refusal. `_arm` names the migration instead.
+    route: Route
+    route_reason: str
     # --- shared with subgraphs BY NAME ------------------------------------
     # a key the parent does not declare is DROPPED at the boundary, in both
     # directions. so every key a subgraph reads from or writes to the parent
@@ -174,7 +198,7 @@ def discover(state: OmicstraState) -> dict:
 
     arm, why = _arm_for(task_id, tasks, state.get("project_id"))
     out = {"has_evidence": has, "has_evidence_for_task": bool(task_id and task_id in tasks),
-           "arm": arm, "arm_reason": why, "cohort": cohort}
+           "route": arm, "route_reason": why, "cohort": cohort}
     if not state.get("encoder"):
         out["encoder"] = _primary_encoder(state.get("project_id"))
     return out
@@ -202,14 +226,14 @@ def _arm_for(task_id: str | None, tasks: dict,
     if not task_id:
         # no task named: the caller is asking about the cohort rather than a
         # question. evidence decides, as it did before.
-        return ("ask" if tasks else "compute",
+        return (Route.ASK if tasks else Route.COMPUTE,
                 "no task named - the arm follows whether the cohort has any evidence")
     if task_id in tasks:
-        return "ask", f"{task_id} has recorded evidence on this cohort"
+        return Route.ASK, f"{task_id} has recorded evidence on this cohort"
     if _known_task(task_id, project_id):
-        return "compute", (f"{task_id} is a declared task family and this cohort has "
+        return Route.COMPUTE, (f"{task_id} is a declared task family and this cohort has "
                            "not run it - that is work outstanding, not a refusal")
-    return "refuse", (f"{task_id} is not a task family the contract declares, so there "
+    return Route.REFUSE, (f"{task_id} is not a task family the contract declares, so there "
                       "is no method to run and nothing to compute")
 
 
@@ -266,7 +290,22 @@ def unit_counts_from_records(records: list[dict]) -> dict[str, int]:
 
 
 def _arm(state: OmicstraState) -> str:
-    return state.get("arm", "compute")
+    """the branch `discover` chose, parsed.
+
+    `state.get("arm", "compute")` defaulted a MISSING value to the compute
+    chain, which is a wiring fault answered with a guess - and the one guess
+    that runs the most work. `discover` always sets `route`, so absent means
+    either the graph was assembled wrong or this is a level-0 thread
+    checkpointed before `arm` became `route`; the refusal says both.
+    """
+    route = state.get("route")
+    if route is None and state.get("arm") is not None:
+        raise UnknownLabel(
+            "this level-0 thread carries `arm` and no `route`, so it was "
+            "checkpointed before the two vocabularies were separated. its arm "
+            "may already hold a handle label written by a subgraph, which is "
+            "why there is no fallback: start a new run rather than resume it.")
+    return str(parse(Route, route, "graph._arm route"))
 
 
 def carry_counts(state: OmicstraState) -> dict:
@@ -295,39 +334,104 @@ def _halted(state: OmicstraState) -> str:
 # the graph - the same discipline the encode slot has had since it existed.
 COMPUTE_CHAIN = ("eda", "encode", "st", "align", "evaluate")
 
-# a status that means the stage left work in flight, or could not run. the chain
-# STOPS on these rather than walking into a stage whose inputs do not exist yet.
+# --- what this consumer does with every label it can be handed ---------------
+# TWO vocabularies arrive here and they are not interchangeable: a stage reports
+# a `StageStatus`, the routing subgraph concludes a `Resolution`. `labels.py`
+# records what one list for both cost.
+#
+# both halves are spelled out rather than one plus a fall-through, because a
+# label in neither half is a label nobody decided about, and
+# `test_rule_lints.py::test_every_label_a_producer_emits_is_handled_by_its_consumer`
+# fails on it rather than letting it continue by default.
+
+# the stage left work in flight, or could not run. STOP rather than walk into a
+# stage whose inputs do not exist yet.
 #
 # `submitted` is the one that matters and the reason this is not a straight
 # chain: an encode with compute=True returns at submission, so the embeddings a
 # later stage reads are not on disk when the next node would run. the run handle
 # is how the chain continues - the shards land, and a caller re-enters at the
 # stage that needs them.
-STOP_AFTER = ("submitted", "refused", "halted", "unavailable", "not_run")
+STOP_AFTER = frozenset({
+    StageStatus.SUBMITTED, StageStatus.REFUSED, StageStatus.HALTED,
+    StageStatus.UNAVAILABLE, StageStatus.NOT_RUN,
+})
+
+# the stage finished and produced what the next one reads.
+CONTINUE_AFTER = frozenset({
+    StageStatus.READY, StageStatus.RESOLVED, StageStatus.COMPUTED,
+    StageStatus.EVALUATED, StageStatus.MEASURED, StageStatus.NOTHING_TO_RUN,
+})
+
+# the routing half. the three that stop are the three where the system has NOT
+# answered: a refusal stands, a tie says "the system does not pick", and an
+# escalation is a question for a person. letting any of them through meant a
+# chain that abstained and then stated a verdict anyway.
+#
+# `refuse` stopping here is also what makes `ask_human` a gate rather than only
+# a pause: a declined override leaves the resolution at `refuse`, and before
+# this the decline flowed on exactly as an approval did.
+RESOLUTION_STOPS = frozenset({
+    Resolution.REFUSE, Resolution.TIE, Resolution.ESCALATE,
+})
+
+# the system answered, so the chain may use the answer. `override_ack` is a
+# human's explicit yes on the record, which is a decision and not an abstention.
+RESOLUTION_CONTINUES = frozenset({
+    Resolution.RECOMMEND, Resolution.OVERRIDE_ACK,
+})
 
 
 def _keeper(name: str):
-    """record a finished stage's report before the next one overwrites it.
+    """record a finished stage's outcome before the next one overwrites it.
 
-    `resolution` is the fallback because the routing subgraph states its outcome
-    there rather than in a report - so a chain that read only `report` logged the
-    one stage that had actually decided something as `unknown`.
+    `status` and `resolution` are kept as SEPARATE fields. collapsing them with
+    `rep.get("status") or state.get("resolution")` is what made the two
+    vocabularies indistinguishable one field later: a reader - and `_continue` -
+    could no longer tell which producer had written the value it was holding.
+    the collapse existed because a chain that read only `report` logged the
+    routing stage as `unknown`; recording both answers that without the merge.
     """
     def keep(state: OmicstraState) -> dict:
         rep = dict(state.get("report") or {})
-        status = rep.get("status") or state.get("resolution") or "unknown"
-        return {"stages": [{"stage": name, "status": status, "report": rep}]}
+        row = {"stage": name, "status": rep.get("status"),
+               "resolution": state.get("resolution"), "report": rep}
+        # `outcome` is what a reader wants: whichever of the two decided, with
+        # `unknown` when neither did. it is for the RECORD only - nothing
+        # branches on it, because branching is what needs the vocabularies apart.
+        row["outcome"] = row["status"] or row["resolution"] or "unknown"
+        return {"stages": [row]}
 
     keep.__name__ = f"after_{name}"
     return keep
 
 
 def _continue(state: OmicstraState) -> str:
-    """go on, or stop here and say where."""
+    """go on, or stop here and say where.
+
+    each vocabulary is parsed against its OWN enum, and an unknown label raises
+    rather than falling through to "go". that fall-through is the defect: a
+    value this function did not recognise looked exactly like a value it had
+    decided to continue on.
+    """
     if state.get("halted"):
         return "stop"
+
     status = (state.get("report") or {}).get("status")
-    return "stop" if status in STOP_AFTER else "go"
+    if status is not None:
+        return "stop" if parse(StageStatus, status,
+                               "graph._continue report.status") in STOP_AFTER else "go"
+
+    # no report: the routing subgraph states its outcome as a resolution. it is
+    # a different vocabulary and gets its own partition.
+    res = state.get("resolution")
+    if res is not None:
+        return "stop" if parse(Resolution, res,
+                               "graph._continue resolution") in RESOLUTION_STOPS else "go"
+
+    # neither: the stage decided nothing it wanted to report, which is not a
+    # reason to stop - carry_counts is the one that does this.
+    return "go"
 
 
 def make_checkpointer(spec: str | None = None):

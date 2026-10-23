@@ -22,6 +22,7 @@ from mcp.types import LATEST_PROTOCOL_VERSION
 
 from omicstra.contracts.project import ProjectConfig
 from omicstra.eda import load_contract, load_summary, run_gate
+from omicstra.labels import HandleArm, Route
 from omicstra.settings import settings
 
 srv = MCPServer("omicstra")
@@ -700,10 +701,10 @@ def _runner(arm: str = "he"):
 # choice - the gate sets genuinely differ - so the resume path has to know which
 # one a handle belongs to, and it reads that from the checkpoint rather than from
 # the shape of the run_id.
-ARMS = {"he": "omicstra.graphs.encode:build_encode_graph",
-        "st": "omicstra.graphs.st:build_st_graph",
-        "align": "omicstra.graphs.align:build_align_graph",
-        "evaluate": "omicstra.graphs.evaluate:build_evaluate_graph"}
+ARMS = {HandleArm.HE: "omicstra.graphs.encode:build_encode_graph",
+        HandleArm.ST: "omicstra.graphs.st:build_st_graph",
+        HandleArm.ALIGN: "omicstra.graphs.align:build_align_graph",
+        HandleArm.EVALUATE: "omicstra.graphs.evaluate:build_evaluate_graph"}
 
 
 def _app_for(target: str, saver):
@@ -737,14 +738,36 @@ def _runner_for(run_id: str):
     app, spec = _runner()
     snap = app.get_state({"configurable": {"thread_id": run_id}})
     values = (snap.values if snap else None) or {}
-    arm = values.get("arm", "he")
-    if arm not in ARMS:
+    # NO default. `values.get("arm", HandleArm.HE)` defeated the refusal three
+    # lines below it: a LEVEL 0 thread carries no handle arm, so it resolved to
+    # `he` and this returned the encode graph holding a level-0 snapshot - the
+    # exact case the error message says is refused. `graphs/align.py:38` records
+    # the same default biting from the other side, where omitting the key made a
+    # resume re-enter the encode graph.
+    raw = values.get("arm")
+    # an EMPTY checkpoint is a different statement from a checkpoint that is not
+    # an arm's: "never heard of this thread" against "this thread exists and
+    # belongs to level 0". the callers report the first as `unknown` and name the
+    # checkpointer, so it must not be refused here - removing the old
+    # `HandleArm.HE` default collapsed the two and made a nonexistent run_id
+    # read as `refused`, which is a false claim about a thread that is not there.
+    if not values:
+        return app, spec, snap, None
+    try:
+        arm = HandleArm(raw)
+    except ValueError:
+        # the message names BOTH vocabularies, because the useful question on an
+        # unrecognised value is which of the two producers wrote it. this is the
+        # guard that kept the `arm` collision from ever silently serving the
+        # wrong graph, and it is the pattern `labels.parse` generalises.
         raise NotAnArmHandle(
-            f"{run_id!r} records arm {arm!r}, which is not one of {sorted(ARMS)}. "
-            "a run handle belongs to one modality or stage arm; a thread from "
-            "level 0 carries its routing arm in the same field and is resumed "
-            "through the chain, not through an arm.")
-    if arm != "he":
+            f"{run_id!r} records arm {raw!r}, which is not one of "
+            f"{sorted(m.value for m in HandleArm)}. a run handle belongs to one "
+            "modality or stage arm; a level-0 thread records a ROUTING decision "
+            f"({sorted(m.value for m in Route)}) under `route` and carries no "
+            "handle arm at all, and it is resumed through the chain rather than "
+            "through an arm.") from None
+    if arm is not HandleArm.HE:
         from omicstra.graph import make_checkpointer
 
         saver, spec = make_checkpointer()
@@ -817,7 +840,7 @@ def he_encode(project_id: str | None = None, platform: str | None = None,
     # check_compute_gates already warns about in its own comment. the seed cohort
     # hid it by declaring an answer, so the gate never needed to measure.
     counts, coverage = _unit_counts(project_id)
-    out = app.invoke({"project_id": project_id, "encoder": encoder, "arm": "he",
+    out = app.invoke({"project_id": project_id, "encoder": encoder, "arm": HandleArm.HE,
                       "cohort": cohort, "platform": platform,
                       "unit_counts": counts or None,
                       "samples": samples, "compute": compute}, cfg)
@@ -856,7 +879,7 @@ def st_encode(project_id: str | None = None, platform: str | None = None,
     # check_compute_gates already warns about in its own comment. the seed cohort
     # hid it by declaring an answer, so the gate never needed to measure.
     counts, coverage = _unit_counts(project_id)
-    out = app.invoke({"project_id": project_id, "encoder": encoder, "arm": "st",
+    out = app.invoke({"project_id": project_id, "encoder": encoder, "arm": HandleArm.ST,
                       "cohort": cohort, "platform": platform,
                       "unit_counts": counts or None,
                       "samples": samples, "compute": compute}, cfg)
@@ -897,7 +920,7 @@ def align_run(project_id: str | None = None, compute: bool = False,
     # behaviour while implying the stage returned a verdict over it. the gates a
     # verdict needs - scope, the bytes, what a failed guard does to the claim -
     # are evaluate_run's.
-    out = app.invoke({"project_id": project_id, "arm": "align",
+    out = app.invoke({"project_id": project_id, "arm": HandleArm.ALIGN,
                       "cohort": cohort,
                       "compute": compute}, cfg)
     return {**_handle(app, rid, out), "checkpointer": spec}
@@ -930,7 +953,7 @@ def evaluate_run(project_id: str | None = None,
     # party, and node inputs are cohort content.
     assert_may_trace(cohort, project_id)
     cfg = {"configurable": {"thread_id": rid}}
-    out = app.invoke({"project_id": project_id, "arm": "evaluate",
+    out = app.invoke({"project_id": project_id, "arm": HandleArm.EVALUATE,
                       "cohort": cohort,
                       # absent means every hypothesis the contract declares a
                       # family for. a named subset is recorded as the request,
@@ -971,7 +994,7 @@ def evaluate_measure(run: str, project_id: str | None = None,
     # inputs are cohort content, and this arm's inputs are the arrays themselves.
     assert_may_trace(cohort, project_id)
     cfg = {"configurable": {"thread_id": rid}}
-    out = app.invoke({"project_id": project_id, "arm": "evaluate",
+    out = app.invoke({"project_id": project_id, "arm": HandleArm.EVALUATE,
                       "cohort": cohort, "compute": True, "run": run,
                       "paired_view": paired_view,
                       # the caller's question, not the cohort's declaration: a
@@ -997,6 +1020,20 @@ def runs_resume(run_id: str, answers: dict | None = None,
         app, spec, snap, arm = _runner_for(run_id)
     except NotAnArmHandle as e:
         return {"run_id": run_id, "status": "refused", "arm": None, "why": str(e)}
+
+    # an ABSENT checkpoint is refused here as it is by the three read tools,
+    # which all check this immediately after resolving. this one did not: it
+    # fell through to `Command(resume=...)` on a thread it had never seen, and
+    # reported whatever arm `_runner_for` had defaulted to. the handle is only
+    # meaningful against the store that holds it.
+    if not snap or not snap.values:
+        return {"run_id": run_id, "status": "unknown", "arm": None,
+                "checkpointer": spec,
+                "why": ("no checkpoint under this handle in "
+                        f"{spec} - a run_id is only meaningful against the "
+                        "store that holds it, and resuming one this "
+                        "checkpointer has never seen would start a new run "
+                        "under an old name")}
     cfg = {"configurable": {"thread_id": run_id}}
 
     # a run past its gates whose thread died has no interrupt to resume. the
@@ -1146,6 +1183,54 @@ def runs_record(run_id: str) -> dict:
             "ledger": str(led.path) if led.path else None,
             "cohort_decisions": len(led.all()),
             "encoder": v.get("encoder"), "platform": v.get("platform")}
+
+
+@srv.tool(description=(
+    "Write one ANALYSIS UNIT as a rerunnable notebook plus a markdown trace, "
+    "and return both paths. The unit is the key, not the run: a run id is an "
+    "execution artifact, so a cohort carries one current record per unit - eda, "
+    "inventory, join, evaluate - regenerated to the latest state, with the run "
+    "that produced the numbers named in the header. The source is the cohort's "
+    "own decision ledger, never an external trace: a Record carries the "
+    "CRITERION a number was judged against, which is what re-deriving the "
+    "science needs, and the ledger is local and always on while external "
+    "tracing is refused on a cohort the contract says may not leave the host. "
+    "Each notebook cell calls the same step function that ran, with the "
+    "parameters that run recorded, and checks the numbers it gets back - so a "
+    "clean rerun is the reproduction proof. The pair lands under the cohort's "
+    "work root beside its ledger and figures, because a generated notebook is a "
+    "result and not part of the package. A unit with no records in the ledger is "
+    "refused rather than rendered empty, and a unit with no declared context "
+    "loader is refused by name. Not runs_trace, which answers where ONE run "
+    "spent its time as JSON; this writes a unit's reproducible record as two "
+    "files a reader opens."))
+def unit_notebook(unit: str, project_id: str | None = None,
+                  run: str | None = None, sample: str | None = None,
+                  run_id: str | None = None) -> dict:
+    from omicstra.contracts.routing import ledger
+    from omicstra.notebook import UNITS, from_ledger, write
+
+    generable = sorted(u for u, v in UNITS.items() if v.context)
+    try:
+        b = from_ledger(unit, project_id, run=run, sample=sample, run_id=run_id)
+    except ValueError as e:
+        return {"status": "refused", "why": str(e), "units": generable}
+
+    led = ledger(project_id)
+    if not b["records"]:
+        return {"status": "refused", "unit": unit,
+                "why": (f"the ledger holds no {unit} step for this cohort, so "
+                        "there is nothing to re-derive. a chain run outside the "
+                        "graph writes no records."),
+                "ledger": str(led.path) if led.path else None}
+
+    nb, tr = write(b, project_id)
+    return {"status": "written", "unit": unit,
+            "asks": UNITS[unit].asks,
+            "notebook": str(nb), "trace": str(tr),
+            "steps": [r["step_id"] for r in b["records"]],
+            "produced_by_run": b.get("run_id"),
+            "ledger": str(led.path) if led.path else None}
 
 
 # LAST in the file, and that is load-bearing. it sat above `_resources` and the

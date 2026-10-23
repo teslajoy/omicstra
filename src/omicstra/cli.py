@@ -14,6 +14,7 @@ import click
 
 from omicstra.contracts.project import ProjectConfig
 from omicstra.eda import run_gate
+from omicstra.labels import Route
 from omicstra.settings import settings
 
 TEMPLATE = {
@@ -713,6 +714,62 @@ def report(project_dir: Path | None, project_id: str | None, out: Path | None,
         click.echo(text)
 
 
+@main.command()
+@click.argument("unit", required=False)
+@click.option("--project-dir", default=None, type=click.Path(path_type=Path))
+@click.option("--project-id", default=None)
+@click.option("--run", default=None,
+              help="the fitted run the evaluation chain reads.")
+@click.option("--sample", default=None, help="the sample the join chain reads.")
+@click.option("--run-id", default=None,
+              help="the run that produced these records, for the header. a "
+                   "ledger record does not carry one.")
+def notebook(unit: str | None, project_dir: Path | None, project_id: str | None,
+             run: str | None, sample: str | None, run_id: str | None) -> None:
+    """write one analysis unit as a rerunnable notebook and its trace.
+
+    keyed on the UNIT, not on a run: a run id is an execution artifact, and a
+    cohort wants one current record per unit. with no UNIT, lists the ones this
+    package can generate and what each answers.
+
+    the pair lands under the cohort's work root, beside its ledger and figures -
+    a generated notebook is a result, not part of the package.
+    """
+    from omicstra.notebook import UNITS, from_ledger, write
+
+    if project_dir is not None:
+        settings.project_dir = project_dir.expanduser()
+
+    if not unit:
+        for name, u in sorted(UNITS.items()):
+            if u.context:
+                click.echo(f"  {name:24s} {u.asks}")
+            else:
+                click.echo(click.style(
+                    f"  {name:24s} {u.asks}  (no context loader - not generable)",
+                    dim=True))
+        return
+
+    try:
+        b = from_ledger(unit, project_id, run=run, sample=sample, run_id=run_id)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+
+    # an empty unit would still render: a header, no step cells, and a footer
+    # claiming a clean rerun. refuse, and name the file that holds nothing for
+    # this unit, because the usual cause is that the chain ran outside the graph.
+    if not b["records"]:
+        from omicstra.contracts.routing import ledger as _ledger
+        raise click.ClickException(
+            f"the ledger holds no {unit} step for this cohort, so there is "
+            f"nothing to re-derive: {_ledger(project_id).path}. run the unit's "
+            "gate first - a chain run outside the graph writes no records.")
+
+    nb, tr = write(b, project_id)
+    click.echo(f"wrote {nb}")
+    click.echo(f"wrote {tr}   ({len(b['records'])} steps)")
+
+
 @main.command(name="run")
 @click.option("--project-dir", default=None, type=click.Path(path_type=Path))
 @click.option("--project-id", default=None)
@@ -1067,7 +1124,7 @@ def chain(project_dir, project_id, task_id, hypotheses, compute, answers, thread
             break
         out = app.invoke(Command(resume=have), cfg)
 
-    click.echo(f"\narm: {out.get('arm')} - {out.get('arm_reason', '')}")
+    click.echo(f"\nroute: {out.get('route')} - {out.get('route_reason', '')}")
     stages = out.get("stages") or []
     if stages:
         click.echo("-" * 68)
@@ -1084,7 +1141,7 @@ def chain(project_dir, project_id, task_id, hypotheses, compute, answers, thread
             click.echo(f"  {h:<6} claims {d['claims']:<12} "
                        f"guards ran {len(d['guards_ran'])}, "
                        f"failed {len(d['guards_failed'])}")
-    if not compute and out.get("arm") == "compute":
+    if not compute and out.get("route") == Route.COMPUTE:
         click.echo("\nnothing ran - every stage resolved. pass --compute to execute.")
 
 

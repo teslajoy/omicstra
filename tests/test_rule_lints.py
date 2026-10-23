@@ -133,7 +133,8 @@ def test_the_graph_doc_exists_and_names_every_graph_module():
 def test_the_graph_doc_names_the_level_zero_chain_in_the_order_the_code_wires_it():
     """a diagram that drifts from the wiring is worse than none: it is read as
     authoritative and is wrong."""
-    from omicstra.graph import COMPUTE_CHAIN, STOP_AFTER
+    from omicstra.graph import COMPUTE_CHAIN, CONTINUE_AFTER, STOP_AFTER
+    from omicstra.labels import StageStatus
 
     doc = GRAPH_DOC.read_text()
     at = [doc.index(f"graphs/{n}.py") for n in COMPUTE_CHAIN]
@@ -142,7 +143,11 @@ def test_the_graph_doc_names_the_level_zero_chain_in_the_order_the_code_wires_it
         f"{list(COMPUTE_CHAIN)}")
     assert "STOP_AFTER" in doc and "COMPUTE_CHAIN" in doc
     assert "submitted" in doc, "the stop that matters must be stated"
-    assert all(s in doc for s in ("submitted",)) and STOP_AFTER[0] == "submitted"
+    # membership, not position. this read `STOP_AFTER[0] == "submitted"`, using
+    # a tuple index as a proxy for "the stop that matters" - which stopped
+    # meaning anything once the consumer became a set keyed by vocabulary.
+    assert StageStatus.SUBMITTED in STOP_AFTER
+    assert StageStatus.SUBMITTED not in CONTINUE_AFTER
 
 
 # --- the queue's name rule -------------------------------------------------
@@ -344,3 +349,83 @@ def test_the_read_path_answers_a_cohort_whose_gate_has_never_run(tmp_path):
         assert g["why"] and g["next"], "a refusal must say what is missing and what next"
     finally:
         settings.project_dir = before
+
+
+# --- a chain records what it was given --------------------------------------
+def test_every_chain_records_the_params_its_step_was_given():
+    """one test for every chain, because `build_protocol` is the one builder.
+
+    the record's `params` field was empty for every step in every chain for as
+    long as the chains have existed. `_link` filters a cohort's declaration down
+    to the keys a step's `params_space` names and passes only those in, so that
+    frame is the only one that knows what the step saw - and a ledger that says
+    which steps ran but not what they ran with cannot be re-derived. the
+    generated notebook is what found it: all six evaluate steps came back
+    `not_run` with "labels is not declared".
+    """
+    from omicstra.protocols import Step, build_protocol
+    from omicstra.records import DiagnosticRecord
+
+    def step(ctx):
+        return DiagnosticRecord(step_id="s", status="pass")
+
+    recs = build_protocol(
+        [Step("s", step, authority="cohort_calibrated", params_space=("tau",))],
+        "t").invoke({"params": {"s": {"tau": 0.5, "undeclared": 9}}})
+    assert recs["s"]["params"] == {"tau": 0.5}, \
+        "the record carries what the step was GIVEN - filtered to params_space"
+
+
+def test_a_step_that_sets_its_own_params_is_not_overwritten():
+    """a step that records a resolved value - one it derived rather than was
+    handed - keeps it. the frame above only fills an empty field."""
+    from omicstra.protocols import Step, build_protocol
+    from omicstra.records import DiagnosticRecord
+
+    def step(ctx):
+        return DiagnosticRecord(step_id="s", status="pass",
+                                params={"tau": 0.5, "k_resolved": 6})
+
+    recs = build_protocol([Step("s", step, authority="deterministic")],
+                          "t").invoke({"params": {"s": {"tau": 0.5}}})
+    assert recs["s"]["params"]["k_resolved"] == 6
+
+
+# --- every label a producer can emit has a consumer --------------------------
+def test_every_label_a_producer_emits_is_handled_by_its_consumer():
+    """the check that would have caught the empty intersection on day one.
+
+    `graphs/route.py` can emit five resolutions; `graph.py`'s stop list held
+    five STAGE statuses. no value was in both, so `_continue` returned "go" for
+    every routing outcome - a refusal, a tie and an escalation all reached a
+    verdict, and nothing anywhere failed.
+
+    this is the same move `build_protocol` already makes for `requires` /
+    `produces`, applied to labels: the vocabulary is declared by the producer,
+    the partition by the consumer, and a member in neither half of the partition
+    is a label nobody decided about.
+    """
+    from omicstra.graph import (CONTINUE_AFTER, RESOLUTION_CONTINUES,
+                                RESOLUTION_STOPS, STOP_AFTER)
+    from omicstra.labels import Resolution, StageStatus, exhaustive
+
+    for vocab, groups in ((StageStatus, (STOP_AFTER, CONTINUE_AFTER)),
+                          (Resolution, (RESOLUTION_STOPS, RESOLUTION_CONTINUES))):
+        gap = exhaustive(vocab, *groups)
+        assert not gap, (
+            f"{vocab.__name__} members no consumer decided about: {sorted(gap)}. "
+            "a label with no handler continues by default, which is how an "
+            "abstention reached a verdict")
+
+
+def test_the_two_vocabularies_at_the_route_boundary_do_not_overlap_by_accident():
+    """`refuse` and `refused` are different words in different vocabularies, and
+    the old code compared one against a list of the other. they may share a
+    value only where that is the intended meaning - so this asserts the overlap
+    is EMPTY and the two are therefore parsed separately rather than compared."""
+    from omicstra.labels import Resolution, StageStatus
+
+    shared = {m.value for m in Resolution} & {m.value for m in StageStatus}
+    assert not shared, (
+        f"{sorted(shared)} is in both vocabularies. a consumer that reads one "
+        "field cannot then tell which producer wrote it")

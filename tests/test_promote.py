@@ -252,3 +252,51 @@ def test_the_raw_molecular_view_is_per_arm_not_a_cohort_constant():
     rows = read_candidates({"reader": "biology_raw_floor", "view": "raw_st"}, root, src["runs"])
     by_run = {r["id"]: r["value"] for r in rows}
     assert len(set(by_run.values())) > 1, "expected the raw molecular view to vary by arm"
+
+
+# --- the gate reads the answer, not its truthiness --------------------------
+@pytest.mark.parametrize("answer", ["no", "n", "No", "nope", "", None, False, 0])
+def test_a_decline_does_not_approve_the_pack(answer):
+    """`bool(answer)` - and `bool("no")` is True, so a human DECLINING approved
+    the pack at the one gate whose job is to refuse one nobody vouched for.
+
+    `graphs/route.py` already carried the correct allow-list inline; the fix is
+    `labels.is_yes` in one place, because two copies of one vocabulary is how
+    the two drift.
+    """
+    from omicstra.graphs.promote import _after_gate
+    from omicstra.labels import is_yes
+
+    assert is_yes(answer) is False, f"{answer!r} must not approve"
+    assert _after_gate({"approved": is_yes(answer)}) == "halt"
+
+
+@pytest.mark.parametrize("answer", ["yes", "y", "YES", "approve", True])
+def test_an_explicit_yes_approves(answer):
+    from omicstra.graphs.promote import _after_gate
+    from omicstra.labels import is_yes
+
+    assert is_yes(answer) is True
+    assert _after_gate({"approved": is_yes(answer)}) == "emit"
+
+
+def test_an_unreadable_answer_is_a_no():
+    """a gate that asks a person a question answers it in the safe direction
+    when it cannot read the reply."""
+    from omicstra.labels import is_yes
+
+    for junk in ({"maybe": 1}, ["yes"], 3.5, "si", "ok", "sure"):
+        assert is_yes(junk) is False, f"{junk!r} read as approval"
+
+
+def test_the_two_human_gates_share_one_definition_of_yes():
+    """the routing gate and the promote gate asked the same question two ways.
+    one allow-list, or they drift - which is the pattern, not a detail."""
+    import inspect
+
+    from omicstra.graphs import promote, route
+
+    for mod in (promote, route):
+        src = inspect.getsource(mod)
+        assert "is_yes" in src, f"{mod.__name__} does not use the shared parse"
+        assert "bool(answer" not in src, f"{mod.__name__} still tests truthiness"

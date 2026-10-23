@@ -68,7 +68,8 @@ stage that needs them. with `compute=False` the whole chain walks and reports wh
 WOULD happen at every stage, which is what makes "ask the three hypotheses"
 answerable in one call.
 
-`graph.py:STOP_AFTER` is that list. `graph.py:COMPUTE_CHAIN` is the order.
+`graph.py:STOP_AFTER` is that list and `graph.py:CONTINUE_AFTER` is its other
+half. `graph.py:COMPUTE_CHAIN` is the order.
 
 `omicstra chain` is the caller that holds the whole thing. `--answer gate=option`
 pre-answers a gate so the walk does not pause on it; without an answer it stops
@@ -117,21 +118,48 @@ test rather than being discoverable only by reading the tree.
 
 ---
 
-## the one key that means two things
+## the labels that cross a boundary
 
-`arm` is shared by name between level 0 and every subgraph, and the meanings
-differ:
+`src/omicstra/labels.py` holds every vocabulary that crosses a graph edge, as
+`StrEnum` rather than `Literal` - a Literal is checked by a type checker and by
+nothing at runtime, so it can neither be iterated by a lint nor refuse a value
+at a boundary.
 
 ```
-level 0      ask | compute | refuse          which arm answers the question
-a subgraph   he | st | align | evaluate      which arm the RUN HANDLE belongs to
+Route         ask | compute | refuse               LEVEL 0, state["route"]
+HandleArm     he | st | align | evaluate           a subgraph, state["arm"]
+Resolution    recommend | tie | escalate |         graphs/route.py
+              refuse | override_ack
+StageStatus   ready | resolved | computed |        every stage's report.status
+              evaluated | measured | nothing_to_run |
+              submitted | refused | halted |
+              unavailable | not_run
 ```
 
-a subgraph wired under level 0 therefore receives `compute` in the field the MCP
-reads as a handle arm. `mcp/server.py:_runner_for` refuses an arm it does not
-know rather than defaulting to the H&E graph, which would resolve a tile
-geometry for a cohort nobody asked about one. both names are published, so this
-is named rather than renamed.
+**the vocabulary is declared by the producer; what to DO with each label is
+declared by the consumer**, beside the branch - `graph.py`'s `STOP_AFTER` /
+`CONTINUE_AFTER` for a stage and `RESOLUTION_STOPS` / `RESOLUTION_CONTINUES` for
+the router. both halves are spelled out rather than one plus a fall-through,
+because `test_rule_lints.py::test_every_label_a_producer_emits_is_handled_by_its_consumer`
+fails on a member in neither half.
+
+two defects came from this, same cause, different luck:
+
+```
+arm          level 0 and the subgraphs each meant a different enum by one key.
+             CONTAINED - _runner_for refused an arm it did not know rather than
+             defaulting to the H&E graph. level 0's field is `route` now, so
+             `arm` means exactly one thing; the old key is still READ for a
+             thread checkpointed before the rename, and never written
+refuse /     the router wrote `refuse`, the chain's stop list held `refused`.
+  refused    SILENT - the intersection of the two vocabularies was EMPTY, so
+             every routing outcome returned "go" and a tie, an escalation and a
+             standing refusal each reached a verdict
+```
+
+`_keeper` records `status` and `resolution` as separate fields for the same
+reason. it used to collapse them with `or`, and one field later nothing could
+tell which producer had written the value.
 
 ---
 

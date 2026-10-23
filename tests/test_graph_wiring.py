@@ -50,6 +50,19 @@ def test_encode_is_absent_when_not_passed():
 
 
 # --- the boundary carries what the gate needs -------------------------------
+# keys a subgraph declares that the parent MUST NOT, which is the opposite of
+# the other exemptions above: those are subgraph-internal and simply need no
+# parent declaration, whereas declaring `arm` would import the CHILD's
+# vocabulary into a parent field of a different type. langgraph filters state by
+# the declared keys in both directions, so a declared `arm` takes the subgraph's
+# handle label on the way back up.
+#
+# safe because no subgraph NODE reads it - it is written by the MCP tools, into
+# the checkpoint, and read back only by `_runner_for` to rebuild the right graph.
+# under the level-0 chain the thread is resumed through the chain, not an arm.
+NOT_THE_PARENTS = {"arm"}
+
+
 def test_every_key_the_encode_subgraph_reads_is_declared_by_the_parent():
     """a key the parent does not declare is DROPPED at the boundary, in both
     directions - so it vanishes silently and the subgraph raises a KeyError that
@@ -58,7 +71,7 @@ def test_every_key_the_encode_subgraph_reads_is_declared_by_the_parent():
 
     parent = set(OmicstraState.__annotations__)
     child = set(EncodeState.__annotations__)
-    missing = child - parent - {"approved", "shards"}
+    missing = child - parent - {"approved", "shards"} - NOT_THE_PARENTS
     assert not missing, f"the encode subgraph reads {sorted(missing)}, undeclared by level 0"
 
 
@@ -226,8 +239,9 @@ def test_each_stage_is_kept_before_the_next_overwrites_the_report():
 
     out = _keeper("encode")({"report": {"status": "ready", "n_shards": 4}})
     assert out["stages"] == [{"stage": "encode", "status": "ready",
+                              "resolution": None, "outcome": "ready",
                               "report": {"status": "ready", "n_shards": 4}}]
-    assert _keeper("st")({})["stages"][0]["status"] == "unknown"
+    assert _keeper("st")({})["stages"][0]["outcome"] == "unknown"
     # the parent accumulates rather than overwrites, or the second stage's row
     # would replace the first
     from typing import get_type_hints
@@ -256,14 +270,18 @@ def test_every_key_the_later_subgraphs_read_is_declared_by_the_parent():
     # state does not - and the encode case is asserted above.
     parent = set(OmicstraState.__annotations__)
     for name, child in (("align", AlignState), ("evaluate", EvaluateState)):
-        missing = set(child.__annotations__) - parent - {"approved", "shards", "verdict"}
+        missing = (set(child.__annotations__) - parent
+                   - {"approved", "shards", "verdict"} - NOT_THE_PARENTS)
         assert not missing, f"the {name} subgraph reads {sorted(missing)}, undeclared by level 0"
 
 
 def test_the_arm_key_means_two_things_and_the_reader_refuses_the_wrong_one():
-    """level 0's `arm` is ask | compute | refuse; a subgraph's is the run
-    handle's he | st | align | evaluate. one key, two meanings, shared BY NAME -
-    so a level-0 thread handed to a resume used to re-enter the H&E graph.
+    """`arm` is the run handle's he | st | align | evaluate, and only that now.
+
+    level 0 used to mean ask | compute | refuse by the same key, shared with
+    every subgraph BY NAME, so a level-0 thread handed to a resume re-entered the
+    H&E graph. level 0's field is `route`, and this asserts the handle vocabulary
+    holds none of the routing one.
     """
     from omicstra.mcp.server import ARMS, NotAnArmHandle
 
@@ -304,10 +322,18 @@ def test_a_stage_that_states_its_outcome_outside_report_is_not_logged_unknown():
     `unknown`."""
     from omicstra.graph import _keeper
 
-    assert _keeper("route")({"resolution": "recommend"})["stages"][0]["status"] == \
-        "recommend"
-    assert _keeper("route")({"report": {"status": "refused"},
-                             "resolution": "x"})["stages"][0]["status"] == "refused"
+    # `outcome`, not `status`. the two vocabularies are kept in SEPARATE fields
+    # now - collapsing them into one is what left `_continue` holding a value it
+    # could not attribute to a producer - and `outcome` is the merged reading,
+    # for the record only. nothing branches on it.
+    row = _keeper("route")({"resolution": "recommend"})["stages"][0]
+    assert row["outcome"] == "recommend"
+    assert row["resolution"] == "recommend" and row["status"] is None
+
+    both = _keeper("route")({"report": {"status": "refused"},
+                             "resolution": "refuse"})["stages"][0]
+    assert both["status"] == "refused" and both["resolution"] == "refuse"
+    assert both["outcome"] == "refused", "a report outranks a resolution"
 
 
 def test_the_cli_holds_the_whole_chain():
@@ -325,3 +351,195 @@ def test_the_cli_holds_the_whole_chain():
                "build_align_graph", "build_evaluate_graph", "build_route_graph"):
         assert fn in src, f"omicstra chain does not inject {fn}"
     assert "--answer" in src and "the system does not pick" in src
+
+
+# --- a routing outcome the system did not answer stops the chain ------------
+def test_every_routing_outcome_the_system_did_not_answer_stops_the_chain():
+    """the defect this file could not see: `_continue` compared the router's
+    `resolution` against a list of STAGE statuses, and the intersection of the
+    two vocabularies was EMPTY - so every routing outcome returned "go".
+
+    a tie, an escalation and a standing refusal all reached a verdict. a `tie`
+    record says "the system does not pick"; the chain then picked by continuing.
+    """
+    from omicstra.graph import _continue
+    from omicstra.labels import Resolution
+
+    # escalate first - it is the one with no interrupt anywhere behind it
+    assert _continue({"resolution": Resolution.ESCALATE}) == "stop"
+    assert _continue({"resolution": Resolution.TIE}) == "stop"
+    assert _continue({"resolution": Resolution.REFUSE}) == "stop"
+
+    # and the two that ARE answers
+    assert _continue({"resolution": Resolution.RECOMMEND}) == "go"
+    assert _continue({"resolution": Resolution.OVERRIDE_ACK}) == "go"
+
+
+def test_a_declined_override_stops_where_an_approved_one_continues():
+    """`ask_human` pauses; it does not stop. a human answering no returns
+    override=False and leaves the resolution at `refuse`, so before this the
+    decline flowed into evaluate exactly as an approval did - which made the
+    interrupt a pause rather than a gate.
+    """
+    from omicstra.graph import _continue
+    from omicstra.graphs.route import _after_human
+    from omicstra.labels import Resolution
+
+    assert _after_human({"override": False}) == "done"
+    assert _continue({"resolution": Resolution.REFUSE}) == "stop"
+
+    assert _after_human({"override": True}) == "override"
+    assert _continue({"resolution": Resolution.OVERRIDE_ACK}) == "go"
+
+
+def test_a_label_from_the_wrong_vocabulary_is_refused_not_continued():
+    """the fall-through was the defect: a value `_continue` did not recognise
+    looked exactly like a value it had decided to continue on."""
+    import pytest
+
+    from omicstra.graph import _continue
+    from omicstra.labels import UnknownLabel
+
+    with pytest.raises(UnknownLabel, match="not a Resolution"):
+        _continue({"resolution": "refused"})        # the STAGE spelling
+    with pytest.raises(UnknownLabel, match="not a StageStatus"):
+        _continue({"report": {"status": "refuse"}})  # the ROUTER spelling
+
+
+# --- the parent must not declare the subgraphs' key -------------------------
+@pytest.fixture
+def no_pack_cohort(tmp_path, monkeypatch):
+    """a cohort with NO evidence pack, so a DECLARED task routes to compute.
+
+    the seed cohort cannot be used: all seven declared families are in its pack,
+    so `discover` sends every one of them to `ask` and the compute arm is
+    unreachable there.
+    """
+    from omicstra.settings import settings
+
+    root = tmp_path / "nopack"
+    (root / "data").mkdir(parents=True)
+    (root / "project.json").write_text(json.dumps(
+        {"project_id": "nopack", "platform": "synthetic"}))
+    monkeypatch.setattr(settings, "project_dir", root)
+    return root
+
+
+def test_the_real_encode_subgraph_leaves_no_handle_label_in_the_parent(
+        no_pack_cohort):
+    """the end-to-end half: the compute arm reaches the subgraph that DECLARES
+    `arm` meaning he | st, and the parent comes back without one.
+
+    the first version of this test asked for task "x", which is not a declared
+    family, so `discover` answered `refuse` - and with no route subgraph wired,
+    `refuse` goes straight to END. not one subgraph ran, and the test asserted
+    the absence of a key on a state that had never crossed a boundary. it is the
+    `a test guards on what it NEEDS` rule, failed in the test written for it.
+
+    so this asserts the walk happened before it asserts anything about the
+    state: `__interrupt__` is present because the real encode gate pauses, which
+    is only reachable from inside the subgraph.
+    """
+    # the cohort BOUND is the pack-less one, so a declared task routes to
+    # compute. the seed's declarations are read BY PATH and handed in as state -
+    # the gates need a real cohort to answer from, and reading it through
+    # settings would bind it and put the arm back to `ask`.
+    root = ROOT / "projects" / "tnbc-92"
+    inv, coh = root / "inventory.json", root / "cohort.json"
+    if not (inv.is_file() and coh.is_file()):
+        pytest.skip("fixture cohort absent")
+
+    from omicstra.graphs.encode import build_encode_graph
+
+    # encode alone, so the compute arm IS the subgraph under test
+    app = build_omicstra_graph(checkpointer=InMemorySaver(),
+                               encode=build_encode_graph(checkpointer=None))
+    counts = carry_counts({"records": [json.loads(inv.read_text())["shape"]]})
+    out = app.invoke({"task_id": "cross_modal_retrieval", "compute": False,
+                      "cohort": json.loads(coh.read_text()),
+                      "encoder": "novae", **counts},
+                     {"configurable": {"thread_id": "no-arm-encode"}})
+
+    assert out.get("route") == "compute", "the test never left the router"
+    assert "__interrupt__" in out, \
+        "the encode subgraph did not run, so this proves nothing about its keys"
+
+    assert "arm" not in out, f"a handle label reached level 0: {out.get('arm')!r}"
+    assert "arm_reason" not in out
+
+
+def test_the_parent_declaring_the_key_is_what_lets_a_handle_label_propagate():
+    """the mechanism, isolated. the end-to-end test above shows the parent comes
+    back clean; this shows WHY, and would catch a langgraph release that changed
+    the filtering rule the fix depends on.
+
+    a child writing arm="st" lands in the parent when the parent declares the
+    key and is dropped when it does not - in both directions, which is also why
+    there is no "declare it but never read it" option: an undeclared key is
+    invisible to the parent's own nodes too.
+    """
+    from typing import TypedDict
+
+    from langgraph.graph import END, START, StateGraph
+
+    class Child(TypedDict, total=False):
+        arm: str
+        note: str
+
+    class Declares(TypedDict, total=False):
+        route: str
+        arm: str
+        note: str
+
+    class Omits(TypedDict, total=False):
+        route: str
+        note: str
+
+    def child(_state):
+        return {"arm": "st", "note": "ran"}
+
+    def build(parent_t):
+        c = StateGraph(Child)
+        c.add_node("n", child)
+        c.add_edge(START, "n")
+        c.add_edge("n", END)
+        g = StateGraph(parent_t)
+        g.add_node("child", c.compile())
+        g.add_edge(START, "child")
+        g.add_edge("child", END)
+        return g.compile()
+
+    leaked = build(Declares).invoke({"route": "compute"})
+    assert leaked["arm"] == "st", "a declared key takes the child's vocabulary"
+    assert leaked["note"] == "ran", "the child did run in both cases"
+
+    clean = build(Omits).invoke({"route": "compute"})
+    assert "arm" not in clean
+    assert clean["note"] == "ran"
+
+
+def test_the_parent_state_declares_neither_retired_key():
+    from omicstra.graph import OmicstraState
+
+    assert "arm" not in OmicstraState.__annotations__, \
+        "declaring it is what lets a handle label propagate up"
+    assert "arm_reason" not in OmicstraState.__annotations__, \
+        "declared, never written, never read"
+
+
+def test_a_pre_rename_level_zero_thread_is_refused_not_guessed():
+    """the deprecated read alias is gone. it would have existed for one case -
+    an old thread resumed after the rename - and in that case a subgraph has
+    already overwritten `arm` with its own vocabulary, so the fallback read
+    "he" and refused anyway. an honest refusal beats a fallback that fails in
+    the one case it exists for.
+    """
+    import pytest
+
+    from omicstra.graph import _arm
+    from omicstra.labels import UnknownLabel
+
+    with pytest.raises(UnknownLabel, match="checkpointed before"):
+        _arm({"arm": "ask"})
+    with pytest.raises(UnknownLabel, match="not a Route"):
+        _arm({})
