@@ -179,6 +179,20 @@ Nothing below needs writing or wiring:
 5  omicstra eda --project-dir <your cohort>
 ```
 
+**If this project belongs to a study** - GDC/Gen3's `program`, renamed here
+because `routing_contract.json` already spends that word on a biological
+abstraction level - put it at `studies/<study>/projects/<project>/` and declare
+what the study fixes once, in `studies/<study>/study.json`: the platform, the
+encoder set, the classification, the subject-column convention. A project then
+declares only what differs from its study.
+
+Resolution is two-level and the rule is unchanged - **declared, not assumed;
+absent at both levels is a refusal.** The ledger records which FILE answered,
+because a study-level declaration binds every project under it and that is a
+bigger act than a project-level one.
+
+A flat `projects/<project>/` keeps resolving, so nothing has to move.
+
 Step 5 runs the whole front half. It will tell you which roles are unbound,
 which checks do not apply and why, and whether the data is admissible. **If it
 asks you to edit a graph, that is a bug.**

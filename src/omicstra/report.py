@@ -77,7 +77,7 @@ def _ledger_path(root: Path, bundle: dict) -> Path | None:
     pid = ((bundle.get("project") or {}).get("project_id")
            or (bundle.get("cohort") or {}).get("project_id") or root.name)
     try:
-        return settings.resolve(settings.runs_dir) / pid / "records" / "decisions.jsonl"
+        return settings.work_root(pid) / "records" / "decisions.jsonl"
     except (ValueError, OSError):
         return None
 
@@ -187,9 +187,145 @@ def section_computed(b: dict) -> list[str]:
     return lines
 
 
+def _field(r: dict, *names: str) -> str:
+    """a record's value for the first of `names` that is set, params included.
+
+    `records.coerce` puts any key a Record does not declare into `params`, which
+    is the field that exists for exactly that - so a reader that looked only at
+    the top level saw an empty cause on every record an arm wrote.
+    """
+    params = r.get("params") or {}
+    for n in names:
+        v = r.get(n) if r.get(n) not in (None, "") else params.get(n)
+        if v not in (None, ""):
+            return str(v)
+    return ""
+
+
+def _declared_step_ids() -> tuple[set[str], set[str]]:
+    """the inventory steps and EDA checks the CONTRACTS declare.
+
+    read from the contracts rather than matched by shape, so a record is
+    classified as an inventory step or an EDA check because something declared
+    it one - not because its id happened to look like one.
+    """
+    from omicstra.contracts.eda import load_contract
+    from omicstra.protocols.inventory import INVENTORY_STEPS
+
+    checks = load_contract()["checks"]
+    ids = {c["id"] for c in (checks if isinstance(checks, list) else checks.values())}
+    return {s.id for s in INVENTORY_STEPS}, ids
+
+
+def _measured_steps(b: dict) -> list[str]:
+    """what the chain measured THIS run, and where it disagrees with the summary.
+
+    section 2 reports what `eda_summary.json` DECLARES, which on a curated cohort
+    is hand-written and says so. this reports what the chain computed, from the
+    ledger - so the two can be compared rather than one standing for both.
+
+    a refusal is a result here, not an omission: a step that could not run names
+    what it needed, which is the only thing that distinguishes "measured and
+    found nothing" from "never measured".
+    """
+    recs = b.get("records") or []
+    if not recs:
+        return []
+    try:
+        inv_ids, eda_ids = _declared_step_ids()
+    except Exception:                                    # noqa: BLE001
+        return []
+
+    out: list[str] = []
+    for title, ids in (("inventory", inv_ids), ("EDA", eda_ids)):
+        rows = [[r.get("step_id"), r.get("status"),
+                 _field(r, "result", "why_not_applicable", "decision", "reason")[:68]]
+                for r in recs if r.get("step_id") in ids]
+        if rows:
+            out += ["", f"**{title}, as this run measured it**", "",
+                    *_table(["step", "status", "result"], rows)]
+
+    refused = [[r.get("step_id"), r.get("status"),
+                _field(r, "reason", "why", "decision", "result")[:68]]
+               for r in recs
+               if r.get("status") in ("not_run", "error", "fail")
+               and not str(r.get("step_id", "")).startswith("verdict::")]
+    if refused:
+        out += ["", "**refused, with the cause**", "",
+                *_table(["step", "status", "cause"], refused)]
+
+    # the drift that matters: a declared verdict standing over a computed one.
+    eda = b.get("eda") or {}
+    declared = eda.get("verdict")
+    declared = declared if isinstance(declared, str) else (declared or {}).get("verdict")
+    computed = next((_field(r, "result") for r in recs
+                     if r.get("step_id") == "eda_gate"), None)
+    if declared and computed and declared != computed:
+        out += ["", (f"**the summary declares `{declared}` and this run computed "
+                     f"`{computed}`.** a declared verdict is a person's judgement "
+                     "that the cautions were acceptable; it does not make the two "
+                     "agree, and the difference travels with every number below.")]
+    return out
+
+
+def section_findings(b: dict) -> list[str]:
+    """COMPUTED. what this cohort's own chain measured, pack or no pack.
+
+    the report takes a pack and a ledger, and for a while only the pack reached
+    its substance - so a cohort that had just measured everything rendered as
+    "not routable" because nobody had curated it yet. these rows come from the
+    verdict records the evaluate stage writes, which means they appear for a
+    cohort with no pack at all. that is the whole point.
+    """
+    lines = [_h(2, "4 · measured on this cohort")]
+    recs = b.get("records") or []
+    if not recs:
+        return lines + _absent("findings", "nothing in this cohort's ledger")
+    v = [r for r in recs if str(r.get("step_id", "")).startswith("verdict::")]
+
+    # the hypothesis verdict is ONE block of this section, not its gate. a
+    # cohort that has run its inventory and its EDA and nothing else has
+    # findings, and reporting none because no hypothesis was evaluated is the
+    # same mistake this whole section was added to fix.
+    rows = []
+    for r in sorted(v, key=lambda r: r["step_id"]):
+        g = r.get("guards") or []
+        failed = [x["id"] for x in g if not x.get("passed")]
+        o = r.get("observed") or {}
+        miss = ((o.get("rollup") or {}).get("coverage") or {}).get("missing") or []
+        rows.append([r["step_id"].split("::")[-1], r.get("result"),
+                     f"{len(g) - len(failed)}/{len(g)}" if g else "none ran",
+                     ", ".join(sorted({f.split("/")[-1] for f in failed}))[:34],
+                     ", ".join(miss) or "complete"])
+    if rows:
+        lines += _table(["hypothesis", "claim", "guards passed", "failed",
+                         "arms not scored"], rows)
+    lines += ["", ("*computed from the artifacts this cohort's declaration names. "
+                   "`diagnostic` means a required guard ran and failed, so the "
+                   "number stands and may not be cited as biology alone; "
+                   "`unguarded` means nothing checked it.*")] if rows else []
+
+    lines += _measured_steps(b)
+
+    # R3: the pack routes numbers. a routed number whose hypothesis is not clean
+    # is the disagreement worth surfacing, and it is the one a reader of the
+    # pack alone cannot see.
+    claims = {r["step_id"].split("::")[-1]: r.get("result") for r in v}
+    unclean = {h for h, c in claims.items() if c in ("diagnostic", "unguarded")}
+    routed = [t for t, d in (((b.get("pack") or {}).get("tasks")) or {}).items()
+              if d.get("candidates")]
+    if unclean and routed:
+        lines += ["", (f"**the pack routes {len(routed)} question(s) while "
+                       f"{', '.join(sorted(unclean))} "
+                       f"{'is' if len(unclean) == 1 else 'are'} not a clean "
+                       "result.** a routed answer inherits its hypothesis's claim, "
+                       "and the pack does not restate it.")]
+    return lines
+
+
 def section_hypotheses(b: dict) -> list[str]:
     """one block per task family that produced evidence; one line for each that did not."""
-    lines = [_h(2, "4 · per question")]
+    lines = [_h(2, "5 · per question")]
     tasks = ((b.get("pack") or {}).get("tasks") or {})
     if not tasks:
         return lines + _absent("evidence", "no pack - this cohort is not routable")
@@ -231,34 +367,70 @@ def section_hypotheses(b: dict) -> list[str]:
 
 
 def section_matrix(b: dict) -> list[str]:
-    """question x method: the routable answer per family, from the pack."""
-    lines = [_h(2, "5 · the matrix")]
-    tasks = ((b.get("pack") or {}).get("tasks") or {})
-    if not tasks:
+    """question x METHOD, every cell carrying whether it may be compared.
+
+    this was question x WINNER - one row per question, the top value. so a reader
+    saw a ranked list per question with nothing marking the entries that are not
+    comparable: a method contraindicated for that question, or one that does not
+    beat the baseline the hypothesis is stated against. "cell" here is a cell of
+    the TABLE, never a biological one. the admissibility is computed in
+    `protocols.evaluate`; nothing is decided here.
+    """
+    lines = [_h(2, "6 · the matrix")]
+    pack = b.get("pack") or {}
+    if not (pack.get("tasks") or {}):
         return lines + _absent("matrix", "no pack")
-    rows = []
-    for task_id, t in tasks.items():
-        # a pack written before promote existed carries evidence but no outcome.
-        # the renderer says which is missing rather than deriving it: computing
-        # an outcome here would make this a second source for the decision.
-        outcome = t.get("outcome") or "not_derived"
-        if outcome == "not_available":
-            rows.append([task_id, outcome, "-", "-", (t.get("why") or "")[:60]])
+
+    from omicstra.protocols.evaluate import matrix
+
+    claims = {r["step_id"].split("::")[-1]: r.get("result")
+              for r in (b.get("records") or [])
+              if str(r.get("step_id", "")).startswith("verdict::")}
+    m = matrix(pack, claims)
+
+    mark = {"admissible": "", "contraindicated": "✗ contraindicated",
+            "below_floor": "✗ below floor"}
+    for task_id, row in m.items():
+        if row["status"] != "scored":
+            lines += ["", _h(3, task_id),
+                      *_absent(task_id, row.get("why") or "no candidates recorded")]
             continue
-        answer = t.get("winner") or ", ".join(t.get("tied", [])) or "-"
-        best = (t.get("candidates") or [{}])[0]
-        note = t.get("refusal") or ("no outcome recorded - run promote to derive it"
-                                    if outcome == "not_derived" else "")
-        rows.append([task_id, outcome, answer, best.get("value"), note[:60]])
-    lines += _table(["question", "outcome", "method", "value", "note"], rows)
-    lines += ["", ("*outcome vocabulary is the routing contract's: recommend, tie, "
-                   "refuse, not_available. a refusal is an answer.*")]
+        head = f"{task_id} · {row['hypothesis']}"
+        if row.get("claim") and row["claim"] != "biological":
+            head += f" · {row['claim']}"
+        lines += ["", _h(3, head)]
+        # the pack's OUTCOME is reported, never derived here: a renderer that
+        # computed one would be a second source for the decision, and two
+        # sources for one decision is how two reports disagree.
+        t = (pack.get("tasks") or {})[task_id]
+        outcome = t.get("outcome") or "not_derived"
+        f = row.get("floor") or {}
+        lines += _kv([("outcome", outcome),
+                      ("leads", t.get("winner") or ", ".join(t.get("tied", [])) or None),
+                      ("floor", f"{f.get('id')} = {f.get('value')}" if f else None),
+                      ("comparable", f"{row['n_rankable']} of {row['n_cells']}")])
+        if outcome == "not_derived":
+            lines += ["", "*no outcome recorded - run promote to derive it.*"]
+        lines += ["", *_table(
+            ["method", "value", "admissible", "why not"],
+            [[c["method"], c["value"], mark.get(c["status"], c["status"]) or "yes",
+              (c["why"] or "")[:72]] for c in row["cells"]])]
+        if row.get("claim") in ("diagnostic", "unguarded", "not_run"):
+            lines += ["", (f"*{row['hypothesis']} is `{row['claim']}` on this cohort, "
+                           "so every cell above inherits that caveat equally.*")]
+
+    lines += ["", ("*each entry above - one question crossed with one method, not "
+                   "a biological cell - is a value AND whether it may be compared. "
+                   "a contraindicated method is not ranked; the reason stands where "
+                   "its number would. a method below the floor has not answered the "
+                   "question, whatever its rank, because every hypothesis here is "
+                   "stated against a baseline.*")]
     return lines
 
 
 def section_notes(b: dict) -> list[str]:
     """the human fields, verbatim and marked as such."""
-    lines = [_h(2, "6 · caveats and notes")]
+    lines = [_h(2, "7 · caveats and notes")]
     tasks = ((b.get("pack") or {}).get("tasks") or {})
     rows = []
     for task_id, t in tasks.items():
@@ -281,7 +453,7 @@ def section_decisions(b: dict) -> list[str]:
     arrived through the surface and the server observed a tool call, not a
     person.
     """
-    lines = [_h(2, "7 · decisions")]
+    lines = [_h(2, "8 · decisions")]
     recs = b.get("records") or []
     if not recs:
         return lines + _absent("decisions", "this cohort's ledger is empty or absent")
@@ -299,7 +471,7 @@ def section_decisions(b: dict) -> list[str]:
 
 
 def section_provenance(b: dict) -> list[str]:
-    lines = [_h(2, "8 · provenance")]
+    lines = [_h(2, "9 · provenance")]
     pack = b.get("pack") or {}
     prov = b.get("provenance") or {}
     lines += _kv([("pack version", pack.get("evidence_version")),
@@ -315,8 +487,8 @@ def section_provenance(b: dict) -> list[str]:
 
 
 SECTIONS = (section_cohort, section_admissibility, section_computed,
-            section_hypotheses, section_matrix, section_notes, section_decisions,
-            section_provenance)
+            section_findings, section_hypotheses, section_matrix, section_notes,
+            section_decisions, section_provenance)
 
 
 def render(bundle: dict, title: str = "evaluation report") -> str:

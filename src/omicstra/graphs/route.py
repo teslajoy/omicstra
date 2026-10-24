@@ -21,12 +21,14 @@ read path throughout - every embedding is cached, so no node touches a GPU.
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from omicstra.agents.modality import MODALITY_AGENTS
+from omicstra.records import timed_node
+from omicstra.labels import Resolution, is_yes, parse
 from omicstra.routing import ledger, resolve
 
 
@@ -79,17 +81,25 @@ def judge(state: RouteState) -> dict:
     for m in state.get("modality", []):
         rec.caveats.append(f"{m['step_id'].split('::')[0]}: {m['decision']}")
 
-    resolution = ("override_ack" if (rec.contraindicated and rec.actor == "human")
-                  else "refuse" if rec.contraindicated
-                  else "escalate" if rec.escalated
-                  else "tie" if rec.tie else "recommend")
+    # the vocabulary is `labels.Resolution`, so the five values this node can
+    # emit are enumerable - which is what lets a lint assert the chain's
+    # consumer handles every one of them. as bare strings the producer could
+    # emit `refuse` while the consumer checked `refused`, and it did.
+    resolution = (Resolution.OVERRIDE_ACK
+                  if (rec.contraindicated and rec.actor == "human")
+                  else Resolution.REFUSE if rec.contraindicated
+                  else Resolution.ESCALATE if rec.escalated
+                  else Resolution.TIE if rec.tie else Resolution.RECOMMEND)
     ledger(state.get("project_id")).append_new([rec])
     return {"decision": rec.model_dump(), "resolution": resolution}
 
 
 def _after_judge(state: RouteState) -> str:
     """a refusal stops the graph and asks. everything else is terminal."""
-    return "ask_human" if state.get("resolution") == "refuse" else "done"
+    return ("ask_human"
+            if parse(Resolution, state.get("resolution"),
+                     "route._after_judge resolution") is Resolution.REFUSE
+            else "done")
 
 
 def ask_human(state: RouteState) -> dict:
@@ -109,8 +119,7 @@ def ask_human(state: RouteState) -> dict:
                           "downstream result carries the contraindication",
         "no_default": "the system does not pick",
     })
-    proceed = (answer if isinstance(answer, bool)
-               else str(answer).strip().lower() in ("yes", "y", "proceed", "true", "override"))
+    proceed = is_yes(answer)
     return {"override": proceed, "awaiting_human": False}
 
 
@@ -126,18 +135,18 @@ def override_node(state: RouteState) -> dict:
     for m in state.get("modality", []):
         rec.caveats.append(f"{m['step_id'].split('::')[0]}: {m['decision']}")
     ledger(state.get("project_id")).append_new([rec])
-    return {"decision": rec.model_dump(), "resolution": "override_ack"}
+    return {"decision": rec.model_dump(), "resolution": Resolution.OVERRIDE_ACK}
 
 
 def build_route_graph(checkpointer=None):
     """cohort-free: everything specific arrives in state."""
     g = StateGraph(RouteState)
-    g.add_node("orchestrator", orchestrator)
+    g.add_node("orchestrator", timed_node(orchestrator))
     for name in MODALITY_AGENTS:
-        g.add_node(name, _modality_node(name))
-    g.add_node("judge", judge)
-    g.add_node("ask_human", ask_human)
-    g.add_node("override", override_node)
+        g.add_node(name, timed_node(_modality_node(name)))
+    g.add_node("judge", timed_node(judge))
+    g.add_node("ask_human", timed_node(ask_human))
+    g.add_node("override", timed_node(override_node))
 
     g.add_edge(START, "orchestrator")
     for name in MODALITY_AGENTS:            # fan out - these run concurrently

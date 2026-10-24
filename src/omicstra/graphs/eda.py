@@ -48,7 +48,7 @@ from omicstra.graph import _load_cohort
 from omicstra.protocols import build_protocol
 from omicstra.protocols.eda import EDA_STEPS
 from omicstra.protocols.inventory import INVENTORY_STEPS
-from omicstra.records import GateRecord
+from omicstra.records import GateRecord, timed_node
 from omicstra.settings import settings
 
 
@@ -231,11 +231,11 @@ def halt(state: EDAState) -> dict:
 def build_eda_graph(checkpointer=None):
     """the EDA subgraph. cohort-free: everything specific arrives in state."""
     g = StateGraph(EDAState)
-    g.add_node("inventory", inventory)
-    g.add_node("profile", profile)
-    g.add_node("gate", gate)
-    g.add_node("escalate", escalate)
-    g.add_node("halt", halt)
+    g.add_node("inventory", timed_node(inventory))
+    g.add_node("profile", timed_node(profile))
+    g.add_node("gate", timed_node(gate))
+    g.add_node("escalate", timed_node(escalate))
+    g.add_node("halt", timed_node(halt))
 
     g.add_edge(START, "inventory")
     # inventory HALTS the run when a required role is unbound - eda cannot

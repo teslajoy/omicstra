@@ -242,13 +242,83 @@ git-ignored, nothing failed, and the next report would simply have been wrong
 about who decided what. `tests/conftest.py` now points `runs_dir` at tmp for
 every test, by fixture and by environment variable so a subprocess gets it too.
 
-**one thing this leaves open.** `settings.runs_dir` resolving under the package
-repo root is right for this repo, where tnbc-92's `project.json` declares its
-data and runs at the root explicitly. for an INSTALLED server with no repo it
-puts a cohort's ledger next to site-packages, which is not where a cohort's
-record belongs. the fix is for `ledger()` to prefer the cohort's own declared
-runs root, and it is a path-resolution change with blast radius, so it is named
-here rather than made in passing.
+### TODO · two package defaults the threshold lint does not yet cover
+
+`tests/test_rule_lints.py` asserts an analysis step holds no threshold of its
+own. it is scoped to modules that name AND define a chain, so two existing
+defaults are outside it and are recorded here rather than rewritten - changing a
+passing gate to satisfy a new lint is how a rule becomes a refactor.
+
+```
+eda.py:430        max_pct_negative=c["params"].get("max_pct_negative", 10.0)
+                  a cohort that declares `negative` but not `max_pct_negative`
+                  silently inherits 10%. the two-argument `.get` is the pattern
+                  the rule exists to stop: a default by another name
+
+inventory.py:455  PITCH_TOLERANCE = 0.02
+                  a module constant deciding whether a measured lattice pitch
+                  AGREES with the declared one. 2% was chosen on one platform's
+                  lattice and is applied to every cohort's geometry check
+```
+
+both are the third kind of threshold in `EVALUATION.md` section 8 - a bar chosen
+by looking, with no external basis and no null behind it. the fix is the same
+for each: read it through the declaration, refuse when absent, and let the seed
+cohort declare what it has been running at. the lint's scope then widens to
+`eda.py` and `inventory.py`.
+
+---
+
+### TODO · a cohort has no declared WRITE root
+
+`settings.runs_dir` resolves under the PACKAGE repo root. that is right for this
+repo, where the seed cohort's `project.json` declares its data and runs at the
+root explicitly, and wrong for an installed server with no repo: it puts a
+cohort's ledger next to site-packages. four call sites read it - `ledger()`,
+`report.py:_ledger_path`, `figures.py`, and the `decisions` CLI command.
+
+**the obvious fix is itself a bug, which is why this is written down.** the first
+version of this entry said "have `ledger()` prefer the cohort's own declared runs
+root". but `project.json#runs_dir` points at the PUBLISHED GRID - the seed cohort
+declares `../../runs/tnbc-92_v3`, which `read_only_inputs` lists under
+`policy: refuse_writes`. aiming the server's one writable artifact at the oracle
+every port is verified against would be refused by the dispatcher, correctly.
+
+so `runs_dir` means **where the finished grid is read from**, and what is missing
+is a separate **where this server may write**. the two have been conflated
+because on this repo they coincide under the root.
+
+```
+1  a declared write root, optional: project.json#work_dir
+2  undeclared falls back to today's behaviour, so nothing moves and no
+   existing ledger orphans
+3  the four call sites above
+4  REFUSE a work root that falls inside a declared read-only path.
+   `_refuse_protected` and `assert_writable` already exist; this is the part
+   that makes the fix worth more than moving a path
+5  tests: resolution with and without the declaration, and the refusal
+```
+
+half a day, low risk. **land it before anything that writes new per-cohort
+artifacts**, so that work targets the right root rather than needing a migration
+afterwards.
+
+**DONE.** `settings.work_root` resolves `project.json#work_dir`, falling back to
+the historical path so nothing on disk moved, and `assert_work_root_writable`
+refuses a work root inside a declared oracle. all four writers go through it, and
+a test asserts no module resolves `runs_dir` directly any more.
+
+### TODO found while doing it · a malformed declaration protects nothing
+
+`dispatch.read_only_inputs` catches every exception from `ProjectConfig.load`
+and returns `[]`, with the comment "undeclared is fine". undeclared IS fine - a
+cohort with no published results has no oracle - but the same branch swallows a
+cohort whose `project.json` is present and UNPARSEABLE, and that cohort then has
+no write protection at all while appearing to have declared some.
+
+the two cases need telling apart: absent file -> no oracle; present but
+malformed -> refuse, because a typo in a declaration must not silently remove a
+guard. pre-existing, and not folded into the work-root change.
 
 ---
 

@@ -24,6 +24,7 @@ from omicstra.graphs.encode import (
     halt,
 )
 from omicstra.protocols.encode import ComputeRefused, assert_clear, preflight
+from omicstra.records import timed_node
 
 
 def st(state: EncodeState) -> dict:
@@ -159,10 +160,10 @@ def st(state: EncodeState) -> dict:
 def build_st_graph(checkpointer=None):
     """gates -> (ask) -> st, with halt on refusal. the H&E shape, its own compute."""
     g = StateGraph(EncodeState)
-    g.add_node("gates", gates)
-    g.add_node("ask", ask)
-    g.add_node("st", st)
-    g.add_node("halt", halt)
+    g.add_node("gates", timed_node(gates))
+    g.add_node("ask", timed_node(ask))
+    g.add_node("st", timed_node(st))
+    g.add_node("halt", timed_node(halt))
 
     g.add_edge(START, "gates")
     g.add_conditional_edges("gates", _route_gates, {"ask": "ask", "encode": "st"})

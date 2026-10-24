@@ -2,7 +2,7 @@
 
 a multi-agent MCP server for cross-modal embedding alignment, fusion, and evidence-based routing in spatial biology. it exposes fixed scientific protocols as tools and returns evidence; the client holds the model. alignments are evaluated against declared metrics, and questions are routed from a cohort's own recorded evidence, refusing when that evidence is absent. foundation model encoders are pluggable; integration strategy is a configurable experimental dimension, not a fixed pipeline choice.
 
-the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) using H&E morphology (Virchow2 primary, UNI2 swap) and spatial transcriptomics (Novae GNN).
+the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https://www.nature.com/articles/s41467-024-54145-w) using H&E morphology (Virchow2) and spatial transcriptomics (Novae GNN).
 
 [![release](https://github.com/teslajoy/omicstra/actions/workflows/release.yml/badge.svg)](https://github.com/teslajoy/omicstra/actions/workflows/release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -35,6 +35,16 @@ and one tool would hide what each exists to ask. A cohort with no recorded
 evaluation of its own is **not routable**, and the server says so rather than
 reusing the seed cohort's winner. The second cohort's own evidence pack is 1.3 -
 see `design/v1_3_scope.md`, which carries it with the open questions measured.
+
+**v1.3** (pre-release `1.3.0a1`) adds the worker that serves the encode queue, a
+verdict per hypothesis behind its own gates, one decision ledger that reaches the
+report, and the whole chain wired at level 0. The server holds no model, and that
+is now a test rather than a claim: it imports no model SDK, no extra can install
+one, and both judges resolve from lookup tables. It has been driven end to end
+from a **Claude-on-Bedrock** client - from a workstation and from a scheduled
+cluster node - where three runs took three different routes through the surface
+and every server answer was byte-identical to the same tool called with no model
+on the path. `pip install omicstra` still resolves to 1.2.0.
 
 ---
 
@@ -217,6 +227,47 @@ different things:
 | in-process | the output files and the checkpoint. the thread does not; `runs_resume` re-dispatches what is missing |
 | Temporal | the workflow history. a worker that never met the submitting process finishes the run |
 
+**two traces, and only one of them is free**
+
+```
+the LEDGER      who decided what, on what authority, over which bytes.
+                committed, citable, always on, and it never leaves the machine.
+                `runs_record` is one run's; `runs_trace` is that run as a
+                timeline; the report reads the cohort's
+LANGSMITH       what a node received, how long it took, where it stalled.
+                richer, and it sends node inputs and outputs to a third party
+```
+
+LangSmith is **opt-in through the environment and is not a dependency** - it
+ships transitively with LangGraph, which instruments itself from two variables,
+so turning it on takes no code:
+
+```bash
+export LANGSMITH_TRACING=true
+export LANGSMITH_API_KEY=...
+```
+
+That is exactly why there is a guard. Node inputs are cohort content, and
+`data_contract.json#data_classification` declares per cohort whether content
+`may_leave_host`. A cohort declared `restricted` - the **default**, so forgetting
+to declare fails closed - refuses to run with external tracing on, rather than
+quietly sending it. The classification is a person's statement at `omicstra init`
+and is never inferred from paths or content.
+
+There is a third state, and the SDK provides it: mask the payloads before
+anything is sent, and a restricted cohort can be traced for **structure** -
+spans, timings, errors, which node stalled - without its content leaving.
+
+```bash
+export LANGSMITH_HIDE_INPUTS=true LANGSMITH_HIDE_OUTPUTS=true
+```
+
+Both are required; hiding one and sending the other sends the content. What
+still leaves is run names, timings, token counts and error strings - step ids
+like `preflight_encode` are the package's vocabulary, not a cohort's - and a
+project id would travel in metadata, which `LANGSMITH_HIDE_METADATA` masks in
+turn.
+
 On Temporal the submit returns at submission, so something has to be polling the
 queue. That is the other half of the claim and it ships as a command:
 
@@ -382,7 +433,7 @@ layer 2: karpathy loop (outer optimization)
 
 program.md defines search space, constraints, stopping criteria.
 
-embedding dimensions: Virchow2 1280d (primary) / UNI2 1536d (alternative) - Novae GNN 64d (novae_latent) -> shared 512d
+embedding dimensions: Virchow2 1280d - Novae GNN 64d (novae_latent) -> shared 512d
 
 alignment strategies (experimental variable):
 ```
@@ -444,7 +495,7 @@ omicstra/
 │   · models/encoders.py             # the encoder registry, resolved by declared name.
 │   │                                #   spec() is metadata; only load() needs torch
 │   · agents/modality.py             # he / st / pathway agents - read recorded evidence
-│   · mcp/server.py                  # 18 tools, 2 resources, stdio + http. zero model calls
+│   · mcp/server.py                  # 21 tools, 2+2 resources, stdio + http. zero model calls
 │   · records.py  artifacts.py       # the record contract - inventory/eda_summary io
 │   · settings.py  cli.py            # 8 commands. settings imports nothing from omicstra
 │   · routing.py  eda.py  figures.py # resolve + ledger · gate · plots
@@ -512,12 +563,15 @@ omicstra families        # which questions it can answer, and which it cannot ye
 omicstra route cross_modal_retrieval
 ```
 
-`omicstra --help` lists all twelve. Four answer *what is this cohort* -
+`omicstra --help` lists all fifteen. Four answer *what is this cohort* -
 `describe`, `inventory`, `gate`, `families`. Four answer *what does it say* -
-`route`, `selftest`, `decisions`, `report`. Three do the work - `eda`, `run`,
-`promote`. One starts a cohort - `init`. **`selftest` first** - it tells a new
-cohort owner whether their declarations and evidence hang together before they
-spend time on anything else.
+`route`, `selftest`, `decisions`, `report`. Five do the work - `eda`, `align`'s
+grid through `run`, the whole walk through `chain`, `promote`, and `worker` for
+the encode queue. One starts a cohort - `init`. One writes the record a reader
+opens - `notebook`, which emits an analysis unit as a rerunnable notebook plus
+its trace. **`selftest` first** - it tells a new cohort owner whether their
+declarations and evidence hang together before they spend time on anything
+else.
 
 **stdio** - the usual client config:
 
@@ -605,7 +659,7 @@ fresh install, not a failure.
 | model | supplied by the MCP client; the server ships none |
 | tracing | OpenTelemetry-ready; LangSmith optional via env, not a dependency |
 | resources | `omicstra://eda-contract`, `routing-contract`, `project/{id}/routing-evidence` |
-| H&E foundation model | Virchow2 (primary, 1280-d) - UNI2 as swap (1536-d) |
+| H&E foundation model | Virchow2 (1280-d) |
 | ST foundation model | Novae GNN |
 | pathway | gpath2vec + biological pathway embeddings |
 | alignment | contrastive MLP + cross-attention bridge |

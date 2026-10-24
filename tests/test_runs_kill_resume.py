@@ -385,3 +385,17 @@ def test_a_failed_shard_does_not_read_as_still_running(tmp_path):
     assert after["status"] == "failed", after["status"]
     assert {d["sample"] for d in after["failed"]["failed"]} == set(missing)
     assert after["missing"] == missing, "the shards are still named, not swallowed"
+
+
+def test_resuming_a_handle_this_checkpointer_never_saw_is_refused(tmp_path):
+    """the three read tools all refuse an absent checkpoint immediately after
+    resolving it; resume fell through to `Command(resume=...)` on a thread it
+    had never seen, which starts a new run under an old name.
+    """
+    pytest.importorskip("PIL")
+    root = _cohort(tmp_path)
+    st = _said(_run(root, tmp_path / "empty.sqlite", "resume", "never-existed").stdout,
+               "RESUME")
+    assert st["status"] == "unknown", st
+    assert st["arm"] is None, "a handle with no checkpoint has no arm to report"
+    assert "checkpointer" in st["why"]

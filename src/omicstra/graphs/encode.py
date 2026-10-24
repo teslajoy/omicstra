@@ -35,6 +35,7 @@ from omicstra.protocols.encode import (
     gate_record,
     preflight,
 )
+from omicstra.records import timed_node
 
 
 # --- state -----------------------------------------------------------------
@@ -325,10 +326,10 @@ def _route_answer(state: EncodeState) -> str:
 def build_encode_graph(checkpointer=None):
     """gates -> (ask) -> encode, with halt on refusal."""
     g = StateGraph(EncodeState)
-    g.add_node("gates", gates)
-    g.add_node("ask", ask)
-    g.add_node("encode", encode)
-    g.add_node("halt", halt)
+    g.add_node("gates", timed_node(gates))
+    g.add_node("ask", timed_node(ask))
+    g.add_node("encode", timed_node(encode))
+    g.add_node("halt", timed_node(halt))
 
     g.add_edge(START, "gates")
     g.add_conditional_edges("gates", _route_gates, {"ask": "ask", "encode": "encode"})

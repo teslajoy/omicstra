@@ -71,5 +71,122 @@
     "runs_note": "the finished run grid is an oracle too: the evidence pack cites its eval/ artifacts and the acceptance pins are diffed against them. a rerun is staged into a fresh out_root (protocols/align.stage_grid) and scores there.",
     "v1_note": "the last path is v1, not v3. pathway_discrimination is the one task row whose artifact is v1 - the v3 DAG decomposition is deferred - so the file it cites needs the same protection as the v3 grid. only runs/tnbc-92_v3 was covered, and the pack cited outside it.",
     "pathway_oracle_note": "biological_signals was absent from this list until 2026-10-13 while holding the WHOLE pathway oracle: niche_madmean_genesets.json and its TF subset, the Fisher results and sig rows, both AUCell parquets, and niche_counts_cache_genes.npy - the 41,414-symbol universe every AUCell score is ranked against. a port writing there would have been diffed against its own output and passed. the gpath2vec directory downstream of it was protected; its inputs were not."
+  },
+  "join_inputs": {
+    "note": "what the join reads, per sample. transcribed from script_map/build_niche_join.md - the paths are the script's constants at lines 54-63 and the column lists are its own declarations, not inferred.",
+    "neighbour_source": "novae_niche",
+    "neighbour_column": "neighbor_spot_ids",
+    "assays": {
+      "virchow2_niche": {
+        "loader": "npy_with_meta",
+        "path": "../../data/embeddings/virchow2_niche",
+        "meta_suffix": "_meta.tsv",
+        "note": "pre-pooled at extraction; carried, never pooled again (map row 285)"
+      },
+      "virchow2_cell_tokens": {
+        "loader": "npy_with_meta",
+        "path": "../../data/embeddings/virchow2_cell",
+        "required_for_sample_set": false,
+        "note": "per-unit; stacked centre-first into the token block (map rows 227-228). 280 .npy files and no meta of its own - it shares the niche assay's index, which the script's comment at line 189 states",
+        "index_from": "virchow2_niche"
+      },
+      "novae_niche": {
+        "loader": "parquet_per_sample",
+        "path": "../../data/embeddings/novae_niche_full",
+        "filename": "{sample}_novae_embeddings.parquet",
+        "column_prefix": "novae_",
+        "note": "pooled over the neighbourhood, then standardised after the drop"
+      },
+      "gpath2vec_niche": {
+        "loader": "parquet_one_file",
+        "path": "../../data/embeddings/gpath2vec/fisher_madmean_low_dim512_e5_s1234/fisher_madmean_low_cluster_embeddings.parquet",
+        "key_column": "subarray",
+        "unit_column": "spot_id",
+        "non_data_columns": [
+          "subarray",
+          "patient",
+          "spot_id",
+          "pixel_x",
+          "pixel_y"
+        ],
+        "note": "the anchor. non_data_columns is the script's own GPATH_META_COLS at line 71 - selecting by dtype pulls pixel_x/pixel_y into the vector"
+      }
+    },
+    "labels": {
+      "mc_megacluster": {
+        "loader": "table_one_file",
+        "path": "../../data/embeddings/biological_signals/mc_labels.tsv",
+        "key_column": "subarray",
+        "unit_column": "spot_id",
+        "strip_prefix_before": "_",
+        "columns": [
+          "megacluster"
+        ],
+        "note": "keyed by slide position, so the sample id's TNBC{n}_ prefix is stripped - the script's slide_pos() at line 147",
+        "role": "centre"
+      },
+      "mc_weights_niche": {
+        "loader": "table_one_file",
+        "path": "../../data/embeddings/biological_signals/mc_weights.tsv",
+        "key_column": "subarray",
+        "unit_column": "spot_id",
+        "strip_prefix_before": "_",
+        "columns": [
+          "mc1",
+          "mc2",
+          "mc3",
+          "mc4",
+          "mc5",
+          "mc6",
+          "mc7",
+          "mc8",
+          "mc9",
+          "mc10",
+          "mc11",
+          "mc12",
+          "mc13",
+          "mc14"
+        ],
+        "note": "SUPERVISION ONLY - never a feature. guard G6 asserts it",
+        "role": "pooled"
+      },
+      "tls": {
+        "loader": "table_one_file",
+        "path": "../../data/embeddings/biological_signals/tls_scores.tsv",
+        "key_column": "subarray_id",
+        "unit_column": "spot_id",
+        "columns": [
+          "tls_score"
+        ],
+        "role": "pooled"
+      },
+      "compartment": {
+        "loader": "table_one_file",
+        "path": "../../data/embeddings/biological_signals/morphology_labels.tsv",
+        "key_column": "subarray_id",
+        "unit_column": "spot_id",
+        "columns": [
+          "dominant_18class"
+        ],
+        "role": "centre"
+      }
+    },
+    "subject": {
+      "loader": "table_one_file",
+      "path": "../../data/embeddings/biological_signals/mc_weights.tsv",
+      "key_column": "subarray",
+      "unit_column": "spot_id",
+      "strip_prefix_before": "_",
+      "columns": [
+        "patient_id"
+      ],
+      "subject_column": "patient_id",
+      "note": "the subject this sample belongs to. the script read it from the same table (line 364, first row per sample) and every split and confounder check is taken on it.",
+      "labels_path": "../../data/embeddings/biological_signals/clinical_labels.tsv",
+      "labels_key": "patient_id",
+      "labels": [
+        "spatial_archetype"
+      ]
+    }
   }
 }

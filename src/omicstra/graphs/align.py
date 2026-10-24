@@ -30,6 +30,7 @@ from langgraph.graph import END, START, StateGraph
 from omicstra.graphs.encode import _accept, _as_dicts, halt
 from omicstra.protocols.align import EdaGateMissing, preflight_align
 from omicstra.protocols.encode import gate_record
+from omicstra.records import timed_node
 
 
 class AlignState(TypedDict, total=False):
@@ -176,10 +177,10 @@ def _route_answer(state: AlignState) -> str:
 def build_align_graph(checkpointer=None):
     """gates -> (ask) -> align, with halt on refusal or a missing verdict."""
     g = StateGraph(AlignState)
-    g.add_node("gates", gates)
-    g.add_node("ask", ask)
-    g.add_node("align", align)
-    g.add_node("halt", halt)
+    g.add_node("gates", timed_node(gates))
+    g.add_node("ask", timed_node(ask))
+    g.add_node("align", timed_node(align))
+    g.add_node("halt", timed_node(halt))
 
     g.add_edge(START, "gates")
     g.add_conditional_edges("gates", _route_gates,

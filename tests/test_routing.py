@@ -184,7 +184,7 @@ def _app():
 def test_evidence_present_takes_the_ask_arm_into_the_subgraph():
     out = _app().invoke({"task_id": "cross_modal_retrieval", "project_id": "tnbc-92"},
                         {"configurable": {"thread_id": "a1"}})
-    assert out["arm"] == "ask" and out["has_evidence"] is True
+    assert out["route"] == "ask" and out["has_evidence"] is True
     assert out["resolution"] == "recommend"
     assert out["decision"]["actor"] == "deterministic"
 

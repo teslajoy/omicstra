@@ -193,6 +193,26 @@ def protected_by(target: Path, protected: Iterable[Path]) -> Path | None:
     return next((ro for ro in protected if t == ro or ro in t.parents), None)
 
 
+def assert_work_root_writable(project_id: str | None = None) -> Path:
+    """the cohort's work root, refused if it lands inside an oracle.
+
+    a declared `work_dir` is a path a person wrote, so it can point anywhere -
+    including at the published grid the ports are diffed against. that is the
+    same failure `assert_writable` catches for a shard, one level up: writing
+    into the oracle makes the next diff compare a port against its own output
+    and pass.
+    """
+    root = settings.work_root(project_id)
+    ro = protected_by(root, read_only_inputs(project_id))
+    if ro is not None:
+        raise WouldOverwriteOracle(
+            f"the work root {root} falls inside {ro}, which this cohort declares "
+            "read-only. the work root is where the ledger, figures and "
+            "checkpoints are written; that directory is what the ports are "
+            "diffed against. declare project.json#work_dir somewhere else.")
+    return root
+
+
 def assert_writable(shards: Iterable[Shard], project_id: str | None = None) -> None:
     """refuse before a single byte moves if any output lands in an oracle."""
     protected = read_only_inputs(project_id)

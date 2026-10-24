@@ -18,7 +18,7 @@ import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, Field
 
@@ -252,7 +252,18 @@ _KINDS: dict[str, type[Record]] = {
     "dispatch": DispatchRecord,
 }
 
-_ACTORS: tuple[str, ...] = ("deterministic", "model", "human", "client", "system")
+# DERIVED from `Actor`, not hand-copied beside it. this was a second literal
+# listing the same five strings, which existed only because a `Literal` cannot
+# be iterated at runtime - the same cause as the routing arm being an
+# unenumerable Literal, and `test_one_ledger.py` names the risk in its own
+# words: "a closed set declared in one file and enforced in another is two
+# sets". `actor_ratio` counts from this, so a drift between the two would have
+# been a KeyError on the one actor the ledger was extended to carry.
+#
+# the field TYPE stays a Literal rather than becoming a StrEnum: these are
+# pydantic fields on every record in the ledger, and changing their type is a
+# serialisation question for the whole committed store, not a cleanup.
+_ACTORS: tuple[str, ...] = get_args(Actor)
 _VOLATILE = ("started_at", "duration_s", "code_version", "record_id")
 
 
@@ -282,6 +293,49 @@ def coerce(d: dict) -> Record:
         core["record_id"] = stable_id({k: v for k, v in d.items()
                                        if k not in _VOLATILE})
     return cls.model_validate(core)
+
+
+def timed_node(fn):
+    """stamp the records a graph node ADDS with how long that node took.
+
+    every record already carries `started_at`, so a ledger has always given a
+    reader an order. none carried `duration_s`, so it gave an order and no cost -
+    and "where did this run spend its time" is the question a trace exists for.
+
+    the node returns the whole accumulated list, so only the tail is stamped:
+    the ones already in `state` were timed by the node that made them, and
+    re-stamping them would attribute every earlier step's cost to this one.
+
+    a wrapper rather than a timer at each call site, because a node that forgets
+    to stop its own stopwatch is a node that reports a plausible wrong number.
+    """
+    import functools
+    import time
+
+    @functools.wraps(fn)
+    def wrapper(state, *a, **kw):
+        t0 = time.perf_counter()
+        out = fn(state, *a, **kw)
+        if not isinstance(out, dict) or not out.get("records"):
+            return out
+        before = len(state.get("records") or []) if isinstance(state, dict) else 0
+        d, now = round(time.perf_counter() - t0, 3), _now()
+        # `started_at` too, because a node's raw dict is not a Record yet - the
+        # default only fires in `coerce`, on the way into the ledger. so the
+        # checkpoint and the ledger disagreed about whether a step had a time,
+        # and the two are meant to be two VIEWS of one store.
+        # `is None`, not `or`. a step that did not run takes ~0 s, which rounds
+        # to 0.0 and is FALSY - so `or` replaced three known zeros with the
+        # node's 148.1 s and the trace summed 588.6 s for a 150 s run. a zero is
+        # a measurement; only None means nobody measured.
+        out["records"] = [*out["records"][:before],
+                          *({**r, "started_at": r.get("started_at") or now,
+                             "duration_s": (d if r.get("duration_s") is None
+                                            else r["duration_s"])}
+                            for r in out["records"][before:])]
+        return out
+
+    return wrapper
 
 
 class RecordStore:

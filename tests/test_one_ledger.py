@@ -148,7 +148,7 @@ def test_gather_reads_the_ledger_and_the_report_shows_who_decided(
     assert b["actor_ratio"]["system"] == 1 and b["actor_ratio"]["deterministic"] == 1
 
     md = render(b, "a report")
-    assert "7 · decisions" in md
+    assert "8 · decisions" in md
     assert "encode_dispatch" in md and "temporal" in md
     assert "by system | 1" in md
 
@@ -158,5 +158,226 @@ def test_a_cohort_with_no_ledger_says_so_in_one_line(bound_synthetic_cohort, led
     b = gather(bound_synthetic_cohort)
     assert "records" not in b
     md = render(b, "a report")
-    assert "7 · decisions" in md
+    assert "8 · decisions" in md
     assert "ledger is empty or absent" in md
+
+
+# --- R4: what the chain MEASURED, beside what the summary declares ---------
+def test_measured_steps_are_classified_from_the_contracts_not_by_shape(
+        bound_synthetic_cohort, ledger_at):
+    """a record is an inventory step or an EDA check because something DECLARED
+    it one, never because its id looked like one."""
+    from omicstra.report import _declared_step_ids
+
+    inv, eda = _declared_step_ids()
+    assert "shape" in inv and "coords" in inv
+    assert "cohort_counts" in eda and "spatial_autocorrelation" in eda
+    assert not (inv & eda), "a step id belongs to one chain or the other"
+
+
+def test_section_four_reports_what_this_run_measured_and_what_it_refused(
+        bound_synthetic_cohort, ledger_at):
+    """section 2 reports what eda_summary.json DECLARES, which on a curated
+    cohort is hand-written and says so. section 4 reports what the chain
+    computed, so the two can be compared rather than one standing for both.
+    """
+    root = bound_synthetic_cohort
+    path = ledger_at / "synthetic" / "records" / "decisions.jsonl"
+    RecordStore(path).append_new([
+        {"step_id": "shape", "kind": "diagnostic", "actor": "deterministic",
+         "status": "pass", "result": "280 samples, 286,250 units"},
+        {"step_id": "cohort_counts", "kind": "diagnostic", "actor": "deterministic",
+         "status": "pass", "result": "median 25,041 features per section"},
+        {"step_id": "model_tissue_fit", "kind": "diagnostic", "actor": "deterministic",
+         "status": "not_run",
+         "reason": "declared in the contract, no implementation registered"},
+    ])
+    md = render(gather(root), "a report")
+
+    assert "inventory, as this run measured it" in md
+    assert "shape" in md and "286,250" in md
+    assert "EDA, as this run measured it" in md
+    assert "median 25,041" in md
+    # a refusal is a RESULT, not an omission - it names what was missing
+    assert "refused, with the cause" in md
+    assert "no implementation registered" in md
+
+
+def test_a_declared_verdict_standing_over_a_computed_one_is_surfaced(
+        bound_synthetic_cohort, ledger_at):
+    """a person writing `proceed` into a committed summary is a recorded
+    acceptance of the cautions. it does not make the two verdicts agree, and a
+    reader of the summary alone cannot see the difference."""
+    root = bound_synthetic_cohort
+    (root / "eda_summary.json").write_text(json.dumps({"verdict": "proceed"}))
+    RecordStore(ledger_at / "synthetic" / "records" / "decisions.jsonl").append_new([
+        {"step_id": "eda_gate", "kind": "diagnostic", "actor": "deterministic",
+         "status": "pass", "result": "proceed_with_caution"},
+    ])
+    md = render(gather(root), "a report")
+    assert "declares `proceed` and this run computed `proceed_with_caution`" in md
+    assert "travels with every number below" in md
+
+
+# --- the trace: an order was always there, the cost was not ----------------
+def test_a_node_stamps_only_the_records_it_added(monkeypatch):
+    """the node returns the whole accumulated list. stamping all of it would
+    attribute every earlier step's cost to this one."""
+    import time
+
+    from omicstra.records import timed_node
+
+    @timed_node
+    def node(state):
+        time.sleep(0.02)
+        return {"records": [*state.get("records", []),
+                            {"step_id": "new", "kind": "gate"}]}
+
+    out = node({"records": [{"step_id": "old", "kind": "gate", "duration_s": 9.9}]})
+    assert out["records"][0]["duration_s"] == 9.9, "an earlier step keeps its own"
+    assert out["records"][1]["duration_s"] >= 0.02
+
+
+def test_a_node_that_times_itself_is_not_overwritten():
+    """the measuring functions time their own work, which is tighter than the
+    node's wall clock. the wrapper fills a gap, it does not take over."""
+    from omicstra.records import timed_node
+
+    @timed_node
+    def node(state):
+        return {"records": [{"step_id": "m", "kind": "diagnostic", "duration_s": 0.5}]}
+
+    assert node({})["records"][0]["duration_s"] == 0.5
+
+
+def test_a_node_returning_no_records_is_passed_through():
+    from omicstra.records import timed_node
+
+    @timed_node
+    def node(state):
+        return {"report": {"status": "refused"}}
+
+    assert node({}) == {"report": {"status": "refused"}}
+
+
+def test_every_graph_node_is_timed():
+    """a stage that is slow should be visible without anyone having remembered
+    to time it, so the wrapper is applied where nodes are REGISTERED."""
+    import re
+    from pathlib import Path
+
+    g = Path(__file__).resolve().parents[1] / "src" / "omicstra" / "graphs"
+    bare = []
+    for f in sorted(g.glob("*.py")):
+        for m in re.finditer(r'add_node\("([^"]+)", (?!timed_node)([^)]+)\)', f.read_text()):
+            bare.append(f"{f.name}:{m.group(1)}")
+    assert not bare, f"untimed graph node(s): {bare}"
+
+
+def test_the_trace_reports_an_untimed_step_as_missing_not_as_zero(
+        bound_synthetic_cohort, ledger_at, monkeypatch, tmp_path):
+    """a step with no duration took an unknown time, which is a different
+    statement from 'took no time' and must not average into a total."""
+    monkeypatch.setenv("OMICSTRA_CHECKPOINT", f"sqlite:{tmp_path / 'ck.sqlite'}")
+    import importlib
+
+    import omicstra.mcp.server as S
+    S = importlib.reload(S)
+
+    out = S.evaluate_run(project_id=None, hypotheses=["H1"], run_id="tr-1")
+    assert out["status"] == "refused"
+    tr = S.runs_trace("tr-1")
+    assert tr["n_steps"] >= 1
+    assert tr["seconds_total"] == round(
+        sum(s["seconds"] for s in tr["steps"] if s["seconds"] is not None), 3)
+    assert all(s["started_at"] for s in tr["steps"]), "an order was always available"
+
+
+def test_the_trace_refuses_a_handle_from_another_layer(monkeypatch, tmp_path):
+    monkeypatch.setenv("OMICSTRA_CHECKPOINT", f"sqlite:{tmp_path / 'ck.sqlite'}")
+    import importlib
+
+    import omicstra.mcp.server as S
+    S = importlib.reload(S)
+    assert S.runs_trace("never-existed")["steps"] == []
+
+
+# --- the time is the STEP's, because that is the only additive reading -------
+def test_each_step_carries_its_own_duration_not_the_nodes():
+    """`timed_node` stamps every record a node added with the NODE's duration,
+    which is not additive: the evaluate node runs a six-step chain, so all six
+    records read 145.7s and the three places that sum the field reported 874.3s
+    for a run that took 145.7."""
+    import time
+
+    from omicstra.protocols import Step, build_protocol
+    from omicstra.records import DiagnosticRecord
+
+    def slow(ctx):
+        time.sleep(0.05)
+        return DiagnosticRecord(step_id="slow", status="pass")
+
+    def quick(ctx):
+        return DiagnosticRecord(step_id="quick", status="pass")
+
+    recs = build_protocol([Step("slow", slow, authority="deterministic"),
+                           Step("quick", quick, authority="deterministic")],
+                          "t").invoke({"params": {"slow": {}, "quick": {}}})
+    assert recs["slow"]["duration_s"] >= 0.05
+    assert recs["quick"]["duration_s"] < recs["slow"]["duration_s"], \
+        "a fast step must not inherit a slow one's cost"
+
+
+def test_a_step_that_times_its_own_work_keeps_that_number():
+    """several measures already time themselves, and that is the tighter figure."""
+    from omicstra.protocols import Step, build_protocol
+    from omicstra.records import DiagnosticRecord
+
+    def own(ctx):
+        return DiagnosticRecord(step_id="own", status="pass", duration_s=9.5)
+
+    recs = build_protocol([Step("own", own, authority="deterministic")],
+                          "t").invoke({"params": {"own": {}}})
+    assert recs["own"]["duration_s"] == 9.5
+
+
+def test_a_step_a_prerequisite_blocked_is_timed_as_well():
+    """it took no time, and that is a KNOWN time - different from an unknown
+    one, which the trace reports as missing rather than as zero."""
+    from omicstra.protocols import Step, build_protocol
+    from omicstra.records import DiagnosticRecord
+
+    def boom(ctx):
+        raise RuntimeError("no")
+
+    def after(ctx):
+        return DiagnosticRecord(step_id="after", status="pass")
+
+    recs = build_protocol(
+        [Step("boom", boom, produces={"x"}, authority="deterministic"),
+         Step("after", after, requires={"x"}, authority="deterministic")],
+        "t").invoke({"params": {"boom": {}, "after": {}}})
+    assert recs["after"]["status"] == "not_run"
+    assert recs["after"]["duration_s"] is not None
+
+
+def test_a_known_zero_is_not_replaced_by_the_nodes_duration():
+    """a step a prerequisite blocked takes ~0 s, which rounds to 0.0 and is
+    FALSY - so `or` replaced three known zeros with the node's 148.1 s and the
+    trace summed 588.6 s for a run that took 150. a zero is a measurement; only
+    None means nobody measured."""
+    import time
+
+    from omicstra.records import timed_node
+
+    @timed_node
+    def node(state):
+        time.sleep(0.05)
+        return {"records": [{"step_id": "blocked", "kind": "diagnostic",
+                             "status": "not_run", "duration_s": 0.0},
+                            {"step_id": "untimed", "kind": "diagnostic",
+                             "status": "pass"}]}
+
+    recs = node({"records": []})["records"]
+    assert recs[0]["duration_s"] == 0.0, "a known zero stands"
+    assert recs[1]["duration_s"] >= 0.05, "an unmeasured step gets the node's"

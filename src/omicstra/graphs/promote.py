@@ -29,6 +29,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from omicstra.protocols.promote import assert_not_authored, propose, provenance
+from omicstra.records import timed_node
+from omicstra.labels import is_yes
 
 
 class PromoteState(TypedDict, total=False):
@@ -82,10 +84,14 @@ def ask(state: PromoteState) -> dict:
                  "editable here."),
         "fields": ["note", "caveat", "interpretation"],
     })
+    # `bool(...)` on both lines: `bool("no")` is True, so a decline APPROVED the
+    # pack at the one gate that exists to refuse one nobody vouched for.
+    # `labels.is_yes` is the allow-list `graphs/route.py` already used, in one
+    # place rather than two.
     if isinstance(answer, dict):
         return {"notes": answer.get("notes", {}) or {},
-                "approved": bool(answer.get("approved"))}
-    return {"approved": bool(answer)}
+                "approved": is_yes(answer.get("approved"))}
+    return {"approved": is_yes(answer)}
 
 
 def emit(state: PromoteState) -> dict:
@@ -122,10 +128,10 @@ def _after_gate(state: PromoteState) -> str:
 
 def build_promote_graph(checkpointer=None):
     g = StateGraph(PromoteState)
-    g.add_node("compute", compute)
-    g.add_node("ask", ask)
-    g.add_node("emit", emit)
-    g.add_node("halt", halt)
+    g.add_node("compute", timed_node(compute))
+    g.add_node("ask", timed_node(ask))
+    g.add_node("emit", timed_node(emit))
+    g.add_node("halt", timed_node(halt))
     g.add_edge(START, "compute")
     g.add_edge("compute", "ask")
     g.add_conditional_edges("ask", _after_gate, {"emit": "emit", "halt": "halt"})

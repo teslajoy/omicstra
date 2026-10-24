@@ -72,6 +72,46 @@ def _assert_order(steps: list[Step], name: str) -> None:
         seen |= s.produces
 
 
+def _stamp(dump: dict, t0: float) -> dict:
+    """how long THIS STEP took, if it did not already say.
+
+    `records.timed_node` stamps every record a graph node added with the NODE's
+    duration, and that number is not additive: the evaluate node runs a
+    six-step chain, so all six records read 145.7s and the three places that sum
+    the field - `trace.section_run`, `report.py` and `runs_trace` - reported
+    874.3s for a run that took 145.7. a step is where the time is actually
+    spent, so this is where it is measured, and `timed_node`'s `or d` fallback
+    then only fires for a record no chain produced.
+
+    a step that measures itself keeps its own number: several measures already
+    time their own work, and that is the tighter figure.
+    """
+    import time
+
+    if dump.get("duration_s") is None:
+        dump["duration_s"] = round(time.perf_counter() - t0, 3)
+    return dump
+
+
+def _supplied(dump: dict, supplied: object) -> dict:
+    """what this step was actually GIVEN, recorded as its params.
+
+    the record's `params` field was left empty by every step in every chain, so
+    a ledger said which steps ran and not what they ran with - and a generated
+    notebook, whose whole claim is "the same step, with the parameters that run
+    recorded", could re-derive nothing: all six steps came back `not_run` with
+    "labels is not declared".
+
+    recorded HERE and not by the step, because this is where the filter happens:
+    a step sees only the keys in its `params_space`, so only this frame knows
+    what it saw. `params` is inside `record_id`, which is correct - a step run
+    with different parameters is a different decision.
+    """
+    if isinstance(supplied, dict) and not dump.get("params"):
+        dump["params"] = dict(supplied)
+    return dump
+
+
 def _link(step: Step, producer_of: dict[str, str] | None = None) -> Callable[[Ctx], Ctx]:
     """one step as a ctx -> ctx function, so links compose with `|`.
 
@@ -80,22 +120,32 @@ def _link(step: Step, producer_of: dict[str, str] | None = None) -> Callable[[Ct
     if the output of one link is the input of the next.
     """
     def run(ctx: Ctx) -> Ctx:
+        import time
+
+        t0 = time.perf_counter()
         recs = dict(ctx.get("_records", {}))
         updates: dict = {}
+        supplied: object = None
         pof = producer_of or {}
 
         # an upstream failure makes this step NOT_RUN, never error. a KeyError
         # here would read as a bug in this step when the real cause is that a
         # prerequisite failed. the chain still runs to the end so the record is
         # complete - only the reason changes.
+        # `not_applicable` belongs in this set. a step that did not apply
+        # produced no artifact, so a step requiring that artifact has nothing to
+        # read - and omitting the status here sent it into the `fn` anyway, where
+        # a missing ctx key surfaced as an error attributed to the wrong step.
+        # not applicable is a reason, and it propagates as one.
         failed_up = sorted({pof[p] for p in step.requires
-                            if p in pof and recs.get(pof[p], {}).get("status") in ("fail", "not_run", "error")})
+                            if p in pof and recs.get(pof[p], {}).get("status")
+                            in ("fail", "not_run", "error", "not_applicable")})
         if failed_up:
             rec = DiagnosticRecord(
                 step_id=step.id, status="not_run",
                 result=f"upstream {failed_up} failed",
                 decision="not attempted - a prerequisite did not produce its artifact")
-            recs[step.id] = rec.model_dump()
+            recs[step.id] = _stamp(rec.model_dump(), t0)
             return {**ctx, "_records": recs}
 
         if step.applicable_when is not None and not step.applicable_when(ctx):
@@ -132,7 +182,7 @@ def _link(step: Step, producer_of: dict[str, str] | None = None) -> Callable[[Ct
                     result=f"{type(e).__name__}: {e}",
                     decision="step failed; the gate cannot judge this check")
 
-        recs[step.id] = rec.model_dump()
+        recs[step.id] = _supplied(_stamp(rec.model_dump(), t0), supplied)
         return {**ctx, **updates, "_records": recs}
     return run
 

@@ -28,8 +28,9 @@ SYNTHETIC = {
 
 def test_a_two_method_cohort_renders_through_the_same_code():
     md = render(SYNTHETIC, "two-method report")
-    for heading in ("1 · cohort", "4 · per question", "5 · the matrix",
-                    "6 · caveats and notes", "7 · decisions", "8 · provenance"):
+    for heading in ("1 · cohort", "4 · measured on this cohort", "5 · per question",
+                    "6 · the matrix", "7 · caveats and notes", "8 · decisions",
+                    "9 · provenance"):
         assert heading in md
     assert "m1" in md and "0.9" in md
     assert "a person wrote this" in md
@@ -95,5 +96,5 @@ def test_gather_reports_an_unreadable_file_rather_than_dying(tmp_path):
 
 def test_human_fields_are_marked_as_authored():
     md = render(SYNTHETIC)
-    i = md.index("6 · caveats")
+    i = md.index("7 · caveats")
     assert "authored" in md[i:i + 400]

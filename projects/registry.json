@@ -1,6 +1,8 @@
 {
+  "note": "projects, and the studies that group them. a STUDY is GDC/Gen3's `program`, renamed because routing_contract.json already spends that word on a biological abstraction level. a flat entry keeps resolving - nothing has to move for the level to exist.",
   "projects": [
     "tnbc-92"
   ],
-  "default": "tnbc-92"
+  "default": "tnbc-92",
+  "studies": {}
 }

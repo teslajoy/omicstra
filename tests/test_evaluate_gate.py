@@ -285,3 +285,104 @@ def test_an_undeclared_family_reads_differently_from_one_declared_unavailable():
     assert sc["H1"]["not_available"] == [{"task": "structural_agreement",
                                           "why": "no CKA artifact"}]
     assert sc["H1"]["evaluable"] is True
+
+
+# --- a matrix entry is a value AND whether it may be compared --------------
+# "cell" throughout means a cell of the TABLE - one question crossed with one
+# method. nothing in this module is a biological cell.
+PACK = {
+    "contraindications": [{
+        "method": "M_bad", "applies_to": ["q_one"], "does_not_apply_to": ["q_two"],
+        "statement": "amplifies the confounder by construction",
+        "evidence": "ratio below the raw floor"}],
+    "tasks": {
+        "q_one": {"higher_is_better": True, "floor": {"id": "raw", "value": 0.5},
+                  "candidates": [{"id": "M_good", "value": 0.9},
+                                 {"id": "M_bad", "value": 0.8},
+                                 {"id": "M_weak", "value": 0.4}]},
+        "q_two": {"higher_is_better": True, "floor": {"id": "raw", "value": 0.1},
+                  "candidates": [{"id": "M_bad", "value": 0.8}]},
+        "q_none": {"not_available": "no artifact for this family"},
+    },
+}
+
+
+def test_a_contraindication_is_task_scoped_and_its_exception_is_honoured():
+    """a method contraindicated for one question may be the right answer to
+    another - the pack records the exception, and reading the method name alone
+    would silently override it."""
+    from omicstra.protocols.evaluate import contraindication
+
+    assert contraindication(PACK, "q_one", "M_bad")["statement"].startswith("amplifies")
+    assert contraindication(PACK, "q_two", "M_bad") is None, "the exception stands"
+    assert contraindication(PACK, "q_one", "M_good") is None
+
+
+def test_a_contraindicated_entry_is_not_ranked_and_the_reason_takes_its_place():
+    from omicstra.protocols.evaluate import matrix_cell
+
+    c = matrix_cell(PACK, "q_one", {"id": "M_bad", "value": 0.8})
+    assert c["status"] == "contraindicated" and c["rankable"] is False
+    assert "amplifies" in c["why"] and c["evidence"]
+    # and it IS rankable on the question the pack exempts
+    assert matrix_cell(PACK, "q_two", {"id": "M_bad", "value": 0.8})["rankable"] is True
+
+
+def test_a_method_below_the_floor_has_not_answered_the_question():
+    """every hypothesis here is stated comparatively against a baseline, so a
+    value that does not beat it is not a weak answer - it is not an answer."""
+    from omicstra.protocols.evaluate import matrix_cell
+
+    c = matrix_cell(PACK, "q_one", {"id": "M_weak", "value": 0.4})
+    assert c["status"] == "below_floor" and c["rankable"] is False
+    assert "comparative" in c["why"]
+    assert matrix_cell(PACK, "q_one", {"id": "M_good", "value": 0.9})["status"] == "admissible"
+
+
+def test_lower_is_better_flips_the_floor_comparison():
+    pack = {"tasks": {"q": {"higher_is_better": False,
+                            "floor": {"id": "raw", "value": 0.5},
+                            "candidates": []}}}
+    from omicstra.protocols.evaluate import matrix_cell
+
+    assert matrix_cell(pack, "q", {"id": "m", "value": 0.4})["status"] == "admissible"
+    assert matrix_cell(pack, "q", {"id": "m", "value": 0.6})["status"] == "below_floor"
+
+
+def test_the_hypothesis_claim_rides_on_the_question_not_the_entry():
+    """whether the hypothesis was guarded caveats every cell of a question
+    equally, so repeating it per cell says the same thing n times."""
+    from omicstra.protocols.evaluate import matrix
+
+    m = matrix(PACK, claims={"H1": "unguarded"})
+    assert all("claim" not in c for c in m["q_one"]["cells"])
+    assert "claim" in m["q_one"]
+
+
+def test_a_question_with_no_artifact_keeps_its_own_reason():
+    from omicstra.protocols.evaluate import matrix
+
+    row = matrix(PACK)["q_none"]
+    assert row["status"] == "not_available" and row["cells"] == []
+    assert row["why"] == "no artifact for this family"
+
+
+def test_the_seed_cohorts_matrix_marks_what_cannot_be_compared():
+    """on the published pack: two retrieval arms below chance, one method
+    contraindicated for two questions, and arms scoring zero on transfer."""
+    root, _ = _seed_or_skip()
+    import json
+
+    from omicstra.protocols.evaluate import matrix
+
+    pack = json.loads((root / "routing_evidence.json").read_text())
+    m = matrix(pack)
+    bad = {(t, c["method"]): c["status"] for t, r in m.items()
+           for c in r.get("cells", []) if not c["rankable"]}
+    assert bad[("cross_modal_retrieval", "B3_v3")] == "below_floor"
+    assert bad[("cross_modal_retrieval", "B4_v3")] == "below_floor", "below chance"
+    assert bad[("tissue_state_grouping", "B1_v3")] == "contraindicated"
+    assert bad[("subject_identity_suppression", "B1_v3")] == "contraindicated"
+    # and the exception holds: the same method is comparable on pathway transfer
+    pt = {c["method"]: c["rankable"] for c in m["pathway_transfer"]["cells"]}
+    assert pt["B1_v3"] is True, "a contraindication is task-scoped, not a verdict"

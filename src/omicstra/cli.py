@@ -14,6 +14,7 @@ import click
 
 from omicstra.contracts.project import ProjectConfig
 from omicstra.eda import run_gate
+from omicstra.labels import Route
 from omicstra.settings import settings
 
 TEMPLATE = {
@@ -35,6 +36,50 @@ TEMPLATE = {
     "niches_dir": "",
     "runs_dir": "runs",
 }
+
+
+# the numerics are an EXTRA, and a command that needs them must say so rather
+# than traceback. `omicstra gate` already refuses legibly on a bare install;
+# `omicstra inventory` did not, because `protocols/inventory.py` imported numpy
+# at module level and click let the ImportError out raw. the encoder registry
+# has had this right all along - `EncoderUnavailable` names the extra the SPEC
+# declares - so this is the same refusal for the read path.
+_MEASURE_PKGS = {"numpy", "scipy", "sklearn", "anndata", "pandas", "pyarrow"}
+
+
+class _MeasureMissing(click.ClickException):
+    """a command needed the numerics and they are not installed."""
+
+    def __init__(self, module: str, command: str) -> None:
+        super().__init__(
+            f"`omicstra {command}` measures data, which needs the numerics "
+            f"extra - {module!r} is not installed.\n\n"
+            f"    pip install 'omicstra[measure]'\n\n"
+            "a bare install serves its tools, gates, and routes on a published "
+            "evidence pack; computing an inventory or an EDA step is the half "
+            "that needs numpy, scipy, scikit-learn, anndata and pyarrow.")
+
+
+def _needs_measure(command: str):
+    """run a body, and turn a missing numerics package into a refusal.
+
+    scoped to `_MEASURE_PKGS` on purpose: any OTHER ImportError is a real bug
+    in the package and must keep its traceback rather than being reported as a
+    missing optional dependency.
+    """
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _ctx():
+        try:
+            yield
+        except ImportError as e:
+            mod = (getattr(e, "name", "") or str(e)).split(".")[0]
+            if mod in _MEASURE_PKGS:
+                raise _MeasureMissing(mod, command) from e
+            raise
+
+    return _ctx()
 
 
 @click.group()
@@ -189,8 +234,9 @@ def inventory(project_dir, project_id, inputs_dir, max_samples, write) -> None:
     if max_samples is not None:
         params["shape"] = {"max_samples": max_samples}
 
-    recs = build_protocol(INVENTORY_STEPS, "inventory").invoke(
-        {"project_dir": str(root), "project_id": project_id, "params": params})
+    with _needs_measure("inventory"):
+        recs = build_protocol(INVENTORY_STEPS, "inventory").invoke(
+            {"project_dir": str(root), "project_id": project_id, "params": params})
 
     for k, v in recs.items():
         click.echo(f"  [{v.get('status', '?'):<14}] {k:<12} {str(v.get('result', ''))[:62]}")
@@ -204,7 +250,23 @@ def inventory(project_dir, project_id, inputs_dir, max_samples, write) -> None:
             click.echo("  CAPPED - downstream gates that read these counts see a "
                        "fraction of the cohort. pass --max-samples 0 for all of it.")
 
-    failed = [k for k, v in recs.items() if v.get("status") == "fail"]
+    # a missing numerics package is not a failed inventory, and `_link` catches
+    # every exception by design so it never reaches a `try` here. so the records
+    # are read for it and translated into the refusal - before the write gate,
+    # because an inventory that could not read a sample is not a record of one.
+    for k, v in recs.items():
+        if v.get("status") != "error":
+            continue
+        mod = str(v.get("result") or "").split("'")
+        if len(mod) > 1 and mod[1].split(".")[0] in _MEASURE_PKGS:
+            raise _MeasureMissing(mod[1], "inventory")
+
+    # `error` counts as failure for the write gate. it did not, so a chain whose
+    # reader was absent still wrote an inventory.json with one step errored and
+    # six not_run - a record of nothing, which is the thing this gate exists to
+    # refuse one line down.
+    failed = [k for k, v in recs.items()
+              if v.get("status") in ("fail", "error")]
     if write and not failed:
         out = root / "inventory.json"
         out.write_text(json.dumps(recs, indent=2, default=str) + "\n")
@@ -638,7 +700,7 @@ def report(project_dir: Path | None, project_id: str | None, out: Path | None,
         bundle["pack"] = p
         bundle["provenance"] = provenance(p)
 
-    ledger = settings.resolve(settings.runs_dir) / root.name / "records"
+    ledger = settings.work_root(project_id) / "records"
     jsonl = ledger / "decisions.jsonl"
     if jsonl.is_file():
         bundle["records"] = [json.loads(ln) for ln in jsonl.read_text().splitlines() if ln.strip()]
@@ -650,6 +712,62 @@ def report(project_dir: Path | None, project_id: str | None, out: Path | None,
         click.echo(f"wrote {out}  ({len(text.splitlines())} lines)")
     else:
         click.echo(text)
+
+
+@main.command()
+@click.argument("unit", required=False)
+@click.option("--project-dir", default=None, type=click.Path(path_type=Path))
+@click.option("--project-id", default=None)
+@click.option("--run", default=None,
+              help="the fitted run the evaluation chain reads.")
+@click.option("--sample", default=None, help="the sample the join chain reads.")
+@click.option("--run-id", default=None,
+              help="the run that produced these records, for the header. a "
+                   "ledger record does not carry one.")
+def notebook(unit: str | None, project_dir: Path | None, project_id: str | None,
+             run: str | None, sample: str | None, run_id: str | None) -> None:
+    """write one analysis unit as a rerunnable notebook and its trace.
+
+    keyed on the UNIT, not on a run: a run id is an execution artifact, and a
+    cohort wants one current record per unit. with no UNIT, lists the ones this
+    package can generate and what each answers.
+
+    the pair lands under the cohort's work root, beside its ledger and figures -
+    a generated notebook is a result, not part of the package.
+    """
+    from omicstra.notebook import UNITS, from_ledger, write
+
+    if project_dir is not None:
+        settings.project_dir = project_dir.expanduser()
+
+    if not unit:
+        for name, u in sorted(UNITS.items()):
+            if u.context:
+                click.echo(f"  {name:24s} {u.asks}")
+            else:
+                click.echo(click.style(
+                    f"  {name:24s} {u.asks}  (no context loader - not generable)",
+                    dim=True))
+        return
+
+    try:
+        b = from_ledger(unit, project_id, run=run, sample=sample, run_id=run_id)
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+
+    # an empty unit would still render: a header, no step cells, and a footer
+    # claiming a clean rerun. refuse, and name the file that holds nothing for
+    # this unit, because the usual cause is that the chain ran outside the graph.
+    if not b["records"]:
+        from omicstra.contracts.routing import ledger as _ledger
+        raise click.ClickException(
+            f"the ledger holds no {unit} step for this cohort, so there is "
+            f"nothing to re-derive: {_ledger(project_id).path}. run the unit's "
+            "gate first - a chain run outside the graph writes no records.")
+
+    nb, tr = write(b, project_id)
+    click.echo(f"wrote {nb}")
+    click.echo(f"wrote {tr}   ({len(b['records'])} steps)")
 
 
 @main.command(name="run")
@@ -956,9 +1074,16 @@ def chain(project_dir, project_id, task_id, hypotheses, compute, answers, thread
     from omicstra.graphs.evaluate import build_evaluate_graph
     from omicstra.graphs.route import build_route_graph
     from omicstra.graphs.st import build_st_graph
+    from omicstra.tracing import assert_may_trace
 
     if project_dir is not None:
         settings.project_dir = project_dir.expanduser()
+
+    # before the walk, not after: external tracing captures the run, so a check
+    # at the end would fire once the content had already been sent.
+    from omicstra.graph import _load_cohort
+
+    assert_may_trace(_load_cohort(project_id), project_id)
 
     given: dict[str, str] = {}
     for a in answers:
@@ -999,7 +1124,7 @@ def chain(project_dir, project_id, task_id, hypotheses, compute, answers, thread
             break
         out = app.invoke(Command(resume=have), cfg)
 
-    click.echo(f"\narm: {out.get('arm')} - {out.get('arm_reason', '')}")
+    click.echo(f"\nroute: {out.get('route')} - {out.get('route_reason', '')}")
     stages = out.get("stages") or []
     if stages:
         click.echo("-" * 68)
@@ -1016,7 +1141,7 @@ def chain(project_dir, project_id, task_id, hypotheses, compute, answers, thread
             click.echo(f"  {h:<6} claims {d['claims']:<12} "
                        f"guards ran {len(d['guards_ran'])}, "
                        f"failed {len(d['guards_failed'])}")
-    if not compute and out.get("arm") == "compute":
+    if not compute and out.get("route") == Route.COMPUTE:
         click.echo("\nnothing ran - every stage resolved. pass --compute to execute.")
 
 

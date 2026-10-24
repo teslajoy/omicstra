@@ -57,6 +57,38 @@ jobs:
           python -m pip install -q --upgrade pip
           python -m pip install -q -e .
 
+      - name: a bare install REFUSES legibly
+        run: |
+          set -e
+          # serving is half the contract. the other half is that a command which
+          # needs the numerics says so, by name, instead of a traceback - which
+          # is what `omicstra inventory` did until 2026-10-20, because a
+          # module-level numpy import crashed before any step ran and the
+          # per-sample except then reported a missing reader as unreadable DATA.
+          cd /tmp
+          omicstra init --project-dir /tmp/ci_bare > /dev/null
+          mkdir -p /tmp/ci_bare/data/canonical
+          : > /tmp/ci_bare/data/canonical/s1.h5ad
+          # the `platform` step runs BEFORE `shape` and is pure stdlib, so
+          # without a declaration it fails first and the reader is never
+          # reached. every sample must name a defined platform - an undeclared
+          # sample is a halt, not a guess - so the fixture declares one.
+          cat > /tmp/ci_bare/platform.json <<'JSON'
+          {"platforms": {"ci": {}}, "samples": {"s1": "ci"}}
+          JSON
+          set +e
+          out=$(omicstra inventory --project-dir /tmp/ci_bare 2>&1); rc=$?
+          set -e
+          echo "$out"
+          test $rc -ne 0 || { echo "FAIL: a bare install did not refuse"; exit 1; }
+          echo "$out" | grep -q "omicstra\[measure\]" \
+            || { echo "FAIL: the refusal does not name the measure extra"; exit 1; }
+          echo "$out" | grep -qiv "Traceback" \
+            || { echo "FAIL: the refusal is a traceback"; exit 1; }
+          test ! -f /tmp/ci_bare/inventory.json \
+            || { echo "FAIL: wrote an inventory it could not compute"; exit 1; }
+          echo "bare install refuses legibly, names the extra, writes nothing"
+
       - name: a bare install serves
         run: |
           set -e

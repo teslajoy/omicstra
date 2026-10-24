@@ -4,7 +4,7 @@ this file provides guidance to Claude Code when working with code in this reposi
 
 ## project overview
 
-omicstra is a multi-agent MCP server for cross-modal reasoning in spatial biology. it aligns embeddings from H&E histopathology (UNI2/Virchow2) and spatial transcriptomics (Novae GNN) into a shared 512d space, then exposes cross-modal retrieval and evaluation through the Model Context Protocol.
+omicstra is a multi-agent MCP server for cross-modal reasoning in spatial biology. it aligns embeddings from H&E histopathology (Virchow2) and spatial transcriptomics (Novae GNN) into a shared 512d space, then exposes cross-modal retrieval and evaluation through the Model Context Protocol.
 
 seed dataset: 92 TNBC patients from Wang et al. 2024 (co-registered ST + H&E WSI, Zenodo doi:10.5281/zenodo.8135721). platform: original Spatial Transcriptomics (Stahl et al. 2016, KTH/Spatial Transcriptomics AB, acquired by 10x Genomics 2018) - 1934 spots/array, 100um diameter, **150um center-to-center**, ~200 cells/spot, array 6.2 x 6.4 mm. not 10x Visium (5000 spots, 55um).
 
@@ -51,8 +51,7 @@ layer 2: karpathy loop (outer optimization)
 
 ## embedding dimensions
 
-- Virchow2: 1280d (primary H&E encoder, picked via encoder_qc_comparison_2026-04-09 on MC linear probe)
-- UNI2: 1536d (alternative H&E encoder, pluggable swap)
+- Virchow2: 1280d (H&E encoder, picked via encoder_qc_comparison_2026-04-09 on MC linear probe)
 - Novae GNN: 64d (novae_latent, raw GAT output - LayerNorm at MLP input required)
 - Novae edge scale: `novae.settings.scale_to_microns` is a GAT input (each edge length enters as distance x scale / 20), not a unit label. the seed cache was computed at 1.2195 (the old 200um assumption); declared in `platforms.*.st_graph.scale_to_microns` and required by `StGraph` - there is no default
 - ST input to alignment: 576d (novae 64 + gpath2vec 512) for every run except R6, which is novae only (64d)
@@ -121,8 +120,8 @@ metrics.
 | orchestration | LangGraph StateGraph |
 | routing | Claude Sonnet 4.6 |
 | synthesis | Claude Opus 4.6 |
-| tracing | LangSmith (observability only) |
-| H&E encoder | Virchow2 1280d (primary) / UNI2 1536d (alternative) |
+| tracing | the committed decision ledger (always local). LangSmith opt-in via env, refused on a cohort the contract says may not leave the host |
+| H&E encoder | Virchow2 1280d |
 | ST encoder | Novae GNN 64d (novae_latent) |
 | pathway embeddings | gpath2vec |
 | alignment | contrastive MLP + cross-attention bridge |
@@ -170,7 +169,8 @@ to do:
   name. `spec()` is metadata only and needs no tensor library; only `load()` does
 - `src/omicstra/adapters/canonical.py` — the package's input contract: .h5ad plus
   a coordinates table. no format-specific reader lives in the package
-- `src/omicstra/mcp/server.py` — 18 tools, 2 resources, stdio + http, zero model
+- `src/omicstra/mcp/server.py` — 21 tools, 2 resources + 2 per-cohort
+  templates, stdio + http, zero model
   calls. two compute agents (`he_encode`, `st_encode`), each with its own gate set,
   plus `align_run` (resolves a grid) and `evaluate_run` (states a verdict on
   H1/H2/H3 over the artifacts the pack cites), and
@@ -249,6 +249,94 @@ a test guards on what it NEEDS        not on a committed record. ingest.json is
                                       fails in every clone
 work lands via a branch and a PR      the template states the scope, because
                                       tests catch correctness and not altitude
+read the ANALYSIS LOGIC before        a doc describes what a chain was; the
+  porting it                          script is what it IS. every port that
+                                      started from prose was wrong - see below
+a working doc is never cited          the pack is what a claim resolves to. a
+  against the pack                     design/ note raising a concern the pack
+                                       later answered is not a contradiction
+quote the enclosing header with       a scoped number read as a global one is a
+  any line                             contradiction that is not there
+a record carries what its step        `_link` filters a cohort's declaration to
+  was GIVEN                            each step's params_space, so that frame
+                                       is the only one that knows. the field was
+                                       empty in every chain and no rerun was
+                                       possible
+a reported time is the STEP's         `timed_node` stamps the NODE's duration on
+                                       every record it adds, and three places
+                                       SUM the field - 874.3s for a 147.8s run
+```
+
+### document precedence
+
+a claim about this cohort's results resolves in this order, and a lower source
+never overrides a higher one:
+
+```
+1  projects/{id}/routing_evidence.json   the PACK. adjudicated, with its own
+                                         caveats and open_flags. a number here
+                                         resolves to an artifact
+2  docs/v2/tnbc92_results_summary.md     the stated verdict per hypothesis
+3  docs/v2/*.md, docs/reports/           methods and reports
+4  design/*.md                           WORKING docs. a concern raised here may
+                                         already be answered at 1 or 2
+```
+
+design/ is where a question is thought through, so it holds concerns in the
+state they were in when written. three times in one session a design/ line was
+read as a live defect that the pack had already resolved - the "5x vs raw_st"
+baseline and the B.1 direction column both sit in the pack with their scope.
+check 1 and 2 before reporting anything from 4 as open.
+
+### scope before quote
+
+a number in this repo is almost always scoped - to one arm, one view, one
+section, one subarray. the scope is usually the line or header ABOVE it, not the
+line itself:
+
+```
+design/v1_3_scope.md:649   "on R4_v3:"        <- the scope
+                    :650+  a table of six contrasts, three INVERTED
+results_summary.md:107     "R4 fails every contrast (0/6 pass, 3 inverted)"
+```
+
+read as a global result the table contradicts a published "B.1 holds for TLS";
+read with its header it IS that published result, for the arm it names. so: when
+quoting a line, quote the section header that scopes it, and name the arm, the
+view and the split. a claim with no scope is not a claim.
+
+### reading the analysis before building it
+
+a design doc, a notebook's markdown and a docstring are all DOWNSTREAM of the
+code that produced the artifacts, and every one of them has been stale here.
+before porting any analysis step, in this order:
+
+```
+1  the artifact's own provenance      run_provenance.json names its INPUTS, and
+                                      the input is often not what a function
+                                      signature suggests
+2  the script that wrote it           committed code beats committed prose. a
+                                      notebook's markdown describes what was
+                                      TRIED; the script is what shipped
+3  the parameters, measured           read the numbers out of the artifact or
+                                      the provenance, never from a sentence
+4  then the design doc                to find what it does NOT cover - which is
+                                      how a whole second chain stayed invisible
+```
+
+what this has caught, each time only after the wrong thing was nearly built:
+
+```
+a second chain, undocumented     niche_aucell.py normalises differently and
+                                 analysis_pipeline_steps.md does not mention it
+the seam one step earlier        the published build's input is per-niche gene
+                                 SETS, not the matrix the CLI signature takes
+a method error in the prose      "AUCell on the variable-gene-filtered profile"
+                                 - AUCell is an AUC over a ranking of ALL genes,
+                                 so a per-unit filter changes the denominator
+                                 and the scores stop being comparable
+three variants, one documented   v1 connectivity/top-200, v3 MAD-mean/top-25%,
+                                 and AUCell - all committed, all live
 ```
 
 ---
@@ -259,6 +347,10 @@ work lands via a branch and a PR      the template states the scope, because
   read it before adding a graph; a lint asserts every `graphs/*.py` is on it
 - `design/v1_3_scope.md` — **the live plan.** start here
 - `design/v1_2_scope.md` — what shipped, and the nine package edits it cost
+- `EVALUATION.md` — **what each test proves, and the condition under which it
+  proves it.** cohort-free. §8 splits thresholds three ways: a statistical
+  standard travels, a null-derived cut is re-derived per cohort, and a bar
+  somebody eyeballed must escalate. read it before adding a metric or reading one
 - `README.md` — what + why
 - `CLAUDE.md` — dev guidance (this file)
 - `EDA.md` — gate checks before pipeline work
