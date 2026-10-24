@@ -146,7 +146,7 @@ def test_the_footer_states_what_a_clean_rerun_proves():
 
 # ------------------------------------------------------- the contract -------
 def test_the_notebook_is_valid_nbformat():
-    import nbformat
+    nbformat = pytest.importorskip("nbformat")
 
     nb = nbformat.from_dict(build(_bundle()))
     nbformat.validate(nb)
@@ -194,8 +194,7 @@ def test_the_pair_is_written_side_by_side_and_both_paths_are_returned(cohort):
     nb, tr = write(_bundle())
     assert nb.parent == tr.parent == (cohort / "work" / "results").resolve()
     assert (nb.name, tr.name) == filenames("evaluate")
-    import nbformat
-
+    nbformat = pytest.importorskip("nbformat")
     nbformat.validate(nbformat.reads(nb.read_text(), as_version=4))
     assert "what each hypothesis may claim" in tr.read_text()
 
@@ -311,7 +310,7 @@ def test_the_pair_lands_under_the_cohorts_work_root_from_the_ledger_alone(
         bound_synthetic_cohort):
     """the whole path, with nothing hand-assembled: records in the cohort's
     ledger, a notebook and a trace under its work root."""
-    import nbformat
+    nbformat = pytest.importorskip("nbformat")
 
     from omicstra.contracts.routing import ledger
     from omicstra.notebook import from_ledger, results_dir, write
