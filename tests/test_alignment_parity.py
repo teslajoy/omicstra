@@ -12,6 +12,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+
+pytest.importorskip("torch", reason="requires optional dependency torch")
+
 import torch
 import torch.nn.functional as F
 

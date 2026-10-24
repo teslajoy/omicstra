@@ -14,6 +14,8 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
+pytest.importorskip("torch", reason="requires optional dependency torch")
+
 from omicstra.protocols import build_protocol
 from omicstra.protocols.align import ALIGN_TRAIN_STEPS, _train_contrastive_chain
 
