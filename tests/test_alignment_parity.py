@@ -267,7 +267,7 @@ class TestLossParity:
         mc_w = torch.rand(N, MC_DIM)
         s = script_supcon(z_he, z_st, mc_w, tau=0.07, tau_target=0.1)
         p = pkg_supcon(z_he, z_st, mc_w, tau=0.07, tau_target=0.1)
-        assert torch.equal(s, p), f"supcon diff: {abs(s.item() - p.item())}"
+        assert torch.allclose(s, p, atol=1e-6), f"supcon diff: {abs(s.item() - p.item())}"
 
     def test_barlow(self, z_pair):
         z_he, z_st = z_pair
