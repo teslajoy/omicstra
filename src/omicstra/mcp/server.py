@@ -889,8 +889,9 @@ def st_encode(project_id: str | None = None, platform: str | None = None,
 
 @srv.tool(description=(
     "RESOLVE a cohort's alignment grid from its recorded artifacts, behind a run "
-    "handle. It does not train: alignment has never executed through the package, "
-    "and compute=true is not wired yet - the scripts are still the method. What "
+    "handle. compute=true trains contrastive runs through the five-step LCEL chain "
+    "(load_data, split, train, embed_test, evaluate_and_save) and dispatches "
+    "classical baselines to their scripts. What "
     "this adds is the gate in front of it. Its first gate is the cohort's own EDA "
     "verdict: this project's opening constraint is that no alignment, retrieval "
     "or evaluation happens until that gate is satisfied, and this is where that "

@@ -167,10 +167,29 @@ jobs:
         if: matrix.python-version == '3.12'
         with: { name: dist, path: dist/ }
 
+  verify-encode:
+    # the torch-dependent tests: alignment parity, chain execution, and
+    # entry-point routing. the verify job skips them (importorskip) because it
+    # installs only measure+dev. this job installs the encode extra so the
+    # tests that need torch actually run. one python version because torch is
+    # large and the numerics are version-independent.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.14" }
+      - name: install with encode extra
+        run: |
+          python -m pip install -q --upgrade pip
+          python -m pip install -q -e ".[encode,measure,dev]"
+      - name: torch-dependent tests
+        run: |
+          python -m pytest tests/test_alignment_parity.py tests/test_align_chain.py tests/test_align_routing.py -v
+
   publish:
     # ONLY on a tag. a version can be deleted from PyPI but never re-uploaded,
     # so this runs once per version and only after verify has passed.
-    needs: verify
+    needs: [verify, verify-encode]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
