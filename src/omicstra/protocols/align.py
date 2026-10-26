@@ -627,7 +627,7 @@ def _train_contrastive_chain(run_cfg: dict, niches_dir: str, run_dir: Path) -> d
 def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = None,
               project_id: str | None = None, *, compute: bool = False,
               runs_root: Path | None = None,
-              use_package: bool = False) -> tuple[AlignGrid, TransformRecord]:
+              use_package: bool = True) -> tuple[AlignGrid, TransformRecord]:
     """resolve the grid, or train the runs that are missing.
 
     contrastive runs are driven by their config; classical baselines are driven
