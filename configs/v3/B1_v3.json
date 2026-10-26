@@ -1,0 +1,11 @@
+{
+  "run_id": "B1_v3",
+  "method": "cca",
+  "shared_dim": 512,
+  "st_features": [
+    "novae_niche",
+    "gpath2vec_niche"
+  ],
+  "reference_run": "R1_v3",
+  "reg": 1e-4
+}

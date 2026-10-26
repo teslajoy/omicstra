@@ -1,10 +1,11 @@
-"""load and split niche-join parquets for alignment training.
+"""load, split and save niche-join parquets for alignment training.
 
 extracted from scripts/align.py:119-218. the arithmetic is unchanged.
 callable from notebooks and tests without importing protocols or graphs.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -61,6 +62,62 @@ def load_subarray(
         "mc_w": mc_w[valid].astype(np.float32),
         "n_dropped_nan": int((~valid).sum()),
     }
+
+
+def build_matrices(
+    subs: list[dict],
+) -> tuple[np.ndarray, np.ndarray, pd.DataFrame]:
+    """stack H&E niche and ST features across subarrays, with per-niche metadata.
+
+    source: scripts/align_classical.py:55-70
+    """
+    X_he = np.concatenate([s["x_he_niche"] for s in subs])
+    X_st = np.concatenate([s["x_st"] for s in subs])
+    meta_rows = []
+    for s in subs:
+        for sid, comp in zip(s["spot_id"], s["compartment"]):
+            meta_rows.append({
+                "spot_id": sid,
+                "subarray": s["subarray"],
+                "patient_id": s["patient_id"],
+                "archetype": s["archetype"],
+                "compartment": comp,
+            })
+    meta = pd.DataFrame(meta_rows)
+    assert len(meta) == X_he.shape[0] == X_st.shape[0], (
+        f"row mismatch: meta={len(meta)}, X_he={X_he.shape[0]}, X_st={X_st.shape[0]}")
+    return X_he, X_st, meta
+
+
+def save_test_artifacts(
+    emb_df: pd.DataFrame,
+    Z_he: np.ndarray,
+    Z_st: np.ndarray,
+    X_he: np.ndarray,
+    X_st: np.ndarray,
+    *,
+    run_dir: Path,
+    ks: tuple[int, ...] = (1, 5, 10),
+    negative_ratio: int = 10,
+    negative_seed: int = 0,
+) -> dict:
+    """write embeddings_test.parquet and metrics_h1_raw.json.
+
+    source: scripts/align.py:560-577
+    """
+    from omicstra.measures.evaluation import linear_cka, retrieval
+
+    emb_df.to_parquet(run_dir / "embeddings_test.parquet")
+
+    sim = (Z_he @ Z_st.T).astype(np.float64)
+    metrics = retrieval(sim, ks=ks, negative_ratio=negative_ratio,
+                        negative_seed=negative_seed)
+    metrics["cka_before"] = linear_cka(X_he, X_st, centre=True)
+    metrics["cka_after"] = linear_cka(Z_he, Z_st, centre=True)
+    metrics["test_subarrays"] = len(set(emb_df["subarray"])) if "subarray" in emb_df.columns else 0
+    metrics["test_niches"] = len(emb_df)
+    (run_dir / "metrics_h1_raw.json").write_text(json.dumps(metrics, indent=2))
+    return metrics
 
 
 def discover_subarrays(niches_dir: Path) -> list[Path]:
