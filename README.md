@@ -8,43 +8,7 @@ the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.22754114-1682D4)](https://doi.org/10.5281/zenodo.22754114)
 
-`v1.0.0` · `v1.1.0` · `v1.2.0`  `ResearchHub Foundation grant`  `Brenden-Colson Center / Sears Lab, OHSU`
-
-**v1.0** ships the read path (inventory, EDA, admissibility gate, routing) over
-stdio and HTTP, the alignment and evaluation stages verified bit-identical
-against the published grid, and the seed cohort's evidence pack in the repo, so a
-fresh clone can route without training anything. The package itself ships no
-cohort: `pip install omicstra` gets the contracts, and you point it at a cohort
-directory.
-
-**v1.1** is `omicstra run`: embeddings extracted here rather than resolved, the
-niche join, H1/H2/H3 as a chain, and a promotion step where a person approves the
-pack, with the report rendered from a cohort-agnostic template. Laptop-only for
-both.
-
-That report is a **template, not this cohort's report**. The renderer takes a
-pack and a record ledger and knows nothing about tnbc-92 - sections appear
-because a record exists, so a cohort that never ran H3 has no H3 section and says
-why. See `design/v1_1_scope.md`.
-
-**v1.2** makes both modality agents reachable by a client, with a run handle that
-survives the process, and runs a cohort the package had never seen through them.
-The agents are separate on purpose: the H&E arm asks about gated weights and a
-tile geometry, the ST arm about the encoder's prototype floor and the edge scale,
-and one tool would hide what each exists to ask. A cohort with no recorded
-evaluation of its own is **not routable**, and the server says so rather than
-reusing the seed cohort's winner. The second cohort's own evidence pack is 1.3 -
-see `design/v1_3_scope.md`, which carries it with the open questions measured.
-
-**v1.3** (pre-release `1.3.0a1`) adds the worker that serves the encode queue, a
-verdict per hypothesis behind its own gates, one decision ledger that reaches the
-report, and the whole chain wired at level 0. The server holds no model, and that
-is now a test rather than a claim: it imports no model SDK, no extra can install
-one, and both judges resolve from lookup tables. It has been driven end to end
-from a **Claude-on-Bedrock** client - from a workstation and from a scheduled
-cluster node - where three runs took three different routes through the surface
-and every server answer was byte-identical to the same tool called with no model
-on the path. `pip install omicstra` still resolves to 1.2.0.
+`v1.0.0` · `v1.1.0` · `v1.2.0` · `v1.3.0a2`  `ResearchHub Foundation grant`  `Brenden-Colson Center / Sears Lab, OHSU`  [changelog](CHANGELOG.md)
 
 ---
 
@@ -336,6 +300,11 @@ A cohort with no evidence of its own is not routable, and the server says so rat
 | `runs_status` | what a run is doing, counted from the output files rather than remembered |
 | `runs_resume` | answer an open gate, or re-dispatch the sections a dead run left missing |
 | `runs_record` | the run's half of the ledger: every gate, who answered it, from which declaration |
+| `runs_trace` | the timeline of a run: every step in order, duration, and which actor decided it |
+| `align_run` | resolve a cohort's alignment grid from its recorded artifacts, behind a run handle |
+| `evaluate_run` | return a verdict on H1/H2/H3 for a cohort, behind a run handle |
+| `evaluate_measure` | compute a verdict from a cohort's own arrays, rather than reading one from a curated pack |
+| `unit_notebook` | write one analysis unit as a rerunnable notebook plus a markdown trace |
 
 **what that lets you do today**
 
@@ -449,7 +418,7 @@ alignment strategies (experimental variable):
 
 ## repo structure
 
-audited against the filesystem 2026-09-11. `·` is built, `○` is named in the design and **not yet built** - kept here because the name is referenced elsewhere, not because it exists.
+audited against the filesystem 2026-10-27. `·` is built, `○` is named in the design and **not yet built** - kept here because the name is referenced elsewhere, not because it exists.
 
 ```
 omicstra/
@@ -463,7 +432,11 @@ omicstra/
 · .mcp.json  .env.example            # MCP server entry - optional tracing only
 │
 · design/                            # the planning tree - tracked, this is where "what next" lives
-│   · v1_1_scope.md                  # the NEXT release's boundary. read before adding
+│   · v1_1_scope.md                  # what shipped in 1.1
+│   · v1_2_scope.md                  # what shipped in 1.2
+│   · v1_3_scope.md                  # the LIVE plan. read before starting anything
+│   · graph.md                       # the route: which file owns which step, one page
+│   · analysis_pipeline_steps.md     # every operation in the chain, one line each
 │   · mcp_plan.md  workflow.md       # engineering plan - the executable graph
 │   · decisions.md                   # what is decided, and by whom
 │   · progress.md  status.md         # build log - repo snapshot
@@ -473,37 +446,53 @@ omicstra/
 │   · graphs/                        # LEVEL 1 - one per gate, each can interrupt()
 │   │   · eda.py                     #   inventory -> profile -> gate -> escalate
 │   │   · route.py                   #   orchestrator -> 3 agents -> judge -> ask_human
-│   │   · encode.py  promote.py      #   compute, and the reviewed evidence step
+│   │   · encode.py  st.py           #   compute agents, one per modality
+│   │   · align.py  evaluate.py      #   alignment grid · H1/H2/H3 verdicts
+│   │   · promote.py  submit.py      #   reviewed evidence step · shard dispatch
 │   · protocols/                     # LEVEL 2 - order, applicability, authority. no maths
 │   │   · inventory.py               #   8 steps: files .. bind - "what is this data"
 │   │   · eda.py                     #   10 checks registered - "is it usable"
-│   │   · align.py                   #   4 stages. resolve or compute
+│   │   · align.py                   #   contrastive + classical LCEL chains. resolve or compute
 │   │   · evaluate.py                #   6 guards, and the H1-H3 gates
+│   │   · encode.py  join.py         #   encode protocol · niche join
+│   │   · pathway.py  promote.py     #   gpath2vec · pack promotion
 │   · measures/                      # the MATHS. pure functions, no ctx, no order,
-│   │   · __init__.py                #   no authority. callable from a notebook
+│   │   · __init__.py  evaluation.py #   no authority. callable from a notebook
 │   │   · tiling.py                  #   niche + tile geometry, diffed against the cache
 │   · contracts/                     # READS a declaration, decides nothing
 │   │   · project.py                 #   a cohort's project.json
+│   │   · declarations.py            #   absent means refuse with a reason, never a default
 │   │   · routing.py  eda.py         #   contract + evidence · contract + calibration
 │   · configs/                       # the CONTRACTS, inside the wheel so an
 │   │   · data_contract.json         #   installed server can find them. 8 declared
 │   │   · eda_contract.json          #   roles · which checks, which criteria
 │   │   · routing_contract.json      #   task taxonomy, outcome vocabulary, rules
 │   │   · compute_contract.json      #   6 gates: 5 preflight, 1 mid-run
-│   · adapters/canonical.py          # the input contract: .h5ad + a coordinates table.
-│   │                                #   scripts/ingest_<cohort>.py converts, ONCE
-│   · models/encoders.py             # the encoder registry, resolved by declared name.
-│   │                                #   spec() is metadata; only load() needs torch
+│   · adapters/                      # data loading and conversion, no protocol logic
+│   │   · canonical.py               #   the input contract: .h5ad + a coordinates table
+│   │   · alignment_data.py          #   niche-join loading, splitting, test artifact io
+│   │   · evaluation.py  join.py     #   eval data adapters · niche join builder
+│   · models/                        # architectures and numerics, independently callable
+│   │   · encoders.py                #   the encoder registry. spec() is metadata; load() needs torch
+│   │   · alignment.py               #   contrastive models (LateFusion, CrossAttention) and losses
+│   │   · alignment_classical.py     #   CCA, Procrustes, unaligned PCA baselines
+│   │   · fit.py                     #   model fitting utilities
+│   · training/alignment.py          # contrastive training loop. torch-dependent
+│   · dispatch/                      # shard submission and worker activity bodies
+│   │   · bodies.py  temporal.py     #   the one name table · Temporal executor
 │   · agents/modality.py             # he / st / pathway agents - read recorded evidence
 │   · mcp/server.py                  # 21 tools, 2+2 resources, stdio + http. zero model calls
 │   · records.py  artifacts.py       # the record contract - inventory/eda_summary io
-│   · settings.py  cli.py            # 8 commands. settings imports nothing from omicstra
+│   · settings.py  cli.py            # 15 commands. settings imports nothing from omicstra
 │   · routing.py  eda.py  figures.py # resolve + ledger · gate · plots
+│   · run.py  report.py  notebook.py # the whole chain · pack+ledger->markdown · analysis units
+│   · labels.py  seed.py             # label handling · deterministic seeding
+│   · trace.py  tracing.py           # run trace · LangSmith integration
 │
 │   the rule: a thing gets its own graph only if it can ask a human;
-│   everything else is a protocol. a new .py never lands in src/omicstra/ directly.
+│   everything else is a protocol.
 │
-· configs/v3/                        # R1_v3 .. R6_v3 run configs (cohort runs, not contracts)
+· configs/v3/                        # R1_v3 .. R6_v3 + B1_v3 .. B4_v3 run configs (cohort runs, not contracts)
 │
 · projects/                          # committed - one directory per cohort
 │   · {project_id}/
@@ -518,8 +507,9 @@ omicstra/
 │
 · site/{institution}/  [ignored]     # compute.md governance.md - served as MCP resources
 · scripts/                           # the chain behind the published results
-· tests/                             # 148 - conformance, routing, eda authority,
-│                                    #   tiling oracle, ingest paths
+· tests/                             # 1158 - conformance, routing, eda authority,
+│                                    #   tiling oracle, ingest paths, alignment parity,
+│                                    #   chain execution, classical baselines
 │   · fixtures/                      #   the pinned H1 summary, sha-guarded
 ○ knowledge/reactome/                # shared domain assets - git-IGNORED, not in a clone.
 │                                    #   only scripts/build_pathway_class.py reads it
@@ -658,7 +648,7 @@ fresh install, not a failure.
 | orchestration | LangGraph StateGraph |
 | model | supplied by the MCP client; the server ships none |
 | tracing | OpenTelemetry-ready; LangSmith optional via env, not a dependency |
-| resources | `omicstra://eda-contract`, `routing-contract`, `project/{id}/routing-evidence` |
+| resources | `omicstra://eda-contract`, `routing-contract`, `project/{id}/routing-evidence`, `project/{id}/eda-summary` |
 | H&E foundation model | Virchow2 (1280-d) |
 | ST foundation model | Novae GNN |
 | pathway | gpath2vec + biological pathway embeddings |
