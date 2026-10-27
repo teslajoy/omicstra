@@ -193,33 +193,4 @@ def embed_test(
     return emb_df, Z_he, Z_st, X_he, X_st
 
 
-def save_test_artifacts(
-    emb_df: pd.DataFrame,
-    Z_he: np.ndarray,
-    Z_st: np.ndarray,
-    X_he: np.ndarray,
-    X_st: np.ndarray,
-    *,
-    run_dir: Path,
-    ks: tuple[int, ...] = (1, 5, 10),
-    negative_ratio: int = 10,
-    negative_seed: int = 0,
-) -> dict:
-    """write embeddings_test.parquet and metrics_h1_raw.json.
-
-    metric params are explicit - the published grid used ks=(1,5,10),
-    negative_ratio=10, negative_seed=0.
-
-    source: scripts/align.py:560-577
-    """
-    emb_df.to_parquet(run_dir / "embeddings_test.parquet")
-
-    sim = (Z_he @ Z_st.T).astype(np.float64)
-    metrics = retrieval(sim, ks=ks, negative_ratio=negative_ratio,
-                        negative_seed=negative_seed)
-    metrics["cka_before"] = linear_cka(X_he, X_st, centre=True)
-    metrics["cka_after"] = linear_cka(Z_he, Z_st, centre=True)
-    metrics["test_subarrays"] = len(set(emb_df["subarray"])) if "subarray" in emb_df.columns else 0
-    metrics["test_niches"] = len(emb_df)
-    (run_dir / "metrics_h1_raw.json").write_text(json.dumps(metrics, indent=2))
-    return metrics
+from omicstra.adapters.alignment_data import save_test_artifacts as save_test_artifacts

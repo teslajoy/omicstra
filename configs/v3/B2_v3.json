@@ -1,0 +1,10 @@
+{
+  "run_id": "B2_v3",
+  "method": "procrustes",
+  "shared_dim": 512,
+  "st_features": [
+    "novae_niche",
+    "gpath2vec_niche"
+  ],
+  "reference_run": "R1_v3"
+}

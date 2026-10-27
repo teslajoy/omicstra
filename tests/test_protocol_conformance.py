@@ -544,9 +544,11 @@ def test_baseline_dispatch_does_not_guess():
     from omicstra.protocols import align
     src = inspect.getsource(align.run_align)
     assert "align_b4.py" in src, "B4 must use its own script"
-    assert 'base == "B4"' in src
-    assert "raise ValueError" in src, "an unknown baseline must raise, not default"
-    assert set(align._BASELINE_OF) == {"B1", "B2", "B3"}
+    assert '"random_init"' in src, "random_init method must be handled explicitly"
+    assert "raise ValueError" in src, "an unknown method must raise, not default"
+    assert align._CLASSICAL_METHODS == frozenset({"cca", "procrustes", "unaligned"})
+    assert "B4" in align._LEGACY_METHOD
+    assert align._LEGACY_METHOD["B4"] == "random_init"
 
 
 def test_eval_stages_produce_the_artifacts_the_pack_cites():

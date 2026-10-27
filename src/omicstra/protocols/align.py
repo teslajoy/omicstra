@@ -511,7 +511,7 @@ def _step_embed_test(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
 
 
 def _step_evaluate_and_save(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
-    from omicstra.training.alignment import save_test_artifacts
+    from omicstra.adapters.alignment_data import save_test_artifacts
 
     p = ctx["params"]
     emb = ctx["embeddings"]
@@ -623,6 +623,177 @@ def _train_contrastive_chain(run_cfg: dict, niches_dir: str, run_dir: Path) -> d
     return chain.invoke({"params": ctx_params, "run_dir": run_dir})
 
 
+def _step_apply_reference_split(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """read an existing split.json and partition subarrays by patient.
+
+    unlike _step_split (which generates a fresh split), this step reads the
+    split from a reference contrastive run so that baselines see exactly the
+    same held-out set.
+    """
+    from omicstra.adapters.alignment_data import build_matrices
+
+    p = ctx["params"]
+    subarrays = ctx["subarrays"]
+    ref_split_path = Path(p["reference_split"])
+    run_dir = Path(ctx.get("run_dir") or p.get("run_dir", "."))
+
+    subs = [s for s in subarrays
+            if s["patient_id"] is not None and s["archetype"] is not None]
+
+    split = json.loads(ref_split_path.read_text())
+    train_p = set(split["train_patients"])
+    test_p = set(split["test_patients"])
+
+    train_subs = [s for s in subs if s["patient_id"] in train_p]
+    test_subs = [s for s in subs if s["patient_id"] in test_p]
+
+    X_he_tr, X_st_tr, _ = build_matrices(train_subs)
+    X_he_te, X_st_te, meta_te = build_matrices(test_subs)
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "split.json").write_text(json.dumps(split, indent=2))
+
+    return DiagnosticRecord(
+        step_id="apply_reference_split", status="pass",
+        method="apply reference patient split from contrastive run",
+        observed={"n_train_subs": len(train_subs),
+                  "n_test_subs": len(test_subs),
+                  "train_niches": X_he_tr.shape[0],
+                  "test_niches": X_he_te.shape[0],
+                  "n_dropped_labels": len(subarrays) - len(subs)},
+        result=f"{len(train_subs)} train, {len(test_subs)} test subarrays",
+        decision="reference split applied",
+    ), {"matrices": {"X_he_tr": X_he_tr, "X_st_tr": X_st_tr,
+                     "X_he_te": X_he_te, "X_st_te": X_st_te,
+                     "meta_te": meta_te}}
+
+
+def _step_fit_project(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """fit the classical baseline on train matrices, project test to shared space."""
+    from omicstra.models.alignment_classical import BASELINES
+
+    import numpy as np
+    import pandas as pd
+
+    p = ctx["params"]
+    m = ctx["matrices"]
+    method = p["method"]
+    shared_dim = p.get("shared_dim", 512)
+
+    runner = BASELINES[method]
+    kwargs: dict = {}
+    if "reg" in p:
+        kwargs["reg"] = p["reg"]
+    z_he, z_st, k_used = runner(
+        m["X_he_tr"], m["X_st_tr"], m["X_he_te"], m["X_st_te"],
+        shared_dim, **kwargs)
+
+    meta_te = m["meta_te"]
+    emb_rows = []
+    for i, row in meta_te.reset_index(drop=True).iterrows():
+        emb_rows.append({
+            "spot_id": row["spot_id"],
+            "subarray": row["subarray"],
+            "patient_id": row["patient_id"],
+            "archetype": row["archetype"],
+            "compartment": row["compartment"],
+            "z_he": z_he[i].tolist(),
+            "z_st": z_st[i].tolist(),
+        })
+    emb_df = pd.DataFrame(emb_rows).set_index("spot_id")
+
+    return DiagnosticRecord(
+        step_id="fit_project", status="pass",
+        method=f"{method} baseline, shared_dim={shared_dim}",
+        observed={"k_used": int(k_used), "n_test_spots": len(emb_df)},
+        result=f"{method}: k_used={k_used}, {len(emb_df)} test spots",
+        decision="baseline fitted and test projected",
+    ), {"embeddings": {"emb_df": emb_df, "Z_he": z_he, "Z_st": z_st,
+                       "X_he": m["X_he_te"], "X_st": m["X_st_te"]}}
+
+
+CLASSICAL_BASELINE_STEPS: list[Step] = [
+    Step(id="load_data", fn=_step_load_data,
+         produces=frozenset({"subarrays"}),
+         params_space=("niches_dir", "st_features", "subset_n")),
+    Step(id="apply_reference_split", fn=_step_apply_reference_split,
+         produces=frozenset({"matrices"}),
+         requires=frozenset({"subarrays"}),
+         params_space=("reference_split", "run_dir")),
+    Step(id="fit_project", fn=_step_fit_project,
+         produces=frozenset({"embeddings"}),
+         requires=frozenset({"matrices"}),
+         params_space=("method", "shared_dim", "reg")),
+    Step(id="evaluate_and_save", fn=_step_evaluate_and_save,
+         produces=frozenset({"metrics"}),
+         requires=frozenset({"embeddings"}),
+         params_space=("run_dir", "ks", "negative_ratio", "negative_seed")),
+]
+
+
+def _train_classical_chain(
+    run_cfg: dict, niches_dir: str, ref_split_path: Path, run_dir: Path,
+) -> dict:
+    """invoke the four-step chain for one classical baseline.
+
+    returns the records dict from build_protocol - one entry per step id,
+    each with status, duration_s, params, observed.
+    """
+    chain = build_protocol(CLASSICAL_BASELINE_STEPS, "classical_baseline")
+
+    method = run_cfg["method"]
+    fit_params: dict = {
+        "method": method,
+        "shared_dim": run_cfg.get("shared_dim", 512),
+    }
+    if "reg" in run_cfg:
+        fit_params["reg"] = run_cfg["reg"]
+
+    ctx_params = {
+        "load_data": {
+            "niches_dir": niches_dir,
+            "st_features": tuple(run_cfg.get(
+                "st_features", ("novae_niche", "gpath2vec_niche"))),
+        },
+        "apply_reference_split": {
+            "reference_split": str(ref_split_path),
+            "run_dir": str(run_dir),
+        },
+        "fit_project": fit_params,
+        "evaluate_and_save": {
+            "run_dir": str(run_dir),
+            "ks": [1, 5, 10],
+            "negative_ratio": 10,
+            "negative_seed": 0,
+        },
+    }
+
+    gpath_sha = None
+    manifest_path = Path(niches_dir) / "manifest.json"
+    if manifest_path.is_file():
+        _man = json.loads(manifest_path.read_text())
+        gpath_sha = _man.get("sources", {}).get("gpath2vec_sha256")
+
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "run_config.json").write_text(json.dumps(
+        {**run_cfg, "reference_split": str(ref_split_path),
+         "gpath2vec_parquet_sha256": gpath_sha,
+         "backend": "package", "params": ctx_params}, indent=2))
+
+    records = chain.invoke({"params": ctx_params, "run_dir": run_dir})
+
+    metrics_path = run_dir / "metrics_h1_raw.json"
+    if metrics_path.is_file():
+        metrics = json.loads(metrics_path.read_text())
+        k_used = records.get("fit_project", {}).get("observed", {}).get("k_used")
+        if k_used is not None:
+            metrics["shared_dim_used"] = k_used
+        metrics["baseline"] = method
+        metrics_path.write_text(json.dumps(metrics, indent=2))
+
+    return records
+
+
 # --- the two COMPUTE-OR-RESOLVE stages --------------------------------------
 def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = None,
               project_id: str | None = None, *, compute: bool = False,
@@ -630,14 +801,14 @@ def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = Non
               use_package: bool = True) -> tuple[AlignGrid, TransformRecord]:
     """resolve the grid, or train the runs that are missing.
 
-    contrastive runs are driven by their config; classical baselines are driven
-    against a reference split, because a baseline must see exactly the split its
-    leader saw or the comparison is between two different held-out sets.
+    dispatch is configuration-driven: each run's config declares its method
+    (contrastive, cca, procrustes, unaligned, random_init). the method
+    determines the compute path; the run ID is an experiment identifier only.
 
     use_package=True routes contrastive runs through the five-step LCEL chain
-    (ALIGN_TRAIN_STEPS) instead of shelling out to scripts/align.py. the chain
-    produces per-step DiagnosticRecords with timing, resolved params and outcome.
-    the script path remains the default.
+    and classical baselines through the four-step classical chain. both are
+    composed via build_protocol. use_package=False shells out to scripts/.
+    random_init always dispatches to script.
     """
     root = Path(runs_root) if runs_root else _project_rel(cfg.runs_dir, project_id)
     ids = run_ids or (list(cfg.contrastive_runs) + list(cfg.classical_runs))
@@ -654,33 +825,48 @@ def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = Non
     computed: list[str] = []
     chain_records: dict[str, dict] = {}
     for rid in missing:
-        base = rid.split("_")[0]
-        cfg_path = settings.resolve(Path("configs/v3")) / f"{rid}.json"
-        if cfg_path.is_file():                                  # contrastive
+        run_cfg = _resolve_run_config(rid)
+        method = run_cfg["method"]
+
+        if method == "contrastive":
             if use_package:
-                run_cfg = json.loads(cfg_path.read_text())
                 recs = _train_contrastive_chain(
                     run_cfg, nj.niches_dir, root / rid)
                 chain_records[rid] = recs
             else:
+                cfg_path = settings.resolve(Path("configs/v3")) / f"{rid}.json"
                 _run_script("align.py", ["--config", str(cfg_path),
                                          "--niches-dir", nj.niches_dir,
                                          "--runs-root", str(root)])
-        else:
-            # a baseline must see EXACTLY the split its leader saw, or the
-            # comparison is between two different held-out sets.
-            ref = root / (cfg.contrastive_runs[0] if cfg.contrastive_runs else "R1_v3") / "split.json"
+
+        elif method in _CLASSICAL_METHODS:
+            ref_run = run_cfg.get("reference_run",
+                                  cfg.contrastive_runs[0] if cfg.contrastive_runs else "R1_v3")
+            ref = root / ref_run / "split.json"
+            if use_package:
+                recs = _train_classical_chain(
+                    run_cfg, nj.niches_dir, ref, root / rid)
+                chain_records[rid] = recs
+            else:
+                common = ["--reference-split", str(ref), "--run-id", rid,
+                          "--niches-dir", nj.niches_dir, "--runs-root", str(root)]
+                _run_script("align_classical.py",
+                            ["--baseline", method, *common])
+
+        elif method == "random_init":
+            ref_run = run_cfg.get("reference_run",
+                                  cfg.contrastive_runs[0] if cfg.contrastive_runs else "R1_v3")
+            ref = root / ref_run / "split.json"
             common = ["--reference-split", str(ref), "--run-id", rid,
                       "--niches-dir", nj.niches_dir, "--runs-root", str(root)]
-            if base == "B4":
-                _run_script("align_b4.py", common)
-            elif base in _BASELINE_OF:
-                _run_script("align_classical.py", ["--baseline", _BASELINE_OF[base], *common])
-            else:
-                raise ValueError(
-                    f"no script known for baseline {rid!r}. add it to _BASELINE_OF "
-                    "or give it a config - guessing produces a number under the "
-                    "wrong name.")
+            _run_script("align_b4.py", common)
+
+        else:
+            raise ValueError(
+                f"unknown method {method!r} in config for {rid!r}. "
+                "expected: contrastive, cca, procrustes, unaligned, "
+                "or random_init.")
+
         computed.append(rid)
 
     refs = {r: str(root / r / "embeddings_test.parquet")
@@ -693,7 +879,42 @@ def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = Non
     return AlignGrid(runs_root=str(root), run_refs=refs, computed=computed), rec
 
 
-_BASELINE_OF = {"B1": "cca", "B2": "procrustes", "B3": "unaligned"}
+_CLASSICAL_METHODS = frozenset({"cca", "procrustes", "unaligned"})
+
+# legacy fallback: resolve method from run ID prefix when no config exists.
+# new runs should have a config with an explicit "method" field.
+_LEGACY_METHOD = {"B1": "cca", "B2": "procrustes", "B3": "unaligned", "B4": "random_init"}
+
+
+def _resolve_run_config(rid: str) -> dict:
+    """load a run's config and ensure it declares a method.
+
+    backward compatibility:
+        - config with "method" -> used as-is
+        - config with "loss" but no "method" -> "contrastive" (legacy R configs)
+        - no config file -> legacy map from run ID prefix
+    """
+    cfg_path = settings.resolve(Path("configs/v3")) / f"{rid}.json"
+    if cfg_path.is_file():
+        run_cfg = json.loads(cfg_path.read_text())
+        if "method" not in run_cfg:
+            if "loss" in run_cfg:
+                run_cfg["method"] = "contrastive"
+            else:
+                raise ValueError(
+                    f"config for {rid} has no 'method' and no 'loss' field - "
+                    "cannot infer the alignment method. add an explicit "
+                    "'method' key (contrastive, cca, procrustes, unaligned, "
+                    "or random_init).")
+        return run_cfg
+
+    prefix = rid.split("_")[0]
+    if prefix in _LEGACY_METHOD:
+        return {"run_id": rid, "method": _LEGACY_METHOD[prefix]}
+
+    raise ValueError(
+        f"no config for {rid!r} and no legacy mapping for prefix {prefix!r}. "
+        "create configs/v3/{rid}.json with an explicit 'method' field.")
 
 # the stages that SCORE each hypothesis, in order, as (script, scope).
 #

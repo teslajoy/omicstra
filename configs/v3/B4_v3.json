@@ -1,0 +1,10 @@
+{
+  "run_id": "B4_v3",
+  "method": "random_init",
+  "shared_dim": 512,
+  "st_features": [
+    "novae_niche",
+    "gpath2vec_niche"
+  ],
+  "reference_run": "R1_v3"
+}
