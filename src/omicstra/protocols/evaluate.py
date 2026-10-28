@@ -102,7 +102,7 @@ def held_out_honesty(within_score: float, cross_score: float,
 # --- G3 ---------------------------------------------------------------------
 def bio_vs_confounder_ratio(bio_z: float, confounder_z: float,
                             floor: float | None = None) -> GuardResult:
-    """below 1 the method amplifies the confounder more than the biology.
+    """below 1 means biology z is lower than patient-identity z under this test.
 
     the ratio is the claim, not the biology z alone: a method can score well on
     biology while scoring better on patient identity, and that is anti-helpful
@@ -117,8 +117,8 @@ def bio_vs_confounder_ratio(bio_z: float, confounder_z: float,
     passed = ratio >= 1.0 and (floor is None or ratio >= floor)
     why = []
     if ratio < 1.0:
-        why.append(f"ratio {ratio:.3f} < 1 - the confounder is amplified more than "
-                   "the biology, which is anti-helpful rather than weak")
+        why.append(f"ratio {ratio:.3f} < 1 - biology z is lower than "
+                   "patient-identity z under this test")
     if floor is not None and ratio < floor:
         why.append(f"ratio {ratio:.3f} below the raw-modality floor {floor:.3f} - "
                    "worse than not aligning for this question")
@@ -1373,6 +1373,207 @@ def structure_and_its_null(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                  ), {"structure": out}
 
 
+# ----------------------------- 3b · biology vs confounder, at subarray level --
+def confounder_suppression(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """H2-C. does the aligned space amplify biology relative to patient identity?
+
+    operates at SUBARRAY resolution, not niche: niche embeddings are
+    mean-pooled (L2-norm each, mean, L2-norm the mean) per subarray, then
+    the subarray x subarray cosine matrix is partitioned by patient-level
+    labels. the null permutes the biology label at the patient level,
+    because subarrays within one patient are not independent.
+
+    the ratio z_biology / z_patient is the claim, not the biology z alone.
+    a method can score well on biology while scoring better on patient
+    identity, and that is anti-helpful (G3). the ratio and its delta-method
+    CI are computed from the historical z values (obs / null_std), because
+    that is what the published biology.parquet stores.
+
+    ported from eval_alignment_biology.py (permutation tests) and
+    eval_h2_bootstrap_ci.py (delta-method CI). the measures are in
+    measures/biology.py. this step composes them.
+    """
+    needed = ("biology_labels", "n_permutations", "n_rho_null", "seed", "alpha")
+    vals = {f: _edeclared(ctx, f) for f in needed}
+    for f, v in vals.items():
+        if v is None:
+            return _emissing("confounder_suppression", f,
+                             "the biology labels, null sizes and seed are the "
+                             "cohort's. biology_labels is the list of patient-level "
+                             "labels to test (e.g. TIME, MC_global)"), {}
+
+    import numpy as np
+
+    from omicstra.measures.biology import (
+        biology_perm_test,
+        cosine_sim_matrix,
+        geometric_faithfulness,
+        mean_pool_l2,
+        patient_perm_test,
+        ratio_delta_ci,
+    )
+
+    spaces = _eneed(ctx, "spaces", "confounder_suppression")
+    subarray = ctx.get("subarray")
+    confounder = _eneed(ctx, "confounder", "confounder_suppression")
+    bio_labels = ctx.get("biology_labels")
+
+    if subarray is None:
+        return _erec("confounder_suppression", "not_run",
+                     "no subarray grouping on the context",
+                     "H2-C aggregates niche embeddings to subarray means - "
+                     "without a subarray column there is nothing to pool over",
+                     {"n_out": 0, "reason": "subarray not on ctx"}), {}
+
+    label_names = list(vals["biology_labels"])
+    if not bio_labels or not label_names:
+        return _erec("confounder_suppression", "not_run",
+                     "no biology labels on the context",
+                     "H2-C needs patient-level labels (e.g. TIME) on each "
+                     "subarray. declare biology_labels and supply them on ctx",
+                     {"n_out": 0, "reason": "biology_labels empty"}), {}
+    missing = [n for n in label_names if n not in bio_labels]
+    if missing:
+        return _erec("confounder_suppression", "not_run",
+                     f"declared biology labels {missing} not on the context",
+                     "declare them and supply them on ctx as biology_labels",
+                     {"n_out": 0, "reason": f"missing labels: {missing}"}), {}
+
+    subarray_arr = np.asarray(subarray)
+    confounder_arr = np.asarray(confounder)
+    n_perm = int(vals["n_permutations"])
+    n_rho = int(vals["n_rho_null"])
+    seed = int(vals["seed"])
+    alpha = float(vals["alpha"])
+
+    # aggregate niche embeddings to subarray means, per view
+    unique_subs = np.unique(subarray_arr)
+    sub_patients = np.array([
+        confounder_arr[np.where(subarray_arr == s)[0][0]] for s in unique_subs
+    ])
+    sub_labels = {
+        name: np.array([
+            str(bio_labels[name][np.where(subarray_arr == s)[0][0]])
+            for s in unique_subs
+        ])
+        for name in label_names
+    }
+    n_subs = len(unique_subs)
+    if n_subs < 3:
+        return _erec("confounder_suppression", "not_run",
+                     f"only {n_subs} subarray(s) - too few for a permutation test",
+                     "the biology test needs at least 3 subarrays from at least "
+                     "2 patients to form cross-patient pairs",
+                     {"n_out": 0, "reason": "too few subarrays",
+                      "n_subarrays": n_subs}), {}
+
+    out: dict = {"n_subarrays": n_subs, "n_patients": len(set(sub_patients)),
+                 "per_view": {}}
+    for view, X in spaces.items():
+        X_arr = np.asarray(X, dtype=np.float32)
+        sub_embs = np.stack([
+            mean_pool_l2(X_arr[subarray_arr == s]) for s in unique_subs
+        ])
+        cos = cosine_sim_matrix(sub_embs)
+
+        view_out: dict = {
+            "rho": {"status": "not_implemented",
+                    "reason": "geometric faithfulness (Spearman vs shuffled-matrix "
+                              "null) requires raw baseline cosine matrices on ctx. "
+                              "the adapter does not carry them yet"},
+            "biology": {}, "patient": {}, "ratio": {},
+        }
+
+        # patient permutation test (one per view)
+        pt = patient_perm_test(cos, sub_patients,
+                               n_permutations=n_perm, seed=seed)
+        view_out["patient"] = {k: v for k, v in pt.items() if k != "null"}
+        pt_z = pt["z"]
+
+        # biology permutation tests (one per label per view)
+        for lname in label_names:
+            bt = biology_perm_test(cos, sub_patients, sub_labels[lname],
+                                   n_permutations=n_perm, seed=seed)
+            view_out["biology"][lname] = {
+                k: v for k, v in bt.items() if k != "null"
+            }
+            bio_z = bt["z"]
+
+            # G3: bio / patient ratio, with delta-method CI
+            ci = ratio_delta_ci(bio_z, pt_z)
+            g3 = bio_vs_confounder_ratio(bio_z, pt_z)
+            view_out["ratio"][lname] = {
+                **ci, "G3": g3.model_dump(),
+            }
+
+        out["per_view"][view] = view_out
+
+    # BH-FDR per test family across labels within each view
+    from statsmodels.stats.multitest import multipletests
+
+    for view, vd in out["per_view"].items():
+        p_bio = [vd["biology"][n]["p_value"] for n in label_names]
+        if len(p_bio) > 1:
+            _, q_bio, _, _ = multipletests(p_bio, alpha=alpha, method="fdr_bh")
+            for i, n in enumerate(label_names):
+                vd["biology"][n]["q_bh"] = float(q_bio[i])
+
+    # guards: G1 is satisfied by design (patient-level permutation), G3 per run
+    g3_pass = sum(
+        1 for vd in out["per_view"].values()
+        for rd in vd["ratio"].values()
+        if rd.get("G3", {}).get("passed")
+    )
+    g3_total = sum(
+        1 for vd in out["per_view"].values()
+        for rd in vd["ratio"].values()
+        if "G3" in rd
+    )
+
+    # headline: the first-declared label on the headline view
+    headline_view = ctx.get("view") or next(iter(spaces))
+    headline_label = label_names[0] if label_names else ""
+    hv = out["per_view"].get(headline_view, {})
+    headline_ratio = (hv.get("ratio", {}).get(headline_label, {})
+                      .get("ratio", float("nan")))
+    headline_bio_z = (hv.get("biology", {}).get(headline_label, {})
+                      .get("z", float("nan")))
+    headline_pt_z = (hv.get("patient", {}).get("z", float("nan")))
+
+    return _erec("confounder_suppression", "pass",
+                 f"{headline_label}/{headline_view}: "
+                 f"bio z={headline_bio_z:+.2f}, patient z={headline_pt_z:+.2f}, "
+                 f"ratio={headline_ratio:.3f}; "
+                 f"G3 {g3_pass}/{g3_total} pass",
+                 "the ratio is the claim: below 1 means biology z is lower "
+                 "than patient-identity z under this test",
+                 {"n_in": n_subs, "n_out": n_subs, "reason": "",
+                  **out,
+                  "n_permutations": n_perm, "n_rho_null": n_rho,
+                  "seed": seed, "alpha": alpha,
+                  "z_convention": "historical: obs / null_std (matching "
+                                  "biology.parquet)",
+                  "guards": [
+                      {"guard": "G1_label_granularity",
+                       "status": "satisfied_by_design",
+                       "note": "biology labels are per-patient; the test scores "
+                               "cross-patient pairs only and permutes the label "
+                               "at patient level"},
+                      {"guard": "G3_bio_vs_confounder", "status": "per_run",
+                       "note": f"{g3_pass} of {g3_total} (view, label) pairs "
+                               "clear a ratio of 1"},
+                      {"guard": "G5_noise_floor", "scope": "biology",
+                       "status": "as_recorded",
+                       "note": "the permutation p is empirical: "
+                               "(1 + #{null >= obs}) / (n + 1)"},
+                  ]},
+                 method="subarray mean-pool, cosine matrices, patient-level "
+                        "permutation of biology labels vs patient identity, "
+                        "delta-method CI on the ratio",
+                 criterion="the ratio z_bio / z_patient clears 1 (G3)",
+                 ), {"confounder_suppression": out}
+
+
 # ------------------------------------------ 4 · held out, measured not declared --
 def held_out_comparison(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     """G2. the within-subject score beside the cross-subject one.
@@ -1828,6 +2029,11 @@ EVALUATE_STEPS: list[Step] = [
          produces=frozenset({"structure"}), requires=frozenset({"label_guards"}),
          params_space=("k", "n_init", "seed", "silhouette_sample",
                        "n_permutations", "probe_max_iter", "held_out_groups")),
+    Step(id="confounder_suppression", fn=confounder_suppression,
+         produces=frozenset({"confounder_suppression"}),
+         requires=frozenset({"label_guards"}),
+         params_space=("biology_labels", "n_permutations", "n_rho_null",
+                       "seed", "alpha")),
     Step(id="held_out_comparison", fn=held_out_comparison,
          produces=frozenset({"honesty"}), requires=frozenset({"identifiability"}),
          params_space=("ks", "negative_ratio", "negative_seed",

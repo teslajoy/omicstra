@@ -187,6 +187,17 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
             "axis to hold out by. every split and every confound guard is taken "
             "on it")
 
+    sub_arr = m["subarray"].to_numpy()
+    conf_arr = m[subject].to_numpy()
+
+    # patient-level biology labels (H2-C), if declared
+    bl = biology_labels(project_dir, sub_arr, conf_arr)
+    bio_ctx: dict[str, Any] = {}
+    bio_report: dict[str, Any] = {}
+    if bl is not None:
+        bio_ctx = bl["labels"]
+        bio_report = bl["report"]
+
     return {
         "sample_count": int(m["subarray"].nunique()),
         "n_units_total": len(frame),
@@ -202,7 +213,10 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
             "move a published number, and reported because scoring an absence "
             "marker as a class is not a biological claim"
             if sentinels else ""),
-        "confounder": m[subject].to_numpy(),
+        "subarray": sub_arr,
+        "confounder": conf_arr,
+        "biology_labels": bio_ctx or None,
+        "biology_labels_report": bio_report or None,
         "scores": {s: m[s].to_numpy(dtype=float) for s in signals},
         "declared": dec,
         "run": run,
@@ -210,4 +224,122 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
     }
 
 
-__all__ = ["REQUIRED", "DeclarationMissing", "arrays", "declared"]
+def biology_labels(project_dir: str | Path,
+                   subarrays: Any,
+                   patients: Any,
+                   ) -> dict[str, Any] | None:
+    """patient-level biology labels propagated to the unit (niche) level.
+
+    reads the declaration from project.json's `biology_labels` block:
+        labels_path   - path to the patient-level labels file (tsv)
+        labels_key    - column in that file keying patients (e.g. patient_id)
+        subject_key   - column on the niche frame that identifies the patient
+        columns       - {output_alias: source_column} mapping
+
+    returns {alias: niche_array} or None if no declaration exists. raises
+    DeclarationMissing on structural errors (missing file, broken join).
+    """
+    import numpy as np
+    import pandas as pd
+
+    d = Path(project_dir)
+    p = d / "project.json"
+    if not p.is_file():
+        return None
+    raw = json.loads(p.read_text())
+    bl = raw.get("biology_labels")
+    if not bl or not isinstance(bl, dict):
+        return None
+
+    for field in ("labels_path", "labels_key", "subject_key", "columns"):
+        if field not in bl or not bl[field]:
+            raise DeclarationMissing(
+                f"biology_labels is declared but {field!r} is absent. "
+                "every field is required: labels_path, labels_key, "
+                "subject_key, columns")
+
+    labels_file = (d / bl["labels_path"]).resolve()
+    if not labels_file.is_file():
+        raise DeclarationMissing(
+            f"biology_labels.labels_path points at {labels_file} which "
+            "does not exist")
+
+    lf = pd.read_csv(labels_file, sep="\t")
+    lk = bl["labels_key"]
+    if lk not in lf.columns:
+        raise DeclarationMissing(
+            f"biology_labels.labels_key={lk!r} is not a column of "
+            f"{labels_file}. columns: {list(lf.columns)}")
+
+    col_map: dict[str, str] = bl["columns"]
+    missing_cols = [src for src in col_map.values() if src not in lf.columns]
+    if missing_cols:
+        raise DeclarationMissing(
+            f"biology_labels.columns references {missing_cols} which are "
+            f"not in {labels_file}. columns: {list(lf.columns)}")
+
+    # build patient -> {alias: value} lookup from the labels file
+    dup = lf[lf[lk].duplicated(keep=False)]
+    if not dup.empty:
+        raise DeclarationMissing(
+            f"biology_labels file has {len(dup)} rows with duplicate "
+            f"{lk!r} values: {sorted(dup[lk].unique()[:5])}...")
+
+    pt_lookup: dict[Any, dict[str, str]] = {}
+    for _, row in lf.iterrows():
+        pid = row[lk]
+        pt_lookup[pid] = {alias: str(row[src])
+                          for alias, src in col_map.items()}
+
+    # propagate to niche level via the subject (patient) column
+    sub_arr = np.asarray(subarrays)
+    pat_arr = np.asarray(patients)
+
+    # validate: every subarray's niches must agree on patient_id
+    unique_subs = np.unique(sub_arr)
+    for s in unique_subs:
+        mask = sub_arr == s
+        pts_in_sub = np.unique(pat_arr[mask])
+        if len(pts_in_sub) > 1:
+            raise DeclarationMissing(
+                f"subarray {s!r} maps to multiple patients: {pts_in_sub}. "
+                "the join is inconsistent")
+
+    # build per-niche arrays; track missing patients
+    n = len(pat_arr)
+    result: dict[str, Any] = {}
+    missing_patients: set = set()
+    for alias in col_map:
+        arr = np.empty(n, dtype=object)
+        for i in range(n):
+            pid = pat_arr[i]
+            entry = pt_lookup.get(pid)
+            if entry is None:
+                # try numeric coercion: patient_id may be int in one, str in other
+                try:
+                    entry = pt_lookup.get(int(pid))
+                except (ValueError, TypeError):
+                    pass
+            if entry is None:
+                missing_patients.add(pid)
+                arr[i] = None
+            else:
+                arr[i] = entry[alias]
+        result[alias] = arr
+
+    report: dict[str, Any] = {
+        "n_units": n,
+        "n_patients": len(np.unique(pat_arr)),
+        "n_labels_file": len(lf),
+        "aliases": list(col_map.keys()),
+        "sources": list(col_map.values()),
+    }
+    if missing_patients:
+        report["missing_patients"] = sorted(str(p) for p in missing_patients)
+        report["n_missing"] = len(missing_patients)
+
+    return {"labels": result, "report": report}
+
+
+__all__ = ["REQUIRED", "DeclarationMissing", "arrays", "biology_labels",
+           "declared"]

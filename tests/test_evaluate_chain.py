@@ -21,9 +21,13 @@ N_SUBJECTS, PER_SUBJECT = 6, 40
 N = N_SUBJECTS * PER_SUBJECT
 
 
+NICHES_PER_SUBARRAY = 10
+N_SUBARRAYS = N // NICHES_PER_SUBARRAY
+
+
 def _cohort(*, label_is_subject: bool = False, paired: bool = True,
             aligned: bool = True, alias_scores: bool = False,
-            scores: bool = True) -> dict:
+            scores: bool = True, biology: bool = True) -> dict:
     rng = np.random.default_rng(0)
     subject = np.repeat(np.arange(N_SUBJECTS), PER_SUBJECT)
     state = np.tile(np.arange(4), N // 4)          # a label that is NOT the subject
@@ -42,11 +46,22 @@ def _cohort(*, label_is_subject: bool = False, paired: bool = True,
         sc["signal_b"] = (sc["signal_a"] + rng.normal(0, 0.05, N) if alias_scores
                           else he[:, 1] * 3 + rng.normal(0, 0.3, N))
 
+    # subarray grouping: 10 niches per subarray, 4 subarrays per patient
+    subarray = np.repeat(np.arange(N_SUBARRAYS), NICHES_PER_SUBARRAY)
+    # patient-level biology labels propagated to subarrays
+    sub_patient = np.repeat(np.arange(N_SUBJECTS), PER_SUBJECT // NICHES_PER_SUBARRAY)
+    bio: dict[str, np.ndarray] = {}
+    if biology:
+        bio_classes = np.array(["A", "B", "C"])[sub_patient % 3]
+        bio = {"test_bio": bio_classes[subarray]}
+
     ctx: dict = {
         "spaces": {"z_he": he},
         "paired": {"z_he": st} if paired else {},
         "labels": {"state": subject.copy() if label_is_subject else state},
         "confounder": subject,
+        "subarray": subarray,
+        "biology_labels": bio,
         "scores": sc,
     }
     return ctx
@@ -61,6 +76,10 @@ def _params(**over) -> dict:
                                    "silhouette_sample": 100,
                                    "n_permutations": 25, "probe_max_iter": 200,
                                    "held_out_groups": 2},
+        "confounder_suppression": {"biology_labels": ("test_bio",),
+                                    "n_permutations": 50,
+                                    "n_rho_null": 25, "seed": 42,
+                                    "alpha": 0.05},
         "held_out_comparison": {"ks": (1, 5), "negative_ratio": 5,
                                 "negative_seed": 0, "min_units_per_subject": 10},
         "association_and_specificity": {"n_permutations": 40, "alpha": 0.05,
@@ -70,7 +89,7 @@ def _params(**over) -> dict:
                                         "min_units_per_side": 20},
         "hypothesis_verdict": {"hypotheses": {
             "H1": ("paired_identifiability", "held_out_comparison"),
-            "H2": ("structure_and_its_null",),
+            "H2": ("structure_and_its_null", "confounder_suppression"),
             "H3": ("association_and_specificity",)}},
     }
     for k, v in over.items():
@@ -255,6 +274,9 @@ def test_a_subject_floor_that_no_subject_meets_is_not_run_not_a_pass():
     ("structure_and_its_null", "k"),
     ("structure_and_its_null", "n_permutations"),
     ("structure_and_its_null", "seed"),
+    ("confounder_suppression", "biology_labels"),
+    ("confounder_suppression", "n_permutations"),
+    ("confounder_suppression", "seed"),
     ("held_out_comparison", "min_units_per_subject"),
     ("association_and_specificity", "n_permutations"),
     ("association_and_specificity", "alpha"),
@@ -563,3 +585,141 @@ def test_the_split_is_reported_even_when_every_signal_refuses():
     o = _obs(_run(ctx), "association_and_specificity")
     assert o["n_train"] > 0 and o["n_test"] > 0
     assert o["n_train"] + o["n_test"] == N
+
+
+# ========================================================= H2-C chain step ====
+
+from omicstra.protocols.evaluate import confounder_suppression
+
+
+def test_h2c_step_produces_biology_and_patient_results():
+    ctx = _cohort()
+    params = _params()["confounder_suppression"]
+    rec, updates = confounder_suppression({**ctx, "params": params})
+    assert rec.status == "pass"
+    assert "confounder_suppression" in updates
+    out = updates["confounder_suppression"]
+    assert out["n_subarrays"] == N_SUBARRAYS
+    assert out["n_patients"] == N_SUBJECTS
+    view = out["per_view"]["z_he"]
+    assert "patient" in view
+    assert "biology" in view
+    assert "test_bio" in view["biology"]
+    assert "test_bio" in view["ratio"]
+
+
+def test_h2c_step_biology_delta_matches_measures():
+    """the step's biology permutation result matches a direct call to
+    measures.biology on the same subarray-mean-pooled data."""
+    from omicstra.measures.biology import (
+        biology_perm_test as bio_fn,
+        cosine_sim_matrix,
+        mean_pool_l2,
+    )
+
+    ctx = _cohort()
+    params = _params()["confounder_suppression"]
+    _, updates = confounder_suppression({**ctx, "params": params})
+    step_bio = updates["confounder_suppression"]["per_view"]["z_he"]["biology"]["test_bio"]
+
+    # replicate the pooling
+    X = np.asarray(ctx["spaces"]["z_he"], dtype=np.float32)
+    sub = np.asarray(ctx["subarray"])
+    unique_subs = np.unique(sub)
+    sub_embs = np.stack([mean_pool_l2(X[sub == s]) for s in unique_subs])
+    cos = cosine_sim_matrix(sub_embs)
+    conf = np.asarray(ctx["confounder"])
+    sub_patients = np.array([conf[np.where(sub == s)[0][0]] for s in unique_subs])
+    bio = np.asarray(ctx["biology_labels"]["test_bio"])
+    sub_labels = np.array([str(bio[np.where(sub == s)[0][0]]) for s in unique_subs])
+
+    direct = bio_fn(cos, sub_patients, sub_labels,
+                     n_permutations=int(params["n_permutations"]),
+                     seed=int(params["seed"]))
+
+    assert step_bio["delta"] == pytest.approx(direct["delta"], abs=0)
+    assert step_bio["z"] == pytest.approx(direct["z"], abs=0)
+    assert step_bio["p_value"] == pytest.approx(direct["p_value"], abs=0)
+    assert step_bio["n_same_pairs"] == direct["n_same_pairs"]
+    assert step_bio["n_diff_pairs"] == direct["n_diff_pairs"]
+
+
+def test_h2c_step_patient_delta_matches_measures():
+    from omicstra.measures.biology import (
+        cosine_sim_matrix,
+        mean_pool_l2,
+        patient_perm_test as pat_fn,
+    )
+
+    ctx = _cohort()
+    params = _params()["confounder_suppression"]
+    _, updates = confounder_suppression({**ctx, "params": params})
+    step_pt = updates["confounder_suppression"]["per_view"]["z_he"]["patient"]
+
+    X = np.asarray(ctx["spaces"]["z_he"], dtype=np.float32)
+    sub = np.asarray(ctx["subarray"])
+    unique_subs = np.unique(sub)
+    sub_embs = np.stack([mean_pool_l2(X[sub == s]) for s in unique_subs])
+    cos = cosine_sim_matrix(sub_embs)
+    conf = np.asarray(ctx["confounder"])
+    sub_patients = np.array([conf[np.where(sub == s)[0][0]] for s in unique_subs])
+
+    direct = pat_fn(cos, sub_patients,
+                     n_permutations=int(params["n_permutations"]),
+                     seed=int(params["seed"]))
+
+    assert step_pt["delta"] == pytest.approx(direct["delta"], abs=0)
+    assert step_pt["z"] == pytest.approx(direct["z"], abs=0)
+    assert step_pt["p_value"] == pytest.approx(direct["p_value"], abs=0)
+
+
+def test_h2c_step_ratio_ci_matches_measures():
+    from omicstra.measures.biology import ratio_delta_ci
+
+    ctx = _cohort()
+    params = _params()["confounder_suppression"]
+    _, updates = confounder_suppression({**ctx, "params": params})
+    vd = updates["confounder_suppression"]["per_view"]["z_he"]
+    bio_z = vd["biology"]["test_bio"]["z"]
+    pt_z = vd["patient"]["z"]
+    step_ratio = vd["ratio"]["test_bio"]
+
+    direct = ratio_delta_ci(bio_z, pt_z)
+    assert step_ratio["ratio"] == pytest.approx(direct["ratio"], abs=0)
+    assert step_ratio["ratio_se"] == pytest.approx(direct["ratio_se"], abs=1e-10)
+    assert step_ratio["ratio_ci_low"] == pytest.approx(direct["ratio_ci_low"], abs=1e-10)
+    assert step_ratio["ratio_ci_high"] == pytest.approx(direct["ratio_ci_high"], abs=1e-10)
+
+
+def test_h2c_step_g3_runs_on_every_label_view_pair():
+    ctx = _cohort()
+    recs = _run(ctx)
+    o = _obs(recs, "confounder_suppression")
+    guards = o["guards"]
+    g3 = [g for g in guards if g["guard"] == "G3_bio_vs_confounder"]
+    assert len(g3) == 1
+    assert g3[0]["status"] == "per_run"
+
+
+def test_h2c_step_without_subarray_is_not_run():
+    ctx = _cohort()
+    del ctx["subarray"]
+    recs = _run(ctx)
+    assert recs["confounder_suppression"]["status"] == "not_run"
+    assert "subarray" in recs["confounder_suppression"]["result"]
+
+
+def test_h2c_step_without_biology_labels_is_not_run():
+    ctx = _cohort()
+    ctx["biology_labels"] = {}
+    recs = _run(ctx)
+    assert recs["confounder_suppression"]["status"] == "not_run"
+    assert "biology labels" in recs["confounder_suppression"]["result"]
+
+
+def test_h2c_step_uses_historical_z_convention():
+    """the step's z field uses obs / null_std, matching the published artifacts."""
+    ctx = _cohort()
+    recs = _run(ctx)
+    o = _obs(recs, "confounder_suppression")
+    assert o.get("z_convention", "").startswith("historical")
