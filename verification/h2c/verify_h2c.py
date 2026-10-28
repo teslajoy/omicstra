@@ -37,6 +37,7 @@ from omicstra.adapters.evaluation import arrays, biology_labels
 from omicstra.measures.biology import (
     biology_perm_test,
     cosine_sim_matrix,
+    geometric_faithfulness,
     mean_pool_l2,
     patient_perm_test,
     ratio_delta_ci,
@@ -210,12 +211,29 @@ def main():
         check(f"fdr_{alias}_present", has_q,
               f"q_bh={'present' if has_q else 'MISSING'}")
 
-    # --- check 7: rho recorded as not_implemented ---
-    print("\n7. geometric faithfulness status")
+    # --- check 7: geometric faithfulness (rho) ---
+    print("\n7. geometric faithfulness (rho)")
     rho = cs["per_view"]["z_he"]["rho"]
-    check("rho_status_explicit",
-          rho.get("status") == "not_implemented",
-          f"status={rho.get('status')}")
+    raw_bl = ctx.get("raw_baselines")
+    check("rho_raw_baselines_loaded", raw_bl is not None,
+          f"keys={list(raw_bl.keys()) if raw_bl else 'None'}")
+    for raw_name in ("raw_he", "raw_st"):
+        rho_r = rho.get(raw_name, {})
+        has_rho = "rho" in rho_r and "z" in rho_r
+        check(f"rho_{raw_name}_computed", has_rho,
+              f"rho={rho_r.get('rho', 'MISSING'):.4f}, "
+              f"z={rho_r.get('z', 'MISSING')}"
+              if has_rho else "rho result missing")
+        if has_rho and raw_bl is not None:
+            direct_rho = geometric_faithfulness(
+                direct_cos, raw_bl[raw_name],
+                n_permutations=1000, seed=42)
+            for field in ("rho", "pearson", "z", "p_value", "n_pairs"):
+                d_val = direct_rho[field]
+                c_val = rho_r[field]
+                diff = abs(float(d_val) - float(c_val))
+                check(f"rho_{raw_name}_{field}_parity", diff < 1e-10,
+                      f"direct={d_val}, chain={c_val}, diff={diff:.2e}")
 
     # --- check 8: G3 guard wording ---
     print("\n8. G3 wording")

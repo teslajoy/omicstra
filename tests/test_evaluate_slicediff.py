@@ -158,12 +158,16 @@ def _raw() -> dict:
 
 # ------------------------------------------------------- the chain at scale ---
 def test_every_step_either_passes_or_states_why_it_could_not_run():
-    """H3 is `not_run` on this cohort and the test below says why. every other
-    step passes; nothing is `error` and nothing is a silent pass."""
+    """H3 is `not_run` on this cohort and the test below says why.
+    confounder_suppression is `not_run` because the synthetic ctx carries
+    no biology_labels or confounder_suppression params (it needs the
+    adapter and project.json declaration). every other step passes."""
     recs = _records()
-    assert recs["association_and_specificity"]["status"] == "not_run"
+    expected_not_run = {"association_and_specificity", "confounder_suppression"}
+    for step in expected_not_run:
+        assert recs[step]["status"] == "not_run", (step, recs[step])
     others = {k: r["result"] for k, r in recs.items()
-              if k != "association_and_specificity" and r["status"] != "pass"}
+              if k not in expected_not_run and r["status"] != "pass"}
     assert not others, others
     assert not [k for k, r in recs.items() if r["status"] == "error"]
 

@@ -1477,12 +1477,26 @@ def confounder_suppression(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
         cos = cosine_sim_matrix(sub_embs)
 
         view_out: dict = {
-            "rho": {"status": "not_implemented",
-                    "reason": "geometric faithfulness (Spearman vs shuffled-matrix "
-                              "null) requires raw baseline cosine matrices on ctx. "
-                              "the adapter does not carry them yet"},
+            "rho": {},
             "biology": {}, "patient": {}, "ratio": {},
         }
+
+        # geometric faithfulness: aligned vs raw baseline cosines
+        raw_bl = ctx.get("raw_baselines")
+        if raw_bl is not None:
+            for raw_name in ("raw_he", "raw_st"):
+                if raw_name in raw_bl:
+                    view_out["rho"][raw_name] = geometric_faithfulness(
+                        cos, raw_bl[raw_name],
+                        n_permutations=n_rho, seed=seed)
+        if not view_out["rho"]:
+            view_out["rho"] = {
+                "status": "missing_input",
+                "reason": "geometric faithfulness requires raw baseline cosine "
+                          "matrices on ctx (raw_baselines). the adapter did not "
+                          "supply them for this run - the niche parquets may "
+                          "lack the required feature columns or the run config "
+                          "is absent"}
 
         # patient permutation test (one per view)
         pt = patient_perm_test(cos, sub_patients,

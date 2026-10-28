@@ -1,3 +1,4 @@
 chain_output_*.json
 verification_report_*.json
 script_parity_report_*.json
+full_cohort_report_*.json

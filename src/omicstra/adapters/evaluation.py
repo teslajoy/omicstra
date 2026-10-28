@@ -198,6 +198,9 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
         bio_ctx = bl["labels"]
         bio_report = bl["report"]
 
+    # raw baseline cosine matrices for geometric faithfulness (rho)
+    raw_bl = raw_baseline_cosines(project_dir, run, m)
+
     return {
         "sample_count": int(m["subarray"].nunique()),
         "n_units_total": len(frame),
@@ -218,6 +221,7 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
         "biology_labels": bio_ctx or None,
         "biology_labels_report": bio_report or None,
         "scores": {s: m[s].to_numpy(dtype=float) for s in signals},
+        "raw_baselines": raw_bl,
         "declared": dec,
         "run": run,
         "view": view,
@@ -341,5 +345,86 @@ def biology_labels(project_dir: str | Path,
     return {"labels": result, "report": report}
 
 
+def raw_baseline_cosines(project_dir: str | Path,
+                         run: str,
+                         filtered_frame,
+                         ) -> dict[str, Any] | None:
+    """raw baseline cosine matrices for geometric faithfulness (rho).
+
+    loads raw features (virchow2_niche, novae_niche, gpath2vec_niche) from
+    the niche parquets for the same niches that survived label filtering,
+    mean-pools per subarray, and returns cosine matrices.
+
+    returns None if the niche parquets lack the required feature columns.
+    the returned cosines are in np.unique(subarray) order, matching the
+    step's own subarray ordering.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from omicstra.measures.biology import cosine_sim_matrix, mean_pool_l2
+
+    d = Path(project_dir)
+    raw = json.loads((d / "project.json").read_text())
+
+    from omicstra.contracts.project import ProjectConfig
+    cfg = ProjectConfig.from_dir(d)
+    runs_path = cfg.path(raw["runs_dir"])
+    niches_path = cfg.path(raw["niches_dir"])
+
+    run_cfg_path = runs_path / run / "run_config.json"
+    if not run_cfg_path.is_file():
+        return None
+    run_cfg = json.loads(run_cfg_path.read_text())
+    st_features = tuple(run_cfg.get("st_features", ("novae_niche", "gpath2vec_niche")))
+
+    unique_subs = np.unique(filtered_frame["subarray"])
+    raw_he_pooled = []
+    raw_st_pooled = []
+
+    for sub in unique_subs:
+        jp = niches_path / f"{sub}.parquet"
+        if not jp.is_file():
+            return None
+        nf = pd.read_parquet(jp).reset_index()
+
+        sub_spots = set(filtered_frame.loc[
+            filtered_frame["subarray"] == sub, "spot_id"])
+        if "spot_id" in nf.columns:
+            mask = nf["spot_id"].isin(sub_spots)
+        else:
+            mask = nf.index.isin(sub_spots)
+        nf = nf[mask]
+
+        if len(nf) == 0:
+            return None
+
+        if "virchow2_niche" not in nf.columns:
+            return None
+        he = np.stack([np.asarray(v, np.float32) for v in nf["virchow2_niche"]])
+        raw_he_pooled.append(mean_pool_l2(he))
+
+        st_parts = []
+        for feat in st_features:
+            if feat not in nf.columns:
+                return None
+            arr = np.stack([np.asarray(v, np.float32) for v in nf[feat]])
+            st_parts.append(arr)
+        st = np.concatenate(st_parts, axis=1)
+        raw_st_pooled.append(mean_pool_l2(st))
+
+    R_he = np.stack(raw_he_pooled)
+    R_st = np.stack(raw_st_pooled)
+
+    return {
+        "raw_he": cosine_sim_matrix(R_he),
+        "raw_st": cosine_sim_matrix(R_st),
+        "n_subarrays": len(unique_subs),
+        "he_dim": int(R_he.shape[1]),
+        "st_dim": int(R_st.shape[1]),
+        "st_features": list(st_features),
+    }
+
+
 __all__ = ["REQUIRED", "DeclarationMissing", "arrays", "biology_labels",
-           "declared"]
+           "raw_baseline_cosines", "declared"]
