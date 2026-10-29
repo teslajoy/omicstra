@@ -217,7 +217,7 @@ def test_the_fdr_family_is_named_in_the_record():
     recs = _run(_cohort())
     o = _obs(recs, "association_and_specificity")
     assert o["per_view"]["z_he"]["fdr_family"] == 2
-    assert "family is the signals of ONE view" in o["fdr_family_note"]
+    assert "all evaluable view x signal cells" in o["fdr_family_note"]
 
 
 # ------------------------------------------------------------------ case 4 ----
@@ -469,8 +469,9 @@ def test_a_signal_that_only_fits_the_training_subjects_does_not_transfer():
     rng = np.random.default_rng(2)
     ctx = _cohort()
     subject = ctx["confounder"]
-    held = set(np.random.default_rng(42).choice(np.unique(subject), size=2,
-                                                replace=False))
+    _subj = np.unique(subject).copy()
+    np.random.default_rng(42).shuffle(_subj)
+    held = set(_subj[:2].tolist())
     noise = rng.normal(0, 1, N)
     # the signal exists only on the TRAINING subjects
     ctx["scores"] = {"train_only": np.where([c in held for c in subject],

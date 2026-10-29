@@ -982,6 +982,7 @@ def evaluate_run(project_id: str | None = None,
 def evaluate_measure(run: str, project_id: str | None = None,
                      paired_view: str | None = None,
                      signals: list[str] | None = None,
+                     include_pathway_scores: bool = False,
                      run_id: str | None = None) -> dict:
     import uuid
 
@@ -998,8 +999,7 @@ def evaluate_measure(run: str, project_id: str | None = None,
     out = app.invoke({"project_id": project_id, "arm": HandleArm.EVALUATE,
                       "cohort": cohort, "compute": True, "run": run,
                       "paired_view": paired_view,
-                      # the caller's question, not the cohort's declaration: a
-                      # cohort declares what it HAS, not what will be asked of it
+                      "include_pathway_scores": include_pathway_scores,
                       "signals": list(signals or [])}, cfg)
     return {**_handle(app, rid, out), "checkpointer": spec}
 

@@ -1,0 +1,843 @@
+{
+  "run_id": "R4_v3",
+  "checks": [
+    {
+      "name": "n_full",
+      "status": "PASS",
+      "detail": "35594 vs hist 35594"
+    },
+    {
+      "name": "cca_full_script_z_he/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "script=0.7211593180 hist=0.7211593180 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_he/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.7211594418 hist=0.7211593180 d=1.24e-07 (float32 vs float64 centering)"
+    },
+    {
+      "name": "transfer_script_z_he/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "script=0.44289999 hist=0.44289999 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_he/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.44289462 script=0.44289999 d=5.37e-06 (float32 vs float64 centering)"
+    },
+    {
+      "name": "cca_full_script_z_he/Immune_System",
+      "status": "PASS",
+      "detail": "script=0.8693776452 hist=0.8693776452 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_he/Immune_System",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.8693776211 hist=0.8693776452 d=2.41e-08 (float32 vs float64 centering)"
+    },
+    {
+      "name": "transfer_script_z_he/Immune_System",
+      "status": "PASS",
+      "detail": "script=0.67479094 hist=0.67479094 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_he/Immune_System",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.67478284 script=0.67479094 d=8.10e-06 (float32 vs float64 centering)"
+    },
+    {
+      "name": "cca_full_script_z_he/ECM_Organization",
+      "status": "PASS",
+      "detail": "script=0.8215270481 hist=0.8215270481 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_he/ECM_Organization",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.8215270333 hist=0.8215270481 d=1.48e-08 (float32 vs float64 centering)"
+    },
+    {
+      "name": "transfer_script_z_he/ECM_Organization",
+      "status": "PASS",
+      "detail": "script=0.59009927 hist=0.59009927 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_he/ECM_Organization",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.59010008 script=0.59009927 d=8.12e-07 (float32 vs float64 centering)"
+    },
+    {
+      "name": "cca_full_script_z_he/Cell_Cycle",
+      "status": "PASS",
+      "detail": "script=0.8353158664 hist=0.8353158664 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_he/Cell_Cycle",
+      "status": "PASS",
+      "detail": "d=4.23e-09"
+    },
+    {
+      "name": "transfer_script_z_he/Cell_Cycle",
+      "status": "PASS",
+      "detail": "script=0.63827797 hist=0.63827797 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_he/Cell_Cycle",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.63827091 script=0.63827797 d=7.06e-06 (float32 vs float64 centering)"
+    },
+    {
+      "name": "cca_full_script_z_he/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "script=0.7773994244 hist=0.7773994244 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_he/Programmed_Cell_Death",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.7773994625 hist=0.7773994244 d=3.82e-08 (float32 vs float64 centering)"
+    },
+    {
+      "name": "transfer_script_z_he/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "script=0.51564233 hist=0.51564233 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_he/Programmed_Cell_Death",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.51563386 script=0.51564233 d=8.47e-06 (float32 vs float64 centering)"
+    },
+    {
+      "name": "cca_full_script_z_st/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "script=0.5160313135 hist=0.5160313135 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_st/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.5160312742 hist=0.5160313135 d=3.93e-08 (float32 vs float64 centering)"
+    },
+    {
+      "name": "transfer_script_z_st/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "script=0.53680156 hist=0.53680156 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_st/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.53680203 script=0.53680156 d=4.67e-07 (float32 vs float64 centering)"
+    },
+    {
+      "name": "cca_full_script_z_st/Immune_System",
+      "status": "PASS",
+      "detail": "script=0.5455166692 hist=0.5455166692 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_st/Immune_System",
+      "status": "PASS",
+      "detail": "d=3.42e-09"
+    },
+    {
+      "name": "transfer_script_z_st/Immune_System",
+      "status": "PASS",
+      "detail": "script=0.59030536 hist=0.59030536 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_st/Immune_System",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.59030419 script=0.59030536 d=1.17e-06 (float32 vs float64 centering)"
+    },
+    {
+      "name": "cca_full_script_z_st/ECM_Organization",
+      "status": "PASS",
+      "detail": "script=0.5513437952 hist=0.5513437952 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_st/ECM_Organization",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.5513438663 hist=0.5513437952 d=7.11e-08 (float32 vs float64 centering)"
+    },
+    {
+      "name": "transfer_script_z_st/ECM_Organization",
+      "status": "PASS",
+      "detail": "script=0.57872193 hist=0.57872193 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_st/ECM_Organization",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.57872175 script=0.57872193 d=1.80e-07 (float32 vs float64 centering)"
+    },
+    {
+      "name": "cca_full_script_z_st/Cell_Cycle",
+      "status": "PASS",
+      "detail": "script=0.5697354495 hist=0.5697354495 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_st/Cell_Cycle",
+      "status": "PASS",
+      "detail": "d=7.78e-10"
+    },
+    {
+      "name": "transfer_script_z_st/Cell_Cycle",
+      "status": "PASS",
+      "detail": "script=0.55347902 hist=0.55347902 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_st/Cell_Cycle",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.55347986 script=0.55347902 d=8.45e-07 (float32 vs float64 centering)"
+    },
+    {
+      "name": "cca_full_script_z_st/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "script=0.5546784278 hist=0.5546784278 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_st/Programmed_Cell_Death",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.5546785622 hist=0.5546784278 d=1.34e-07 (float32 vs float64 centering)"
+    },
+    {
+      "name": "transfer_script_z_st/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "script=0.57921065 hist=0.57921065 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_st/Programmed_Cell_Death",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.57920878 script=0.57921065 d=1.87e-06 (float32 vs float64 centering)"
+    },
+    {
+      "name": "cca_full_script_z_mean/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "script=0.7024010901 hist=0.7024010901 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_mean/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "d=6.86e-10"
+    },
+    {
+      "name": "transfer_script_z_mean/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "script=0.48985078 hist=0.48985078 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_mean/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.48985080 script=0.48985078 d=1.66e-08 (float32 vs float64 centering)"
+    },
+    {
+      "name": "cca_full_script_z_mean/Immune_System",
+      "status": "PASS",
+      "detail": "script=0.8532314946 hist=0.8532314946 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_mean/Immune_System",
+      "status": "PASS",
+      "detail": "d=9.04e-10"
+    },
+    {
+      "name": "transfer_script_z_mean/Immune_System",
+      "status": "PASS",
+      "detail": "script=0.73232434 hist=0.73232434 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_mean/Immune_System",
+      "status": "PASS",
+      "detail": "d=8.96e-09"
+    },
+    {
+      "name": "cca_full_script_z_mean/ECM_Organization",
+      "status": "PASS",
+      "detail": "script=0.8134880108 hist=0.8134880108 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_mean/ECM_Organization",
+      "status": "PASS",
+      "detail": "d=1.00e-09"
+    },
+    {
+      "name": "transfer_script_z_mean/ECM_Organization",
+      "status": "PASS",
+      "detail": "script=0.63737200 hist=0.63737200 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_mean/ECM_Organization",
+      "status": "PASS",
+      "detail": "d=3.87e-10"
+    },
+    {
+      "name": "cca_full_script_z_mean/Cell_Cycle",
+      "status": "PASS",
+      "detail": "script=0.8161304173 hist=0.8161304173 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_mean/Cell_Cycle",
+      "status": "PASS",
+      "detail": "d=7.35e-10"
+    },
+    {
+      "name": "transfer_script_z_mean/Cell_Cycle",
+      "status": "PASS",
+      "detail": "script=0.62239948 hist=0.62239948 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_mean/Cell_Cycle",
+      "status": "UNRESOLVED",
+      "detail": "pkg=0.62239946 script=0.62239948 d=1.66e-08 (float32 vs float64 centering)"
+    },
+    {
+      "name": "cca_full_script_z_mean/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "script=0.7733288971 hist=0.7733288971 d=0.00e+00"
+    },
+    {
+      "name": "cca_full_pkg_z_mean/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "d=5.40e-10"
+    },
+    {
+      "name": "transfer_script_z_mean/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "script=0.58701927 hist=0.58701927 d=0.00e+00"
+    },
+    {
+      "name": "transfer_pkg_z_mean/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "d=5.55e-10"
+    },
+    {
+      "name": "adapter_scores",
+      "status": "PASS",
+      "detail": "keys=['Cell_Cycle', 'ECM_Organization', 'Immune_System', 'Programmed_Cell_Death', 'TGF-beta_Signaling']"
+    },
+    {
+      "name": "adapter_views",
+      "status": "PASS",
+      "detail": "spaces=['z_he', 'z_mean', 'z_st']"
+    },
+    {
+      "name": "chain_step_pass",
+      "status": "PASS",
+      "detail": "status=pass"
+    },
+    {
+      "name": "held_out_match",
+      "status": "PASS",
+      "detail": "chain=['52', '53', '64'] script=['52', '53', '64']"
+    },
+    {
+      "name": "n_train_match",
+      "status": "PASS",
+      "detail": "chain=30625 script=30625"
+    },
+    {
+      "name": "n_test_match",
+      "status": "PASS",
+      "detail": "chain=4969 script=4969"
+    },
+    {
+      "name": "n_eval_z_he",
+      "status": "PASS",
+      "detail": "evaluable=5"
+    },
+    {
+      "name": "n_eval_z_st",
+      "status": "PASS",
+      "detail": "evaluable=5"
+    },
+    {
+      "name": "n_eval_z_mean",
+      "status": "PASS",
+      "detail": "evaluable=5"
+    },
+    {
+      "name": "fdr_family_z_he",
+      "status": "PASS",
+      "detail": "fdr_family=15 (expected 15 = 3 views x 5 pathways)"
+    },
+    {
+      "name": "fdr_family_z_st",
+      "status": "PASS",
+      "detail": "fdr_family=15 (expected 15 = 3 views x 5 pathways)"
+    },
+    {
+      "name": "fdr_family_z_mean",
+      "status": "PASS",
+      "detail": "fdr_family=15 (expected 15 = 3 views x 5 pathways)"
+    },
+    {
+      "name": "spec_z_he",
+      "status": "PASS",
+      "detail": "status=fail"
+    },
+    {
+      "name": "spec_z_st",
+      "status": "PASS",
+      "detail": "status=fail"
+    },
+    {
+      "name": "spec_z_mean",
+      "status": "PASS",
+      "detail": "status=pass"
+    },
+    {
+      "name": "n_null_z_he/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_he/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.44289462 script=0.44289999 d=5.37e-06 (float32 vs float64 centering)"
+    },
+    {
+      "name": "z_z_he/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "chain=5.2620 script=5.2621 d=9.28e-05"
+    },
+    {
+      "name": "p_z_he/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_he/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.7211594418 hist=0.7211593180 d=1.24e-07"
+    },
+    {
+      "name": "n_null_z_he/Immune_System",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_he/Immune_System",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.67478284 script=0.67479094 d=8.10e-06 (float32 vs float64 centering)"
+    },
+    {
+      "name": "z_z_he/Immune_System",
+      "status": "PASS",
+      "detail": "chain=5.2203 script=5.2203 d=2.82e-05"
+    },
+    {
+      "name": "p_z_he/Immune_System",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_he/Immune_System",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.8693776211 hist=0.8693776452 d=2.41e-08"
+    },
+    {
+      "name": "n_null_z_he/ECM_Organization",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_he/ECM_Organization",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.59010008 script=0.59009927 d=8.12e-07 (float32 vs float64 centering)"
+    },
+    {
+      "name": "z_z_he/ECM_Organization",
+      "status": "PASS",
+      "detail": "chain=4.3197 script=4.3197 d=1.12e-05"
+    },
+    {
+      "name": "p_z_he/ECM_Organization",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_he/ECM_Organization",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.8215270333 hist=0.8215270481 d=1.48e-08"
+    },
+    {
+      "name": "n_null_z_he/Cell_Cycle",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_he/Cell_Cycle",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.63827091 script=0.63827797 d=7.06e-06 (float32 vs float64 centering)"
+    },
+    {
+      "name": "z_z_he/Cell_Cycle",
+      "status": "UNRESOLVED",
+      "detail": "chain=4.5246 script=4.5248 d=1.91e-04"
+    },
+    {
+      "name": "p_z_he/Cell_Cycle",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_he/Cell_Cycle",
+      "status": "PASS",
+      "detail": "d=4.23e-09"
+    },
+    {
+      "name": "n_null_z_he/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_he/Programmed_Cell_Death",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.51563386 script=0.51564233 d=8.47e-06 (float32 vs float64 centering)"
+    },
+    {
+      "name": "z_z_he/Programmed_Cell_Death",
+      "status": "UNRESOLVED",
+      "detail": "chain=4.5645 script=4.5646 d=1.16e-04"
+    },
+    {
+      "name": "p_z_he/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_he/Programmed_Cell_Death",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.7773994625 hist=0.7773994244 d=3.82e-08"
+    },
+    {
+      "name": "n_null_z_st/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_st/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.53680203 script=0.53680156 d=4.67e-07 (float32 vs float64 centering)"
+    },
+    {
+      "name": "z_z_st/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "chain=10.5867 script=10.5866 d=5.81e-05"
+    },
+    {
+      "name": "p_z_st/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_st/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.5160312742 hist=0.5160313135 d=3.93e-08"
+    },
+    {
+      "name": "n_null_z_st/Immune_System",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_st/Immune_System",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.59030419 script=0.59030536 d=1.17e-06 (float32 vs float64 centering)"
+    },
+    {
+      "name": "z_z_st/Immune_System",
+      "status": "PASS",
+      "detail": "chain=12.1517 script=12.1517 d=4.06e-05"
+    },
+    {
+      "name": "p_z_st/Immune_System",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_st/Immune_System",
+      "status": "PASS",
+      "detail": "d=3.42e-09"
+    },
+    {
+      "name": "n_null_z_st/ECM_Organization",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_st/ECM_Organization",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.57872175 script=0.57872193 d=1.80e-07 (float32 vs float64 centering)"
+    },
+    {
+      "name": "z_z_st/ECM_Organization",
+      "status": "UNRESOLVED",
+      "detail": "chain=10.1457 script=10.1458 d=1.15e-04"
+    },
+    {
+      "name": "p_z_st/ECM_Organization",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_st/ECM_Organization",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.5513438663 hist=0.5513437952 d=7.11e-08"
+    },
+    {
+      "name": "n_null_z_st/Cell_Cycle",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_st/Cell_Cycle",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.55347986 script=0.55347902 d=8.45e-07 (float32 vs float64 centering)"
+    },
+    {
+      "name": "z_z_st/Cell_Cycle",
+      "status": "UNRESOLVED",
+      "detail": "chain=11.3571 script=11.3572 d=1.83e-04"
+    },
+    {
+      "name": "p_z_st/Cell_Cycle",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_st/Cell_Cycle",
+      "status": "PASS",
+      "detail": "d=7.78e-10"
+    },
+    {
+      "name": "n_null_z_st/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_st/Programmed_Cell_Death",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.57920878 script=0.57921065 d=1.87e-06 (float32 vs float64 centering)"
+    },
+    {
+      "name": "z_z_st/Programmed_Cell_Death",
+      "status": "UNRESOLVED",
+      "detail": "chain=13.1233 script=13.1232 d=1.54e-04"
+    },
+    {
+      "name": "p_z_st/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_st/Programmed_Cell_Death",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.5546785622 hist=0.5546784278 d=1.34e-07"
+    },
+    {
+      "name": "n_null_z_mean/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_mean/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.48985080 script=0.48985078 d=1.66e-08 (float32 vs float64 centering)"
+    },
+    {
+      "name": "z_z_mean/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "chain=6.1181 script=6.1181 d=2.84e-07"
+    },
+    {
+      "name": "p_z_mean/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_mean/TGF-beta_Signaling",
+      "status": "PASS",
+      "detail": "d=6.86e-10"
+    },
+    {
+      "name": "n_null_z_mean/Immune_System",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_mean/Immune_System",
+      "status": "PASS",
+      "detail": "d=8.96e-09"
+    },
+    {
+      "name": "z_z_mean/Immune_System",
+      "status": "PASS",
+      "detail": "chain=6.3588 script=6.3588 d=4.21e-07"
+    },
+    {
+      "name": "p_z_mean/Immune_System",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_mean/Immune_System",
+      "status": "PASS",
+      "detail": "d=9.04e-10"
+    },
+    {
+      "name": "n_null_z_mean/ECM_Organization",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_mean/ECM_Organization",
+      "status": "PASS",
+      "detail": "d=3.87e-10"
+    },
+    {
+      "name": "z_z_mean/ECM_Organization",
+      "status": "PASS",
+      "detail": "chain=6.9880 script=6.9880 d=5.92e-07"
+    },
+    {
+      "name": "p_z_mean/ECM_Organization",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_mean/ECM_Organization",
+      "status": "PASS",
+      "detail": "d=1.00e-09"
+    },
+    {
+      "name": "n_null_z_mean/Cell_Cycle",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_mean/Cell_Cycle",
+      "status": "UNRESOLVED",
+      "detail": "chain=0.62239946 script=0.62239948 d=1.66e-08 (float32 vs float64 centering)"
+    },
+    {
+      "name": "z_z_mean/Cell_Cycle",
+      "status": "PASS",
+      "detail": "chain=5.5983 script=5.5983 d=6.95e-07"
+    },
+    {
+      "name": "p_z_mean/Cell_Cycle",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_mean/Cell_Cycle",
+      "status": "PASS",
+      "detail": "d=7.35e-10"
+    },
+    {
+      "name": "n_null_z_mean/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "chain=50"
+    },
+    {
+      "name": "r_te_z_mean/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "d=5.55e-10"
+    },
+    {
+      "name": "z_z_mean/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "chain=6.0138 script=6.0138 d=4.00e-07"
+    },
+    {
+      "name": "p_z_mean/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "chain=0.019608 script=0.019608 d=0.00e+00"
+    },
+    {
+      "name": "wc_r_z_mean/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "d=5.40e-10"
+    },
+    {
+      "name": "hist_z_he/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "chain r_te=0.44289462 hist=0.44289999 d_te=5.37e-06; chain r_tr=0.74915694 hist=0.74915689 d_tr=5.24e-08"
+    },
+    {
+      "name": "hist_z_he/Immune_System",
+      "status": "UNRESOLVED",
+      "detail": "chain r_te=0.67478284 hist=0.67479094 d_te=8.10e-06; chain r_tr=0.87511327 hist=0.87511328 d_tr=1.46e-09"
+    },
+    {
+      "name": "hist_z_he/ECM_Organization",
+      "status": "UNRESOLVED",
+      "detail": "chain r_te=0.59010008 hist=0.59009927 d_te=8.12e-07; chain r_tr=0.83502183 hist=0.83502187 d_tr=3.11e-08"
+    },
+    {
+      "name": "hist_z_he/Cell_Cycle",
+      "status": "UNRESOLVED",
+      "detail": "chain r_te=0.63827091 hist=0.63827797 d_te=7.06e-06; chain r_tr=0.85541029 hist=0.85541025 d_tr=4.24e-08"
+    },
+    {
+      "name": "hist_z_he/Programmed_Cell_Death",
+      "status": "UNRESOLVED",
+      "detail": "chain r_te=0.51563386 hist=0.51564233 d_te=8.47e-06; chain r_tr=0.79369486 hist=0.79369487 d_tr=1.64e-08"
+    },
+    {
+      "name": "hist_z_st/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "chain r_te=0.53680203 hist=0.53680156 d_te=4.67e-07; chain r_tr=0.50352572 hist=0.50352565 d_tr=6.66e-08"
+    },
+    {
+      "name": "hist_z_st/Immune_System",
+      "status": "UNRESOLVED",
+      "detail": "chain r_te=0.59030419 hist=0.59030536 d_te=1.17e-06; chain r_tr=0.55465568 hist=0.55465563 d_tr=4.87e-08"
+    },
+    {
+      "name": "hist_z_st/ECM_Organization",
+      "status": "UNRESOLVED",
+      "detail": "chain r_te=0.57872175 hist=0.57872193 d_te=1.80e-07; chain r_tr=0.53796239 hist=0.53796249 d_tr=9.96e-08"
+    },
+    {
+      "name": "hist_z_st/Cell_Cycle",
+      "status": "UNRESOLVED",
+      "detail": "chain r_te=0.55347986 hist=0.55347902 d_te=8.45e-07; chain r_tr=0.55999593 hist=0.55999593 d_tr=5.56e-09"
+    },
+    {
+      "name": "hist_z_st/Programmed_Cell_Death",
+      "status": "UNRESOLVED",
+      "detail": "chain r_te=0.57920878 hist=0.57921065 d_te=1.87e-06; chain r_tr=0.54233424 hist=0.54233422 d_tr=2.09e-08"
+    },
+    {
+      "name": "hist_z_mean/TGF-beta_Signaling",
+      "status": "UNRESOLVED",
+      "detail": "chain r_te=0.48985080 hist=0.48985078 d_te=1.66e-08; chain r_tr=0.72232453 hist=0.72232453 d_tr=1.56e-09"
+    },
+    {
+      "name": "hist_z_mean/Immune_System",
+      "status": "PASS",
+      "detail": "d_te=8.96e-09 d_tr=8.38e-10"
+    },
+    {
+      "name": "hist_z_mean/ECM_Organization",
+      "status": "PASS",
+      "detail": "d_te=3.87e-10 d_tr=6.46e-10"
+    },
+    {
+      "name": "hist_z_mean/Cell_Cycle",
+      "status": "UNRESOLVED",
+      "detail": "chain r_te=0.62239946 hist=0.62239948 d_te=1.66e-08; chain r_tr=0.83441095 hist=0.83441095 d_tr=2.05e-09"
+    },
+    {
+      "name": "hist_z_mean/Programmed_Cell_Death",
+      "status": "PASS",
+      "detail": "d_te=5.55e-10 d_tr=4.75e-10"
+    }
+  ],
+  "summary": {
+    "ok": 111,
+    "fail": 0,
+    "unresolved": 55,
+    "total": 166,
+    "elapsed_chain_s": 42.4,
+    "verdict": "FAIL"
+  }
+}

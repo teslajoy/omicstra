@@ -1737,9 +1737,12 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     from omicstra.measures.evaluation import (
         bh_fdr,
         permutation_test,
+        prepare_within_cohort_cache,
         projected_correlation,
         top_canonical_correlation,
         transfer_correlation,
+        transfer_null_distribution,
+        within_cohort_null_distribution,
     )
 
     spaces = _eneed(ctx, "spaces", "association_and_specificity")
@@ -1765,8 +1768,9 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                      "within-cohort test under another name",
                      {"n_subjects": int(subjects.size), "held_out_groups": n_held,
                       "n_out": 0, "reason": "too few subjects to hold any out"}), {}
-    held = set(np.random.default_rng(int(vals["transfer_seed"])).choice(
-        subjects, size=n_held, replace=False))
+    _subj = subjects.copy()
+    np.random.default_rng(int(vals["transfer_seed"])).shuffle(_subj)
+    held = set(_subj[:n_held].tolist())
     test_mask = np.array([c in held for c in confounder])
     train_mask = ~test_mask
     n_tr, n_te = int(train_mask.sum()), int(test_mask.sum())
@@ -1784,6 +1788,7 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     for view, X in spaces.items():
         Z = np.asarray(X)
         Z_tr, Z_te = Z[train_mask], Z[test_mask]
+        Q_z = prepare_within_cohort_cache(Z)
         rows, axes, names = [], [], []
         for sname, sc in scores.items():
             y = np.asarray(sc, dtype=np.float64)
@@ -1809,24 +1814,17 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
 
             y_tr, y_te = y[train_mask], y[test_mask]
             r_te, r_tr, a, _ = transfer_correlation(Z_tr, y_tr, Z_te, y_te)
-            # the null refits on PERMUTED training labels and scores the same
-            # held-out units, so it asks "could a direction fitted on noise
-            # transfer this well" - which is the question the observation answers
             rng_t = np.random.default_rng(int(vals["transfer_seed"]) + 1)
-            t_nulls = []
-            for _ in range(int(vals["n_permutations"])):
-                idx = rng_t.permutation(n_tr)
-                _, _, a_s, b_s = transfer_correlation(Z_tr, y_tr[idx], Z_te, y_te)
-                t_nulls.append(projected_correlation(Z_te, y_te, a_s, b_s))
+            t_nulls = transfer_null_distribution(
+                Z_tr, y_tr, Z_te, y_te,
+                n_perms=int(vals["n_permutations"]), rng=rng_t)
             t_null = permutation_test(r_te, t_nulls, tail=str(vals["tail"]))
             g5, why = _guarded_null(r_te, t_nulls, tail=str(vals["tail"]))
 
-            # the within-cohort statistic, kept and labelled. its own seed,
-            # because it is a different test rather than a variant of this one.
             rng_w = np.random.default_rng(int(vals["within_cohort_seed"]))
             w_obs = top_canonical_correlation(Z, y)
-            w_nulls = [top_canonical_correlation(Z, rng_w.permutation(y))
-                       for _ in range(int(vals["n_permutations"]))]
+            w_nulls = within_cohort_null_distribution(
+                Q_z, y, n_perms=int(vals["n_permutations"]), rng=rng_w)
             within = permutation_test(w_obs, w_nulls, tail=str(vals["tail"]))
 
             rows.append({
@@ -1842,29 +1840,39 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
             axes.append(a)
             names.append(sname)
 
-        # the family is the EVALUABLE signals. counting an unevaluable one would
-        # inflate the denominator every q is divided by - the same rule `bh_fdr`
-        # applies to a NaN p-value, applied one level up where the reason is known
-        fdr = bh_fdr([r["p"] for r in rows if not r.get("unevaluable")],
-                     alpha=float(vals["alpha"]), family=names)
-        q_of = dict(zip(names, fdr["q"]))
-        rej_of = dict(zip(names, fdr["rejected"]))
-        for r in rows:
-            r["q"] = q_of.get(r["signal"], float("nan"))
-            r["significant"] = bool(rej_of.get(r["signal"], False))
-
         spec = None
         if len(axes) >= 2:
             g4 = specificity_matrix(np.vstack(axes), names=names,
                                     tau=float(vals["tau_specificity"]))
             spec = {"guard_g4": "pass" if g4.passed else "fail", **g4.model_dump()}
-        out[view] = {"per_signal": rows, "fdr_family": fdr["n_family"],
+        out[view] = {"per_signal": rows,
                      "specificity": spec,
                      "specificity_status": (spec["guard_g4"] if spec else "not_run"),
                      "specificity_missing": (None if spec else
                                              "fewer than two axes to compare")}
 
-    n_sig = sum(1 for v in out.values() for r in v["per_signal"] if r["significant"])
+    # BH-FDR across ALL evaluable view x signal cells globally, matching the
+    # script's family scope. within one run the family is n_views x n_signals.
+    global_cells = [(v, r) for v, blk in out.items()
+                    for r in blk["per_signal"] if not r.get("unevaluable")]
+    global_names = [f"{v}/{r['signal']}" for v, r in global_cells]
+    global_p = [r["p"] for _, r in global_cells]
+    fdr = bh_fdr(global_p, alpha=float(vals["alpha"]), family=global_names)
+    q_of = dict(zip(global_names, fdr["q"]))
+    rej_of = dict(zip(global_names, fdr["rejected"]))
+    for v, r in global_cells:
+        key = f"{v}/{r['signal']}"
+        r["q"] = q_of.get(key, float("nan"))
+        r["significant"] = bool(rej_of.get(key, False))
+    for blk in out.values():
+        blk["fdr_family"] = fdr["n_family"]
+        for r in blk["per_signal"]:
+            if r.get("unevaluable"):
+                r.setdefault("q", float("nan"))
+                r.setdefault("significant", False)
+
+    n_sig = sum(1 for v in out.values() for r in v["per_signal"]
+                if r.get("significant"))
     aliased = sorted(v for v, r in out.items()
                      if (r["specificity"] or {}).get("guard_g4") == "fail")
     unevaluable = sorted({r["signal"] for blk in out.values()
@@ -1912,9 +1920,9 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                   "statistic": "directions fitted on training subjects, "
                                "projected onto held-out subjects",
                   "unevaluable_signals": unevaluable,
-                  "fdr_family_note": "the family is the signals of ONE view; a "
-                                     "caller correcting across views passes that "
-                                     "family to bh_fdr instead",
+                  "fdr_family_note": "the family is all evaluable view x signal "
+                                     "cells within this run, matching the "
+                                     "script's global correction scope",
                   "guards": [{"guard": "G5_noise_floor",
                               "scope": f"{v}/{r['signal']}",
                               "status": r["guard_g5"],

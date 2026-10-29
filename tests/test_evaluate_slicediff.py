@@ -50,6 +50,9 @@ PUBLISHED = {"k": 14, "n_init": 10, "seed": 42, "silhouette_sample": 5000,
 F32 = 1e-6
 
 
+AUCELL = ROOT / "data/embeddings/biological_signals/niche_aucell_5targets.parquet"
+
+
 def _present() -> bool:
     return ((RUNS / RUN / "embeddings_test.parquet").is_file()
             and (RUNS / "eval/H2/mc_coherence.parquet").is_file()
@@ -451,3 +454,28 @@ def test_each_guards_note_is_its_own_finding():
     for g in g5:
         assert "encodes the confounder" not in (g.get("note") or ""), g
         assert "permutation" in (g.get("note") or ""), g
+
+
+# ------------------------------- H3 through the graph with pathway scores ---
+@pytest.mark.skipif(not AUCELL.is_file(),
+                    reason="niche_aucell_5targets.parquet is git-ignored")
+def test_h3_through_the_graph_with_pathway_scores():
+    """the graph path with include_pathway_scores=True finds evaluable signals
+    and produces an H3 verdict that is not not_run."""
+    import json as _json
+
+    from omicstra.graphs.evaluate import build_evaluate_graph
+
+    cohort = _json.loads((ROOT / "projects/tnbc-92/cohort.json").read_text())
+    if "evaluate_params" not in cohort:
+        pytest.skip("this cohort declares no evaluate_params")
+    result = build_evaluate_graph().invoke(
+        {"project_id": "tnbc-92", "arm": "evaluate", "compute": True,
+         "run": RUN, "paired_view": "z_st", "signals": ["tls"],
+         "include_pathway_scores": True, "cohort": cohort})
+    r = result["report"]
+    assert r["status"] == "measured"
+    v = r["verdicts"]
+    assert v["H3"]["verdict"] in ("biological", "diagnostic")
+    steps = r.get("steps", {})
+    assert steps.get("association_and_specificity") == "pass"

@@ -106,7 +106,9 @@ def _views(runs_path: Path, run: str, view: str):
 
 
 def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
-           signals: tuple[str, ...] = ()) -> dict[str, Any]:
+           signals: tuple[str, ...] = (),
+           extra_views: tuple[str, ...] = (),
+           include_pathway_scores: bool = False) -> dict[str, Any]:
     """the ctx `EVALUATE_STEPS` reads, assembled from one run of one cohort.
 
     `signals` is the caller's, not the cohort's: which continuous signals to
@@ -130,6 +132,31 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
 
     he, frame = _views(runs_path, run, view)
     spaces = {view: he}
+
+    # extra views for multi-view steps (H3 uses z_he, z_st, z_mean)
+    for ev in extra_views:
+        if ev == view:
+            continue
+        if ev == "z_mean":
+            _z_he = spaces.get("z_he")
+            if _z_he is None:
+                _z_he = np.stack([np.asarray(v, np.float32)
+                                  for v in frame["z_he"]])
+                spaces["z_he"] = _z_he
+            _z_st = spaces.get("z_st")
+            if _z_st is None:
+                _z_st = np.stack([np.asarray(v, np.float32)
+                                  for v in frame["z_st"]])
+                spaces["z_st"] = _z_st
+            spaces["z_mean"] = (0.5 * (_z_he + _z_st)).astype(np.float32)
+        elif ev in frame.columns:
+            spaces[ev] = np.stack([np.asarray(v, np.float32)
+                                   for v in frame[ev]])
+        else:
+            raise DeclarationMissing(
+                f"extra view {ev!r} is not a column of {run}'s "
+                "embeddings_test.parquet")
+
     paired: dict[str, Any] = {}
     if paired_view:
         if paired_view not in frame.columns:
@@ -201,6 +228,12 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
     # raw baseline cosine matrices for geometric faithfulness (rho)
     raw_bl = raw_baseline_cosines(project_dir, run, m)
 
+    ps = pathway_scores(project_dir, m) if include_pathway_scores else None
+
+    ps_decl = json.loads((Path(project_dir) / "project.json").read_text()
+                         ).get("pathway_scores", {})
+    ps_available = sorted(ps_decl.get("columns", []))
+
     return {
         "sample_count": int(m["subarray"].nunique()),
         "n_units_total": len(frame),
@@ -220,7 +253,9 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
         "confounder": conf_arr,
         "biology_labels": bio_ctx or None,
         "biology_labels_report": bio_report or None,
-        "scores": {s: m[s].to_numpy(dtype=float) for s in signals},
+        "scores": ({s: m[s].to_numpy(dtype=float) for s in signals}
+                   | (ps if ps is not None else {})),
+        "pathway_scores_available": ps_available,
         "raw_baselines": raw_bl,
         "declared": dec,
         "run": run,
@@ -345,6 +380,50 @@ def biology_labels(project_dir: str | Path,
     return {"labels": result, "report": report}
 
 
+def pathway_scores(project_dir: str | Path,
+                   filtered_frame,
+                   ) -> dict[str, Any] | None:
+    """pathway AUCell scores from the declared file, aligned with the frame.
+
+    reads the `pathway_scores` declaration from project.json. the file is
+    indexed by niche_id (subarray::spot_id); the scores are aligned with
+    `filtered_frame` by constructing the same key.
+
+    returns {pathway_name: niche_array} or None if no declaration exists.
+    the file being absent (git-ignored) returns None; a structural error
+    in the declaration raises.
+    """
+    import numpy as np
+    import pandas as pd
+
+    d = Path(project_dir)
+    raw = json.loads((d / "project.json").read_text())
+    ps = raw.get("pathway_scores")
+    if not ps or not isinstance(ps, dict):
+        return None
+
+    for field in ("path", "columns"):
+        if field not in ps or not ps[field]:
+            raise DeclarationMissing(
+                f"pathway_scores is declared but {field!r} is absent. "
+                "both the path and the column list are required")
+
+    from omicstra.contracts.project import ProjectConfig
+    cfg = ProjectConfig.from_dir(d)
+    ps_path = cfg.path(ps["path"])
+    if not ps_path.is_file():
+        return None
+
+    cols = list(ps["columns"])
+    au = pd.read_parquet(ps_path, columns=cols)
+
+    niche_ids = (filtered_frame["subarray"].astype(str) + "::"
+                 + filtered_frame["spot_id"].astype(str))
+    aligned = au.reindex(niche_ids.values)
+
+    return {col: aligned[col].values.astype(np.float64) for col in cols}
+
+
 def raw_baseline_cosines(project_dir: str | Path,
                          run: str,
                          filtered_frame,
@@ -427,4 +506,4 @@ def raw_baseline_cosines(project_dir: str | Path,
 
 
 __all__ = ["REQUIRED", "DeclarationMissing", "arrays", "biology_labels",
-           "raw_baseline_cosines", "declared"]
+           "pathway_scores", "raw_baseline_cosines", "declared"]

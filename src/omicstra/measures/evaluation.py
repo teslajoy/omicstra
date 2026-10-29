@@ -541,7 +541,100 @@ def transfer_correlation(Z_train: np.ndarray, Y_train: np.ndarray,
     return (projected_correlation(Z_test, Y_test, a, b),
             projected_correlation(Z_train, Y_train, a, b), a, b)
 
+def transfer_null_distribution(
+    Z_train: np.ndarray,
+    Y_train: np.ndarray,
+    Z_test: np.ndarray,
+    Y_test: np.ndarray,
+    n_perms: int,
+    rng: np.random.Generator,
+) -> list[float]:
+    """null distribution for the transfer test, cached factorization.
+
+    for univariate Y the canonical direction is proportional to pinv(Z_c) @ y_c.
+    the QR+SVD in `transfer_correlation` recomputes the full factorization of
+    Z_train on every call; for a permutation loop where only Y_train changes,
+    precomputing pinv(Z_train_c) once and doing a matmul per permutation is
+    ~100x faster on 30k x 512 matrices.
+
+    the directions and projected correlations are numerically equivalent to
+    calling `transfer_correlation` with the same shuffled Y_train.
+    """
+    Zt = np.asarray(Z_train, dtype=np.float64)
+    Zt_c = Zt - Zt.mean(axis=0, keepdims=True)
+    Zt_pinv = np.linalg.pinv(Zt_c)
+
+    Ze = np.asarray(Z_test, dtype=np.float64)
+    Ze_c = Ze - Ze.mean(axis=0, keepdims=True)
+
+    y_te = np.asarray(Y_test, dtype=np.float64).ravel()
+    y_te_c = y_te - y_te.mean()
+    yn_te = float(np.linalg.norm(y_te_c))
+
+    y_tr = np.asarray(Y_train, dtype=np.float64).ravel()
+    y_tr_c = y_tr - y_tr.mean()
+    n_tr = len(y_tr_c)
+
+    nulls = []
+    for _ in range(n_perms):
+        idx = rng.permutation(n_tr)
+        y_shuf = y_tr_c[idx]
+        w = Zt_pinv @ y_shuf
+        norm = float(np.linalg.norm(w))
+        if norm < 1e-12 or yn_te < 1e-12:
+            nulls.append(float("nan"))
+            continue
+        a = w / norm
+        z_proj = Ze_c @ a
+        zn = float(np.linalg.norm(z_proj))
+        if zn < 1e-12:
+            nulls.append(float("nan"))
+            continue
+        nulls.append(float(z_proj @ y_te_c) / (zn * yn_te))
+    return nulls
+
+
+def within_cohort_null_distribution(
+    Q_z: np.ndarray,
+    y: np.ndarray,
+    n_perms: int,
+    rng: np.random.Generator,
+) -> list[float]:
+    """null distribution for the within-cohort CCA, cached QR.
+
+    for univariate Y, top_canonical_correlation(Z, y) = ||Q.T @ yc|| / ||yc||,
+    where Q = QR(Z - Z.mean())[0]. Q depends only on Z, so for a loop where
+    only y is permuted, precomputing Q once and doing a matmul per permutation
+    avoids refactoring the same n x d matrix per draw.
+
+    call `prepare_within_cohort_cache(Z)` once per view to get Q_z.
+    """
+    n = y.shape[0]
+    nulls = []
+    for _ in range(n_perms):
+        idx = rng.permutation(n)
+        y_s = np.asarray(y[idx], dtype=np.float64).ravel()
+        yc = y_s - y_s.mean()
+        yn = float(np.linalg.norm(yc))
+        if yn < 1e-12:
+            nulls.append(float("nan"))
+            continue
+        s = float(np.linalg.norm(Q_z.T @ yc))
+        nulls.append(np.clip(s / yn, -1.0, 1.0))
+    return nulls
+
+
+def prepare_within_cohort_cache(Z: np.ndarray) -> np.ndarray:
+    """QR factor of centered Z, reusable across signals and permutations."""
+    A = np.asarray(Z, dtype=np.float64)
+    Ac = A - A.mean(axis=0, keepdims=True)
+    Q, _ = np.linalg.qr(Ac, mode="reduced")
+    return Q
+
+
 __all__ = ["NotComparable", "bh_fdr", "bootstrap_ci", "cluster_agreement",
            "knn_purity", "linear_cka", "linear_probe", "permutation_test",
-           "projected_correlation", "retrieval", "top_canonical_correlation",
-           "transfer_correlation", "two_sample_z"]
+           "prepare_within_cohort_cache", "projected_correlation", "retrieval",
+           "top_canonical_correlation", "transfer_correlation",
+           "transfer_null_distribution", "two_sample_z",
+           "within_cohort_null_distribution"]
