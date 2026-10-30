@@ -93,6 +93,14 @@
       "within_cohort_seed": 42,
       "min_units_per_side": 100
     },
+    "pathway_transfer_cca": {
+      "n_permutations": 500,
+      "n_test_pats": 3,
+      "seed": 42,
+      "alpha": 0.05,
+      "min_testable_set": 5,
+      "pathway_feature": "gpath2vec_niche"
+    },
     "hypothesis_verdict": {
       "hypotheses": {
         "H1": [
@@ -103,7 +111,8 @@
           "structure_and_its_null"
         ],
         "H3": [
-          "association_and_specificity"
+          "association_and_specificity",
+          "pathway_transfer_cca"
         ]
       }
     }

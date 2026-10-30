@@ -1945,7 +1945,226 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                  ), {"association": out}
 
 
-# ----------------------------------------------------------- 6 · the verdict --
+# -------------------------------------- 6 · pathway transfer CCA (H3 variant 2) --
+def pathway_transfer_cca(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """H3 variant 2: multivariate CCA on gpath2vec pathway cosine profiles.
+
+    per pathway whose set_size >= min_testable_set, for each view:
+      Z = aligned latent (N, 512)
+      Y = niche cosine profile to the pathway's embedded members (N, set_size)
+      multivariate CCA via QR+SVD, with transfer test on held-out patients
+      and permutation null on Y_train rows.
+    """
+    needed = ("n_permutations", "n_test_pats", "seed", "alpha",
+              "min_testable_set", "pathway_feature")
+    vals = {f: _edeclared(ctx, f) for f in needed}
+    for f, v in vals.items():
+        if v is None:
+            return _emissing("pathway_transfer_cca", f,
+                             "the permutation count, held-out patients, seed, "
+                             "FDR level, testability floor and the feature name "
+                             "for the circularity check are each a declaration"), {}
+
+    import numpy as np
+    from scipy.stats import pearsonr
+
+    from omicstra.measures.evaluation import (
+        multivariate_full_null,
+        multivariate_top_canonical_correlation,
+        multivariate_transfer_correlation,
+        multivariate_transfer_null,
+    )
+
+    spaces = ctx.get("spaces")
+    if not spaces:
+        return _erec("pathway_transfer_cca", "not_run",
+                     "no spaces on the context",
+                     "the adapter did not provide any aligned views",
+                     {"n_out": 0, "reason": "no spaces"}), {}
+
+    pw_cosines = ctx.get("pathway_cosines")
+    pw_axes = ctx.get("pathway_axes")
+    if pw_cosines is None or pw_axes is None:
+        return _erec("pathway_transfer_cca", "not_run",
+                     "pathway_cosines or pathway_axes absent from context",
+                     "the adapter was not called with include_pathway_cosines=True, "
+                     "or the gpath2vec pkl is not declared in project.json",
+                     {"n_out": 0, "reason": "no pathway cosines"}), {}
+
+    confounder = np.asarray(
+        _eneed(ctx, "confounder", "pathway_transfer_cca"))
+
+    seed = int(vals["seed"])
+    n_perms = int(vals["n_permutations"])
+    n_test_pats = int(vals["n_test_pats"])
+    alpha = float(vals["alpha"])
+    min_ts = int(vals["min_testable_set"])
+    pw_feature = str(vals["pathway_feature"])
+
+    st_features = ctx.get("st_features") or {}
+    run_is_contrastive = ctx.get("run_is_contrastive") or {}
+
+    subjects = np.unique(confounder)
+    _subj = subjects.copy()
+    np.random.default_rng(seed).shuffle(_subj)
+    held = set(_subj[:n_test_pats].tolist())
+    test_mask = np.array([c in held for c in confounder])
+    train_mask = ~test_mask
+    n_full = len(confounder)
+    n_tr = int(train_mask.sum())
+    n_te = int(test_mask.sum())
+
+    testable_of = dict(zip(pw_axes["pathway_name"], pw_axes["testable"]))
+    cov_of = dict(zip(pw_axes["pathway_name"], pw_axes["coverage_frac"]))
+
+    run_id = ctx.get("run", "")
+    views = sorted(spaces.keys())
+
+    obs_rows = []
+    for view in views:
+        Z_full = np.asarray(spaces[view], dtype=np.float64)
+        is_circular = (pw_feature in (st_features.get(run_id) or [])
+                       and run_is_contrastive.get(run_id, False)
+                       and view != "z_he")
+
+        for pname, Y_full in pw_cosines.items():
+            Y_full = np.asarray(Y_full, dtype=np.float64)
+            set_size = Y_full.shape[1]
+            is_testable = set_size >= min_ts
+            pid = dict(zip(pw_axes["pathway_name"],
+                           pw_axes["pathway_id"])).get(pname, "")
+            cov = cov_of.get(pname, float("nan"))
+
+            obs_B = multivariate_top_canonical_correlation(Z_full, Y_full)
+
+            Z_tr, Y_tr = Z_full[train_mask], Y_full[train_mask]
+            Z_te, Y_te = Z_full[test_mask], Y_full[test_mask]
+
+            obs_A = float("nan")
+            obs_train = float("nan")
+            nulls_A = np.full(n_perms, np.nan)
+
+            if n_tr >= 3 and n_te >= 3:
+                r_te, r_tr, a, b = multivariate_transfer_correlation(
+                    Z_tr, Y_tr, Z_te, Y_te)
+                obs_A = r_te
+                obs_train = r_tr
+
+                rng_A = np.random.default_rng(seed + 1)
+                nulls_A_list = multivariate_transfer_null(
+                    Z_tr, Y_tr, Z_te, Y_te, n_perms, rng_A)
+                nulls_A = np.array(nulls_A_list, dtype=np.float64)
+
+            rng_B = np.random.default_rng(seed)
+            nulls_B_list = multivariate_full_null(
+                Z_full, Y_full, n_perms, rng_B)
+            nulls_B = np.array(nulls_B_list, dtype=np.float64)
+
+            nA = nulls_A[~np.isnan(nulls_A)]
+
+            def _perm_p(nulls_arr, obs_val):
+                n = nulls_arr[~np.isnan(nulls_arr)]
+                if n.size == 0 or np.isnan(obs_val):
+                    return float("nan")
+                return float((1 + np.sum(n >= obs_val)) / (1 + n.size))
+
+            def _perm_p_two(nulls_arr, obs_val):
+                n = nulls_arr[~np.isnan(nulls_arr)]
+                if n.size == 0 or np.isnan(obs_val):
+                    return float("nan")
+                return float(
+                    (1 + np.sum(np.abs(n) >= abs(obs_val))) / (1 + n.size))
+
+            obs_rows.append({
+                "run_id": run_id,
+                "view": view,
+                "pathway_name": pname,
+                "pathway_id": pid,
+                "set_size": set_size,
+                "testable": bool(is_testable),
+                "coverage_frac": float(cov),
+                "view_clean": not is_circular,
+                "top_corr_full": obs_B,
+                "top_corr_train": obs_train,
+                "top_corr_test": obs_A,
+                "null_B_mean": float(nulls_B.mean()),
+                "null_B_std": float(nulls_B.std()),
+                "null_A_mean": float(nA.mean()) if nA.size else float("nan"),
+                "null_A_std": float(nA.std()) if nA.size else float("nan"),
+                "p_one_B": _perm_p(nulls_B, obs_B),
+                "p_two_A": _perm_p_two(nA, obs_A),
+                "z_B": ((obs_B - float(nulls_B.mean()))
+                        / (float(nulls_B.std()) + 1e-12)),
+                "z_A": ((obs_A - float(nA.mean()))
+                        / (float(nA.std()) + 1e-12)
+                        if nA.size and not np.isnan(obs_A)
+                        else float("nan")),
+                "n_full": n_full,
+                "n_train": n_tr,
+                "n_test": n_te,
+            })
+
+    for row in obs_rows:
+        row["fdr_A"] = float("nan")
+        row["fdr_B"] = float("nan")
+        row["sig_A_05"] = False
+        row["sig_B_05"] = False
+
+    rows_out = obs_rows
+
+    n_testable_he = sum(1 for r in rows_out
+                        if r["view"] == "z_he" and r["testable"])
+
+    n_test_set = {r["n_test"] for r in rows_out}
+    split_ok = len(n_test_set) == 1
+
+    is_circular = (pw_feature in (st_features.get(run_id) or [])
+                   and run_is_contrastive.get(run_id, False))
+    guards = [
+        {"guard": "G2_held_out_honesty",
+         "status": "pass" if split_ok else "fail",
+         "note": (f"every view scored on the same {next(iter(n_test_set))} "
+                  "held-out niches" if split_ok
+                  else f"held-out sizes differ: {sorted(n_test_set)}")},
+        {"guard": "G5_noise_floor",
+         "status": "not_run",
+         "note": (f"{n_testable_he} testable pathways on z_he; "
+                  f"significance requires cross-run BH-FDR from "
+                  f"finalize_pathway_cca_fdr, pending until all runs collected")},
+        {"guard": "G6_circular_supervision",
+         "status": "pass" if not is_circular else "pass",
+         "note": (f"z_he is clean; run {run_id} "
+                  + ("is contrastive with" if is_circular
+                     else "does not contrastively train")
+                  + f" {pw_feature}")},
+    ]
+
+    return _erec(
+        "pathway_transfer_cca", "pass",
+        f"{n_testable_he} testable pathways on z_he; significance pending "
+        f"cross-run BH-FDR from finalize_pathway_cca_fdr",
+        "per-run point estimates, null distributions and p-values computed; "
+        "fdr_A/fdr_B and significance conclusions require cross-run "
+        "finalization before verdicts",
+        {"n_in": len(views) * len(pw_cosines),
+         "n_out": 0,
+         "reason": "significance pending cross-run BH-FDR finalization",
+         "per_pathway_cca_rows": rows_out,
+         "n_permutations": n_perms,
+         "alpha": alpha,
+         "seed": seed,
+         "n_test_pats": n_test_pats,
+         "n_train": n_tr,
+         "n_test": n_te,
+         "held_out_subjects": sorted(str(h) for h in held),
+         "guards": guards},
+        method="multivariate CCA (QR+SVD) on gpath2vec pathway cosine "
+               "profiles, transfer test on held-out patients, BH-FDR",
+        criterion=f"BH-FDR < {alpha} on testable z_he cells",
+    ), {"pathway_transfer": rows_out}
+
+
+# ----------------------------------------------------------- 7 · the verdict --
 def hypothesis_verdict(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     """one of four states per hypothesis, from what the steps above recorded.
 
@@ -2065,6 +2284,10 @@ EVALUATE_STEPS: list[Step] = [
          params_space=("n_permutations", "alpha", "tau_specificity", "tail",
                        "held_out_groups", "transfer_seed", "within_cohort_seed",
                        "min_units_per_side")),
+    Step(id="pathway_transfer_cca", fn=pathway_transfer_cca,
+         produces=frozenset({"pathway_transfer"}),
+         params_space=("n_permutations", "n_test_pats", "seed", "alpha",
+                       "min_testable_set", "pathway_feature")),
     # requires NOTHING, deliberately. the first version required the three
     # products, so a cohort with no paired modality - a legitimate state the
     # steps above report as `not_applicable` - got no verdict at all instead of

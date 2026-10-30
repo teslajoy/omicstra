@@ -632,8 +632,188 @@ def prepare_within_cohort_cache(Z: np.ndarray) -> np.ndarray:
     return Q
 
 
+# ======================================================== multivariate CCA ====
+
+def multivariate_top_canonical_correlation(
+    Z: np.ndarray, Y: np.ndarray, *, with_weights: bool = False,
+) -> float | tuple[float, np.ndarray, np.ndarray]:
+    """top canonical correlation between two multivariate blocks via QR+SVD.
+
+    unlike `top_canonical_correlation`, Y is matrix-valued (N x p). the CCA
+    finds the directions a in R^d and b in R^p that maximise corr(Za, Yb).
+    """
+    A = np.asarray(Z, dtype=np.float64)
+    B = np.asarray(Y, dtype=np.float64)
+    if A.ndim == 1:
+        A = A[:, None]
+    if B.ndim == 1:
+        B = B[:, None]
+    if A.shape[0] != B.shape[0]:
+        raise NotComparable(
+            f"CCA relates two blocks over the SAME units: {A.shape[0]} rows "
+            f"against {B.shape[0]}")
+    Ac = A - A.mean(axis=0, keepdims=True)
+    Bc = B - B.mean(axis=0, keepdims=True)
+    Qa, Ra = np.linalg.qr(Ac, mode="reduced")
+    Qb, Rb = np.linalg.qr(Bc, mode="reduced")
+    U, S, Vt = np.linalg.svd(Qa.T @ Qb, full_matrices=False)
+    top = float(np.clip(S[0], -1.0, 1.0))
+    if not with_weights:
+        return top
+
+    def _solve(R, v):
+        try:
+            return np.linalg.solve(R, v)
+        except np.linalg.LinAlgError:
+            return np.linalg.lstsq(R, v, rcond=None)[0]
+
+    return top, _solve(Ra, U[:, 0]), _solve(Rb, Vt[0])
+
+
+def multivariate_transfer_correlation(
+    Z_train: np.ndarray, Y_train: np.ndarray,
+    Z_test: np.ndarray, Y_test: np.ndarray,
+) -> tuple[float, float, np.ndarray, np.ndarray]:
+    """fit multivariate canonical directions on train, score on held-out.
+
+    returns (r_test, r_train, a, b). r_test is pearsonr(Z_te_c @ a, Y_te_c @ b)
+    with Z_te_c and Y_te_c centred on their own means.
+    """
+    result = multivariate_top_canonical_correlation(
+        Z_train, Y_train, with_weights=True)
+    _, a, b = result
+    r_test = _mv_projected_corr(Z_test, Y_test, a, b)
+    r_train = _mv_projected_corr(Z_train, Y_train, a, b)
+    return r_test, r_train, a, b
+
+
+def _mv_projected_corr(
+    Z: np.ndarray, Y: np.ndarray, a: np.ndarray, b: np.ndarray,
+) -> float:
+    """pearsonr of the projections onto given directions, centred on own data."""
+    Zc = np.asarray(Z, dtype=np.float64)
+    Yc = np.asarray(Y, dtype=np.float64)
+    Zc = Zc - Zc.mean(axis=0, keepdims=True)
+    Yc = Yc - Yc.mean(axis=0, keepdims=True)
+    u = Zc @ np.asarray(a, dtype=np.float64)
+    v = Yc @ np.asarray(b, dtype=np.float64)
+    u, v = np.ravel(u), np.ravel(v)
+    if u.std() == 0 or v.std() == 0:
+        return float("nan")
+    from scipy.stats import pearsonr as _pearsonr
+    return float(_pearsonr(u, v)[0])
+
+
+def multivariate_transfer_null(
+    Z_train: np.ndarray, Y_train: np.ndarray,
+    Z_test: np.ndarray, Y_test: np.ndarray,
+    n_perms: int, rng: np.random.Generator,
+) -> list[float]:
+    """permutation null for multivariate transfer CCA.
+
+    permutes Y_train rows, refits directions via QR+SVD, re-scores on held-out.
+    Q_Z and R_Z are cached (Z_train is invariant across permutations).
+    """
+    from scipy.stats import pearsonr as _pearsonr
+
+    Zt = np.asarray(Z_train, dtype=np.float64)
+    Zt_c = Zt - Zt.mean(axis=0, keepdims=True)
+    Qz, Rz = np.linalg.qr(Zt_c, mode="reduced")
+
+    Ze = np.asarray(Z_test, dtype=np.float64)
+    Ze_c = Ze - Ze.mean(axis=0, keepdims=True)
+
+    Yt = np.asarray(Y_train, dtype=np.float64)
+    Yt_c = Yt - Yt.mean(axis=0, keepdims=True)
+    n_tr = Yt_c.shape[0]
+
+    Ye = np.asarray(Y_test, dtype=np.float64)
+    Ye_c = Ye - Ye.mean(axis=0, keepdims=True)
+
+    nulls = []
+    for _ in range(n_perms):
+        idx = rng.permutation(n_tr)
+        Yp = Yt_c[idx]
+        Qy, Ry = np.linalg.qr(Yp, mode="reduced")
+        U, _, Vt = np.linalg.svd(Qz.T @ Qy, full_matrices=False)
+        try:
+            a = np.linalg.solve(Rz, U[:, 0])
+        except np.linalg.LinAlgError:
+            a = np.linalg.lstsq(Rz, U[:, 0], rcond=None)[0]
+        try:
+            b = np.linalg.solve(Ry, Vt[0])
+        except np.linalg.LinAlgError:
+            b = np.linalg.lstsq(Ry, Vt[0], rcond=None)[0]
+        u = Ze_c @ a
+        v = Ye_c @ b
+        u, v = np.ravel(u), np.ravel(v)
+        if u.std() == 0 or v.std() == 0:
+            nulls.append(float("nan"))
+            continue
+        nulls.append(float(_pearsonr(u, v)[0]))
+    return nulls
+
+
+def multivariate_full_null(
+    Z: np.ndarray, Y: np.ndarray,
+    n_perms: int, rng: np.random.Generator,
+) -> list[float]:
+    """permutation null for multivariate option-B CCA (fit on all units).
+
+    permutes Y rows, recomputes top canonical correlation. Q_Z cached.
+    """
+    A = np.asarray(Z, dtype=np.float64)
+    B = np.asarray(Y, dtype=np.float64)
+    Ac = A - A.mean(axis=0, keepdims=True)
+    Bc = B - B.mean(axis=0, keepdims=True)
+    Qz, _ = np.linalg.qr(Ac, mode="reduced")
+    n = Bc.shape[0]
+    nulls = []
+    for _ in range(n_perms):
+        idx = rng.permutation(n)
+        Qy, _ = np.linalg.qr(Bc[idx], mode="reduced")
+        s = float(np.linalg.svd(Qz.T @ Qy, full_matrices=False, compute_uv=False)[0])
+        nulls.append(float(np.clip(s, -1.0, 1.0)))
+    return nulls
+
+
+def finalize_pathway_cca_fdr(
+    rows: list[dict], *, alpha: float = 0.05,
+) -> list[dict]:
+    """apply cross-run BH-FDR to collected pathway_transfer_cca rows.
+
+    the step runs per-run and produces per-run p-values. this function
+    recomputes fdr_A over the TESTABLE z_he cells across all runs (the
+    headline family) and fdr_B over all cells, matching the script's
+    cross-run family.
+    """
+    import pandas as pd
+
+    df = pd.DataFrame(rows)
+    head = df[(df["testable"]) & (df["view"] == "z_he")].copy()
+    df["fdr_A"] = np.nan
+    if len(head):
+        head_p = head["p_two_A"].values
+        fdr_a = bh_fdr(head_p, alpha=alpha,
+                        family=[f"{r['run_id']}/{r['pathway_name']}"
+                                for _, r in head.iterrows()])
+        df.loc[head.index, "fdr_A"] = fdr_a["q"]
+    all_p_B = df["p_one_B"].values
+    fdr_b = bh_fdr(all_p_B, alpha=alpha,
+                    family=[f"{r['run_id']}/{r['view']}/{r['pathway_name']}"
+                            for _, r in df.iterrows()])
+    df["fdr_B"] = fdr_b["q"]
+    df["sig_A_05"] = df["fdr_A"] < alpha
+    df["sig_B_05"] = df["fdr_B"] < alpha
+    return df.to_dict("records")
+
+
 __all__ = ["NotComparable", "bh_fdr", "bootstrap_ci", "cluster_agreement",
-           "knn_purity", "linear_cka", "linear_probe", "permutation_test",
+           "finalize_pathway_cca_fdr",
+           "knn_purity", "linear_cka", "linear_probe",
+           "multivariate_full_null", "multivariate_top_canonical_correlation",
+           "multivariate_transfer_correlation", "multivariate_transfer_null",
+           "permutation_test",
            "prepare_within_cohort_cache", "projected_correlation", "retrieval",
            "top_canonical_correlation", "transfer_correlation",
            "transfer_null_distribution", "two_sample_z",

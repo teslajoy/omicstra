@@ -108,7 +108,8 @@ def _views(runs_path: Path, run: str, view: str):
 def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
            signals: tuple[str, ...] = (),
            extra_views: tuple[str, ...] = (),
-           include_pathway_scores: bool = False) -> dict[str, Any]:
+           include_pathway_scores: bool = False,
+           include_pathway_cosines: bool = False) -> dict[str, Any]:
     """the ctx `EVALUATE_STEPS` reads, assembled from one run of one cohort.
 
     `signals` is the caller's, not the cohort's: which continuous signals to
@@ -234,6 +235,16 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
                          ).get("pathway_scores", {})
     ps_available = sorted(ps_decl.get("columns", []))
 
+    pc = pathway_cosines(project_dir, m) if include_pathway_cosines else None
+
+    run_cfg_path = cfg.path(dec["runs_dir"]) / run / "run_config.json"
+    run_st_features: dict[str, list[str]] = {}
+    run_is_contrastive: dict[str, bool] = {}
+    if run_cfg_path.is_file():
+        rc = json.loads(run_cfg_path.read_text())
+        run_st_features = {run: list(rc.get("st_features", []))}
+        run_is_contrastive = {run: "loss" in rc and "baseline" not in rc}
+
     return {
         "sample_count": int(m["subarray"].nunique()),
         "n_units_total": len(frame),
@@ -257,6 +268,10 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
                    | (ps if ps is not None else {})),
         "pathway_scores_available": ps_available,
         "raw_baselines": raw_bl,
+        "pathway_cosines": pc["cosines"] if pc is not None else None,
+        "pathway_axes": pc["axes"] if pc is not None else None,
+        "st_features": run_st_features,
+        "run_is_contrastive": run_is_contrastive,
         "declared": dec,
         "run": run,
         "view": view,
@@ -422,6 +437,144 @@ def pathway_scores(project_dir: str | Path,
     aligned = au.reindex(niche_ids.values)
 
     return {col: aligned[col].values.astype(np.float64) for col in cols}
+
+
+NAMED_PATHWAY_TARGETS = {
+    "TGF-beta_Signaling":    "R-HSA-170834",
+    "Immune_System":         "R-HSA-168256",
+    "ECM_Organization":      "R-HSA-1474244",
+    "Cell_Cycle":            "R-HSA-1640170",
+    "Programmed_Cell_Death": "R-HSA-5357801",
+}
+
+
+def _reactome_descendants(reactome_dir: Path):
+    """load ReactomePathwaysRelation.txt and return a descendants-of function."""
+    from collections import defaultdict
+
+    children_of: dict[str, set[str]] = defaultdict(set)
+    with open(reactome_dir / "ReactomePathwaysRelation.txt") as f:
+        for line in f:
+            parts = line.strip().split("\t")
+            if len(parts) == 2 and parts[0].startswith("R-HSA-"):
+                children_of[parts[0]].add(parts[1])
+
+    def descendants(root: str) -> set[str]:
+        seen: set[str] = set()
+        stack = [root]
+        while stack:
+            n = stack.pop()
+            for c in children_of.get(n, ()):
+                if c not in seen:
+                    seen.add(c)
+                    stack.append(c)
+        return seen
+    return descendants
+
+
+def pathway_cosines(
+    project_dir: str | Path,
+    filtered_frame,
+    min_testable_set: int = 5,
+) -> dict[str, Any] | None:
+    """gpath2vec pathway cosine profiles for multivariate CCA (H3 variant 2).
+
+    reads `project.json#pathway_node_embeddings` (gpath2vec pkl) and
+    `knowledge/reactome/ReactomePathwaysRelation.txt`. builds the 5 named
+    pathway sets, computes niche cosine tables, aligns with filtered_frame.
+
+    returns {"cosines": {name: (N, set_size) ndarray}, "axes": DataFrame}
+    or None if the declaration is absent or the file does not exist.
+    """
+    import pickle
+
+    import numpy as np
+    import pandas as pd
+
+    d = Path(project_dir)
+    raw = json.loads((d / "project.json").read_text())
+    emb_rel = raw.get("pathway_node_embeddings")
+    if not emb_rel:
+        return None
+
+    from omicstra.contracts.project import ProjectConfig
+    cfg = ProjectConfig.from_dir(d)
+    emb_path = cfg.path(emb_rel)
+    if not emb_path.is_file():
+        return None
+
+    reactome_dir = d.parent.parent / "knowledge" / "reactome"
+    if not (reactome_dir / "ReactomePathwaysRelation.txt").is_file():
+        reactome_dir = Path(__file__).resolve().parents[2] / "knowledge" / "reactome"
+    if not (reactome_dir / "ReactomePathwaysRelation.txt").is_file():
+        return None
+
+    with open(emb_path, "rb") as f:
+        node_emb = pickle.load(f)
+
+    descendants_of = _reactome_descendants(reactome_dir)
+    embedded = {k for k in node_emb
+                if isinstance(k, str) and k.startswith("R-HSA-")}
+
+    axes_rows = []
+    members: dict[str, tuple[list[str], np.ndarray]] = {}
+    for name, pid in NAMED_PATHWAY_TARGETS.items():
+        all_desc = descendants_of(pid)
+        ids: list[str] = []
+        if pid in embedded:
+            ids.append(pid)
+        ids.extend(sorted(all_desc & embedded))
+        if not ids:
+            continue
+        P = np.stack([node_emb[i].astype(np.float64) for i in ids])
+        P = P / (np.linalg.norm(P, axis=1, keepdims=True) + 1e-12)
+        members[name] = (ids, P)
+        n_children = len(ids) - (1 if pid in embedded else 0)
+        total_desc = len(all_desc)
+        cov = (n_children / total_desc) if total_desc else float("nan")
+        axes_rows.append({
+            "pathway_name": name,
+            "pathway_id": pid,
+            "parent_embedded": pid in embedded,
+            "n_children_embedded": n_children,
+            "total_descendants": total_desc,
+            "coverage_frac": cov,
+            "set_size": len(ids),
+            "testable": len(ids) >= min_testable_set,
+        })
+    axes_df = pd.DataFrame(axes_rows)
+
+    niche_keys = [k for k in node_emb
+                  if isinstance(k, str) and k.startswith("cluster_")]
+    N_mat = np.stack([node_emb[k].astype(np.float64) for k in niche_keys])
+    N_mat = N_mat / (np.linalg.norm(N_mat, axis=1, keepdims=True) + 1e-12)
+
+    def _niche_key_to_id(k: str) -> str:
+        s = k.rsplit("__", 1)[-1]
+        return s[len("cluster_"):] if s.startswith("cluster_") else s
+
+    niche_ids = [_niche_key_to_id(k) for k in niche_keys]
+
+    cosine_tables: dict[str, pd.DataFrame] = {}
+    for name, (ids, P) in members.items():
+        C = N_mat @ P.T
+        df = pd.DataFrame(C, index=niche_ids, columns=ids)
+        df = df[~df.index.duplicated(keep="first")]
+        df.index.name = "niche_id"
+        cosine_tables[name] = df
+
+    frame_niche_ids = (
+        filtered_frame["subarray"].astype(str)
+        + "::"
+        + filtered_frame["spot_id"].astype(str)
+    )
+
+    cosines: dict[str, np.ndarray] = {}
+    for name, ct in cosine_tables.items():
+        aligned = ct.reindex(frame_niche_ids.values)
+        cosines[name] = aligned.values.astype(np.float64)
+
+    return {"cosines": cosines, "axes": axes_df}
 
 
 def raw_baseline_cosines(project_dir: str | Path,

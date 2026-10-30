@@ -166,7 +166,8 @@ def test_every_step_either_passes_or_states_why_it_could_not_run():
     no biology_labels or confounder_suppression params (it needs the
     adapter and project.json declaration). every other step passes."""
     recs = _records()
-    expected_not_run = {"association_and_specificity", "confounder_suppression"}
+    expected_not_run = {"association_and_specificity", "confounder_suppression",
+                        "pathway_transfer_cca"}
     for step in expected_not_run:
         assert recs[step]["status"] == "not_run", (step, recs[step])
     others = {k: r["result"] for k, r in recs.items()
@@ -479,3 +480,121 @@ def test_h3_through_the_graph_with_pathway_scores():
     assert v["H3"]["verdict"] in ("biological", "diagnostic")
     steps = r.get("steps", {})
     assert steps.get("association_and_specificity") == "pass"
+
+
+# ---------- H3 variant 2: pathway_transfer_cca parity against the artifact ---
+H3V2_ART = RUNS / "eval/H3/pathway_cca_gpath2vec_v3/per_pathway_cca.parquet"
+
+
+def _h3v2_present() -> bool:
+    return (_present() and H3V2_ART.is_file()
+            and (ROOT / "data/embeddings/gpath2vec").is_dir()
+            and (ROOT / "knowledge/reactome/ReactomePathwaysRelation.txt").is_file())
+
+
+_H3V2_CACHE: dict = {}
+
+
+def _h3v2_step_rows():
+    """run pathway_transfer_cca on R1_v3 with 20 perms and return the rows."""
+    if "rows" in _H3V2_CACHE:
+        return _H3V2_CACHE["rows"]
+
+    from omicstra.adapters.evaluation import arrays
+    from omicstra.protocols.evaluate import pathway_transfer_cca
+    from omicstra.settings import settings
+
+    ctx = arrays(settings.project_root("tnbc-92"), RUN,
+                 paired_view="z_st", signals=("tls",),
+                 extra_views=("z_st", "z_mean"),
+                 include_pathway_cosines=True)
+    ctx["params"] = {
+        "n_permutations": 20,
+        "n_test_pats": 3,
+        "seed": 42,
+        "alpha": 0.05,
+        "min_testable_set": 5,
+        "pathway_feature": "gpath2vec_niche",
+    }
+    rec, _ = pathway_transfer_cca(ctx)
+    _H3V2_CACHE["rows"] = rec.observed["per_pathway_cca_rows"]
+    return _H3V2_CACHE["rows"]
+
+
+@pytest.mark.skipif(not _h3v2_present(),
+                    reason="H3 variant 2 artifacts are git-ignored")
+def test_h3v2_point_estimates_match_artifact():
+    """obs_A, obs_B and obs_train are perm-independent and must match exactly."""
+    art = pd.read_parquet(H3V2_ART)
+    art_r1 = art[art["run_id"] == RUN].set_index(["view", "pathway_name"])
+    rows = _h3v2_step_rows()
+    for r in rows:
+        a = art_r1.loc[(r["view"], r["pathway_name"])]
+        for col in ("top_corr_test", "top_corr_train", "top_corr_full"):
+            sv, av = float(r[col]), float(a[col])
+            if np.isnan(sv) and np.isnan(av):
+                continue
+            assert sv == pytest.approx(av, abs=1e-14), \
+                f"{r['view']}/{r['pathway_name']} {col}: step={sv} art={av}"
+
+
+@pytest.mark.skipif(not _h3v2_present(),
+                    reason="H3 variant 2 artifacts are git-ignored")
+def test_h3v2_structural_columns_match_artifact():
+    art = pd.read_parquet(H3V2_ART)
+    art_r1 = art[art["run_id"] == RUN].set_index(["view", "pathway_name"])
+    rows = _h3v2_step_rows()
+    assert len(rows) == len(art_r1), \
+        f"step rows {len(rows)} vs artifact {len(art_r1)}"
+    for r in rows:
+        a = art_r1.loc[(r["view"], r["pathway_name"])]
+        assert r["set_size"] == int(a["set_size"])
+        assert r["testable"] == bool(a["testable"])
+        assert r["view_clean"] == bool(a["view_clean"])
+        assert r["n_full"] == int(a["n_full"])
+        assert r["n_train"] == int(a["n_train"])
+        assert r["n_test"] == int(a["n_test"])
+        assert float(r["coverage_frac"]) == pytest.approx(
+            float(a["coverage_frac"]), abs=1e-14)
+
+
+@pytest.mark.skipif(not _h3v2_present(),
+                    reason="H3 variant 2 artifacts are git-ignored")
+def test_h3v2_produces_all_views_and_pathways():
+    rows = _h3v2_step_rows()
+    views = {r["view"] for r in rows}
+    pathways = {r["pathway_name"] for r in rows}
+    assert views == {"z_he", "z_st", "z_mean"}
+    assert len(pathways) == 5
+    assert "TGF-beta_Signaling" in pathways
+    assert len(rows) == 15
+
+
+@pytest.mark.skipif(not _h3v2_present(),
+                    reason="H3 variant 2 artifacts are git-ignored")
+def test_h3v2_circularity_flag_derived_from_st_features():
+    """z_he is always clean; z_st and z_mean are circular for CONTRASTIVE runs
+    whose ST input includes gpath2vec_niche. R1_v3 is contrastive with
+    gpath2vec, so z_st/z_mean are circular. baselines (B1-B3) are clean on
+    all views despite declaring gpath2vec_niche in st_features."""
+    rows = _h3v2_step_rows()
+    for r in rows:
+        if r["view"] == "z_he":
+            assert r["view_clean"] is True, r["pathway_name"]
+        else:
+            assert r["view_clean"] is False, \
+                f"{r['view']}/{r['pathway_name']} should be circular for {RUN}"
+
+
+@pytest.mark.skipif(not _h3v2_present(),
+                    reason="H3 variant 2 artifacts are git-ignored")
+def test_h3v2_fdr_columns_are_deferred_to_finalization():
+    """the step outputs NaN for fdr_A/fdr_B because cross-run FDR needs all
+    runs collected. finalize_pathway_cca_fdr applies BH-FDR across the full
+    family."""
+    rows = _h3v2_step_rows()
+    for r in rows:
+        assert np.isnan(r["fdr_A"]), "fdr_A should be NaN before finalization"
+        assert np.isnan(r["fdr_B"]), "fdr_B should be NaN before finalization"
+        assert r["sig_A_05"] is False
+        assert r["sig_B_05"] is False
