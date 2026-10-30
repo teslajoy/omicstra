@@ -379,6 +379,38 @@ def from_ledger(unit: str, project_id: str | None = None, *,
             "records": [latest[sid] for sid in ids if sid in latest]}
 
 
+def from_records(unit: str, records: list[dict], project_id: str | None = None,
+                 *, run: str | None = None, sample: str | None = None,
+                 run_id: str | None = None) -> dict:
+    """the bundle for one unit, built from in-memory records.
+
+    same shape as `from_ledger`, but reads from a list of record dicts (as
+    carried in the graph state) rather than from the file-backed ledger.
+    the chain command accumulates records across all stages; this filters
+    them to the steps that belong to one unit.
+    """
+    import importlib
+
+    from omicstra.settings import settings
+
+    if unit not in UNITS:
+        raise ValueError(f"unknown unit {unit!r}. known: {sorted(UNITS)}")
+    u = UNITS[unit]
+    ids = [st.id for st in getattr(importlib.import_module(u.module), u.steps)]
+    latest: dict[str, dict] = {}
+    for r in records:
+        sid = r.get("step_id") if isinstance(r, dict) else getattr(r, "step_id", None)
+        if sid in ids:
+            d = r if isinstance(r, dict) else r.model_dump(mode="json")
+            latest[sid] = d
+    return {"unit": unit, "project_id": project_id,
+            "project_dir": str(settings.project_root(project_id)),
+            "run": run, "sample": sample, "run_id": run_id,
+            "params": {sid: (rec.get("params") or {})
+                       for sid, rec in latest.items()},
+            "records": [latest[sid] for sid in ids if sid in latest]}
+
+
 def results_dir(project_id: str | None = None):
     """where a cohort's generated results go: `work_root/results`.
 
@@ -438,4 +470,4 @@ def write(b: dict, project_id: str | None = None) -> tuple:
 
 
 __all__ = ["PLACES", "UNITS", "Unit", "build", "filenames", "from_ledger",
-           "results_dir", "write"]
+           "from_records", "results_dir", "write"]

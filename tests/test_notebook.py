@@ -458,6 +458,65 @@ def test_the_footer_counts_what_actually_ran():
     assert "DIFFERS" in say({"a": "fail", "b": "pass"})
 
 
+# ------------------------------------------- from_records --------------------
+def test_from_records_filters_by_unit(bound_synthetic_cohort):
+    """the chain accumulates records across all stages; from_records filters
+    them to the steps that belong to one unit."""
+    from omicstra.notebook import from_records
+
+    records = [
+        {"step_id": "route::cross_modal_retrieval", "kind": "gate",
+         "actor": "deterministic", "status": "pass"},
+        {"step_id": "label_granularity", "kind": "diagnostic", "status": "pass",
+         "params": {"labels": ["x"]}, "observed": {"n_in": 9, "n_out": 9}},
+        {"step_id": "paired_identifiability", "kind": "diagnostic", "status": "pass",
+         "params": {}, "observed": {"mrr": 0.5}},
+    ]
+    b = from_records("evaluate", records, None, run="R4", run_id="chain-abc")
+    assert [r["step_id"] for r in b["records"]] == [
+        "label_granularity", "paired_identifiability"]
+    assert "route::cross_modal_retrieval" not in [r["step_id"] for r in b["records"]]
+    assert b["run"] == "R4"
+    assert b["run_id"] == "chain-abc"
+
+
+def test_from_records_takes_the_last_when_a_step_appears_twice(
+        bound_synthetic_cohort):
+    from omicstra.notebook import from_records
+
+    records = [
+        {"step_id": "label_granularity", "kind": "diagnostic", "status": "pass",
+         "params": {"labels": ["a"]}, "observed": {"n_in": 3, "n_out": 3}},
+        {"step_id": "label_granularity", "kind": "diagnostic", "status": "pass",
+         "params": {"labels": ["b"]}, "observed": {"n_in": 7, "n_out": 7}},
+    ]
+    b = from_records("evaluate", records, None)
+    assert b["params"]["label_granularity"] == {"labels": ["b"]}
+
+
+def test_from_records_empty_when_no_steps_match(bound_synthetic_cohort):
+    from omicstra.notebook import from_records
+
+    records = [{"step_id": "route::something", "kind": "gate", "status": "pass"}]
+    b = from_records("evaluate", records, None)
+    assert b["records"] == []
+
+
+def test_from_records_produces_a_valid_notebook(bound_synthetic_cohort):
+    from omicstra.notebook import build, from_records
+
+    records = [
+        {"step_id": "label_granularity", "kind": "diagnostic", "status": "pass",
+         "params": {"labels": ["x"]}, "observed": {"n_in": 9, "n_out": 9}},
+    ]
+    b = from_records("evaluate", records, None, run="R4", run_id="test-123")
+    nb = build(b)
+    assert nb["metadata"]["omicstra"]["produced_by_run"] == "test-123"
+    assert nb["metadata"]["omicstra"]["unit"] == "evaluate"
+    nbformat = pytest.importorskip("nbformat")
+    nbformat.validate(nbformat.from_dict(nb))
+
+
 # ----------------------------------- what a step downstream has to see ------
 def test_the_cells_thread_the_records_the_way_the_chain_does():
     """`hypothesis_verdict` judges from what the steps above RECORDED rather
