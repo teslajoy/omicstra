@@ -72,20 +72,16 @@ UNITS = {
     # the other never collapses them because MAD/mean needs them as several
     # observations of one niche. so they are two units: a notebook holding both
     # would imply a single method where there are two.
-    #
-    # all three carry no context loader. their steps read `niches`,
-    # `gene_symbols` and `pathway_sets`, and nothing in `adapters/` builds those
-    # from a cohort - the published chain assembled them in a script. so the
-    # chain is reachable from a notebook a reader writes, and not yet from a
-    # generated one.
     "assay_pathway_genesets": Unit("omicstra.protocols.pathway",
-                                   "VARIABLE_GENE_STEPS", None,
+                                   "VARIABLE_GENE_STEPS",
+                                   ("arrays", "omicstra.adapters.pathway"),
                                    "which genes vary within a niche"),
     "assay_pathway_aucell": Unit("omicstra.protocols.pathway", "AUCELL_STEPS",
-                                 None,
+                                 ("arrays", "omicstra.adapters.pathway"),
                                  "how enriched a niche is, over the whole universe"),
     "assay_niche_membership": Unit("omicstra.protocols.pathway",
-                                   "NICHE_MEMBERSHIP_STEPS", None,
+                                   "NICHE_MEMBERSHIP_STEPS",
+                                   ("arrays", "omicstra.adapters.pathway"),
                                    "which spots form a niche"),
 }
 

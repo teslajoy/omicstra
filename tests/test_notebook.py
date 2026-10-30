@@ -254,13 +254,9 @@ def test_a_cohort_backed_unit_is_handed_the_cohort_not_an_adapter(unit="eda"):
     assert "'project_dir': PROJECT" in setup
 
 
-@pytest.mark.parametrize("unit", sorted(u for u, v in UNITS.items() if not v.context))
-def test_a_unit_with_no_declared_context_loader_is_refused_by_name(unit):
-    """declared, not guessed. the three pathway units read `niches`,
-    `gene_symbols` and `pathway_sets`, and nothing in `adapters/` builds those
-    from a cohort - so say that, rather than emit a cell that cannot run."""
-    with pytest.raises(ValueError, match="declares no context loader"):
-        build(_bundle(unit=unit, params={}, records=[]))
+def test_every_unit_is_generable():
+    """all units now have context loaders."""
+    assert all(v.context is not None for v in UNITS.values())
 
 
 # ------------------------------------------- the ledger is the source -------
@@ -340,12 +336,11 @@ def _cli(*args):
     return CliRunner().invoke(main, ["notebook", *args])
 
 
-def test_the_command_with_no_unit_lists_what_is_generable_and_what_is_not():
+def test_the_command_with_no_unit_lists_what_is_generable():
     r = _cli()
     assert r.exit_code == 0, r.output
     for u in GENERABLE:
         assert u in r.output
-    assert "not generable" in r.output
 
 
 def test_the_command_refuses_an_empty_unit_and_names_the_ledger(
