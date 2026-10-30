@@ -1,0 +1,732 @@
+{
+  "records": {
+    "label_granularity": {
+      "step_id": "label_granularity",
+      "kind": "diagnostic",
+      "status": "not_run",
+      "actor": "deterministic",
+      "record_id": "",
+      "params": {},
+      "inputs": [],
+      "outputs": [],
+      "caveats": [],
+      "started_at": "2026-10-29T17:26:36+00:00",
+      "duration_s": 0.0,
+      "code_version": null,
+      "protocol_version": null,
+      "method": "",
+      "scope": "",
+      "observed": {},
+      "criterion": "",
+      "result": "cohort supplied no params for this step",
+      "decision": "a step with no params is skipped, never guessed at",
+      "guards": []
+    },
+    "paired_identifiability": {
+      "step_id": "paired_identifiability",
+      "kind": "diagnostic",
+      "status": "not_run",
+      "actor": "deterministic",
+      "record_id": "",
+      "params": {},
+      "inputs": [],
+      "outputs": [],
+      "caveats": [],
+      "started_at": "2026-10-29T17:26:36+00:00",
+      "duration_s": 0.0,
+      "code_version": null,
+      "protocol_version": null,
+      "method": "",
+      "scope": "",
+      "observed": {},
+      "criterion": "",
+      "result": "cohort supplied no params for this step",
+      "decision": "a step with no params is skipped, never guessed at",
+      "guards": []
+    },
+    "structure_and_its_null": {
+      "step_id": "structure_and_its_null",
+      "kind": "diagnostic",
+      "status": "not_run",
+      "actor": "deterministic",
+      "record_id": "",
+      "params": {},
+      "inputs": [],
+      "outputs": [],
+      "caveats": [],
+      "started_at": "2026-10-29T17:26:36+00:00",
+      "duration_s": 0.0,
+      "code_version": null,
+      "protocol_version": null,
+      "method": "",
+      "scope": "",
+      "observed": {},
+      "criterion": "",
+      "result": "upstream ['label_granularity'] failed",
+      "decision": "not attempted - a prerequisite did not produce its artifact",
+      "guards": []
+    },
+    "confounder_suppression": {
+      "step_id": "confounder_suppression",
+      "kind": "diagnostic",
+      "status": "not_run",
+      "actor": "deterministic",
+      "record_id": "",
+      "params": {},
+      "inputs": [],
+      "outputs": [],
+      "caveats": [],
+      "started_at": "2026-10-29T17:26:36+00:00",
+      "duration_s": 0.0,
+      "code_version": null,
+      "protocol_version": null,
+      "method": "",
+      "scope": "",
+      "observed": {},
+      "criterion": "",
+      "result": "upstream ['label_granularity'] failed",
+      "decision": "not attempted - a prerequisite did not produce its artifact",
+      "guards": []
+    },
+    "held_out_comparison": {
+      "step_id": "held_out_comparison",
+      "kind": "diagnostic",
+      "status": "not_run",
+      "actor": "deterministic",
+      "record_id": "",
+      "params": {},
+      "inputs": [],
+      "outputs": [],
+      "caveats": [],
+      "started_at": "2026-10-29T17:26:36+00:00",
+      "duration_s": 0.0,
+      "code_version": null,
+      "protocol_version": null,
+      "method": "",
+      "scope": "",
+      "observed": {},
+      "criterion": "",
+      "result": "upstream ['paired_identifiability'] failed",
+      "decision": "not attempted - a prerequisite did not produce its artifact",
+      "guards": []
+    },
+    "association_and_specificity": {
+      "step_id": "association_and_specificity",
+      "kind": "diagnostic",
+      "status": "pass",
+      "actor": "deterministic",
+      "record_id": "",
+      "params": {
+        "n_permutations": 50,
+        "alpha": 0.05,
+        "tau_specificity": 0.8,
+        "tail": "greater",
+        "held_out_groups": 3,
+        "transfer_seed": 42,
+        "within_cohort_seed": 42,
+        "min_units_per_side": 100
+      },
+      "inputs": [],
+      "outputs": [],
+      "caveats": [],
+      "started_at": "2026-10-29T17:27:18+00:00",
+      "duration_s": 42.407,
+      "code_version": null,
+      "protocol_version": null,
+      "method": "canonical directions fitted on training subjects and scored on held-out subjects, against a null that refits on permuted training labels; BH-FDR over the declared family; off-diagonal cosine between the axes",
+      "scope": "",
+      "observed": {
+        "n_in": 15,
+        "n_out": 15,
+        "reason": "did not survive the null or the correction",
+        "per_view": {
+          "z_he": {
+            "per_signal": [
+              {
+                "signal": "TGF-beta_Signaling",
+                "r_test": 0.4428946152236228,
+                "r_train": 0.749156940378534,
+                "z": 5.261989808422032,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": 0.008114683982219689,
+                "null_sd": 0.08262652476930302,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.7211594418273872,
+                  "z": 148.9857787487515,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              },
+              {
+                "signal": "Immune_System",
+                "r_test": 0.67478284463239,
+                "r_train": 0.8751132738686385,
+                "z": 5.220261554756971,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": -0.04026729167862937,
+                "null_sd": 0.1369759213806881,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.8693776211366255,
+                  "z": 197.8867929703082,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              },
+              {
+                "signal": "ECM_Organization",
+                "r_test": 0.590100080223679,
+                "r_train": 0.8350218343117648,
+                "z": 4.319746114904615,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": 6.398667994324147e-05,
+                "null_sd": 0.13659045644092546,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.8215270332559974,
+                  "z": 195.35180818618414,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              },
+              {
+                "signal": "Cell_Cycle",
+                "r_test": 0.6382709068733515,
+                "r_train": 0.8554102887673313,
+                "z": 4.5246083609108165,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": -0.013171874577655816,
+                "null_sd": 0.14397771685146912,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.8353158621290812,
+                  "z": 212.53455958751735,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              },
+              {
+                "signal": "Programmed_Cell_Death",
+                "r_test": 0.5156338600889202,
+                "r_train": 0.7936948555690003,
+                "z": 4.564453242327966,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": -0.034297514845786053,
+                "null_sd": 0.12048132508730221,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.7773994625294088,
+                  "z": 169.27582040254342,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              }
+            ],
+            "specificity": {
+              "guard_g4": "fail",
+              "name": "G4_specificity",
+              "passed": false,
+              "value": 0.9950647695804289,
+              "note": "max off-diagonal cosine 0.995 between 'TGF-beta_Signaling' and 'Cell_Cycle' - these axes are not distinct, so per-axis magnitudes are one direction wearing several labels. report the cosine beside every magnitude",
+              "observed": {
+                "max_off_diagonal": 0.9950647695804289,
+                "mean_off_diagonal": 0.6896685580195111,
+                "worst_pair": [
+                  "TGF-beta_Signaling",
+                  "Cell_Cycle"
+                ],
+                "tau": 0.8,
+                "k": 5
+              }
+            },
+            "specificity_status": "fail",
+            "specificity_missing": null,
+            "fdr_family": 15
+          },
+          "z_st": {
+            "per_signal": [
+              {
+                "signal": "TGF-beta_Signaling",
+                "r_test": 0.5368020299735542,
+                "r_train": 0.5035257163566529,
+                "z": 10.586662945386193,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": -0.00715008158372826,
+                "null_sd": 0.05138088502140742,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.5160312742310733,
+                  "z": 111.70428917009106,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              },
+              {
+                "signal": "Immune_System",
+                "r_test": 0.5903041875646603,
+                "r_train": 0.5546556782744766,
+                "z": 12.151735062549896,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": -0.003937604752222638,
+                "null_sd": 0.04890180614192788,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.5455166658297543,
+                  "z": 94.66244038695125,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              },
+              {
+                "signal": "ECM_Organization",
+                "r_test": 0.5787217457360362,
+                "r_train": 0.5379623904724613,
+                "z": 10.145697117134901,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": 0.009944307774716362,
+                "null_sd": 0.05606095188872936,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.5513438663080332,
+                  "z": 118.86456599807173,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              },
+              {
+                "signal": "Cell_Cycle",
+                "r_test": 0.553479861054017,
+                "r_train": 0.5599959277154655,
+                "z": 11.357052595610659,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": 0.0016607250721498695,
+                "null_sd": 0.048588234608963374,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.5697354487092408,
+                  "z": 115.33094769703828,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              },
+              {
+                "signal": "Programmed_Cell_Death",
+                "r_test": 0.5792087793688006,
+                "r_train": 0.5423342360450177,
+                "z": 13.123308307278293,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": -0.0006667112380313788,
+                "null_sd": 0.04418668502097359,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.5546785621729048,
+                  "z": 118.28993107622529,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              }
+            ],
+            "specificity": {
+              "guard_g4": "fail",
+              "name": "G4_specificity",
+              "passed": false,
+              "value": 0.9132294987648704,
+              "note": "max off-diagonal cosine 0.913 between 'TGF-beta_Signaling' and 'Programmed_Cell_Death' - these axes are not distinct, so per-axis magnitudes are one direction wearing several labels. report the cosine beside every magnitude",
+              "observed": {
+                "max_off_diagonal": 0.9132294987648704,
+                "mean_off_diagonal": 0.571007302147861,
+                "worst_pair": [
+                  "TGF-beta_Signaling",
+                  "Programmed_Cell_Death"
+                ],
+                "tau": 0.8,
+                "k": 5
+              }
+            },
+            "specificity_status": "fail",
+            "specificity_missing": null,
+            "fdr_family": 15
+          },
+          "z_mean": {
+            "per_signal": [
+              {
+                "signal": "TGF-beta_Signaling",
+                "r_test": 0.489850799910608,
+                "r_train": 0.7223245342894706,
+                "z": 6.11813065629137,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": 0.0056439599629020945,
+                "null_sd": 0.07914293877489988,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.7024010894594045,
+                  "z": 159.61108138365776,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              },
+              {
+                "signal": "Immune_System",
+                "r_test": 0.7323243309112569,
+                "r_train": 0.8567873719395583,
+                "z": 6.3587891387460695,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": -0.0261419548516634,
+                "null_sd": 0.11927841436687224,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.853231493661542,
+                  "z": 172.1907878841103,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              },
+              {
+                "signal": "ECM_Organization",
+                "r_test": 0.6373720044463959,
+                "r_train": 0.8239654283405299,
+                "z": 6.987997065221317,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": -0.0017872805938375586,
+                "null_sd": 0.09146530530490293,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.8134880097949532,
+                  "z": 184.48810421596878,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              },
+              {
+                "signal": "Cell_Cycle",
+                "r_test": 0.6223994607779353,
+                "r_train": 0.8344109473111894,
+                "z": 5.598331612621325,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": -0.009541962128540332,
+                "null_sd": 0.11288031267775858,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.8161304179857805,
+                  "z": 166.95652045608634,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              },
+              {
+                "signal": "Programmed_Cell_Death",
+                "r_test": 0.5870192683663155,
+                "r_train": 0.7831326034433355,
+                "z": 6.013772750320155,
+                "p": 0.0196078431372549,
+                "n_null": 50,
+                "tail": "greater",
+                "null_mean": -0.023599292340660157,
+                "null_sd": 0.10153668687837733,
+                "p_floor": 0.0196078431372549,
+                "reason": "",
+                "guard_g5": "pass",
+                "g5_not_run_because": "",
+                "within_cohort": {
+                  "r": 0.7733288965123684,
+                  "z": 184.54758675333878,
+                  "p": 0.0196078431372549,
+                  "note": "non-discriminating on the seed cohort - significant for every arm at once, so it orders nothing"
+                },
+                "q": 0.0196078431372549,
+                "significant": true
+              }
+            ],
+            "specificity": {
+              "guard_g4": "pass",
+              "name": "G4_specificity",
+              "passed": true,
+              "value": 0.7146689332134971,
+              "note": "max off-diagonal cosine 0.715 <= 0.8",
+              "observed": {
+                "max_off_diagonal": 0.7146689332134971,
+                "mean_off_diagonal": 0.2372240659104392,
+                "worst_pair": [
+                  "Immune_System",
+                  "Programmed_Cell_Death"
+                ],
+                "tau": 0.8,
+                "k": 5
+              }
+            },
+            "specificity_status": "pass",
+            "specificity_missing": null,
+            "fdr_family": 15
+          }
+        },
+        "n_permutations": 50,
+        "alpha": 0.05,
+        "tau_specificity": 0.8,
+        "tail": "greater",
+        "n_train": 30625,
+        "n_test": 4969,
+        "held_out_subjects": [
+          "52",
+          "53",
+          "64"
+        ],
+        "statistic": "directions fitted on training subjects, projected onto held-out subjects",
+        "unevaluable_signals": [],
+        "fdr_family_note": "the family is all evaluable view x signal cells within this run, matching the script's global correction scope",
+        "guards": [
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_he/TGF-beta_Signaling",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_he/Immune_System",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_he/ECM_Organization",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_he/Cell_Cycle",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_he/Programmed_Cell_Death",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_st/TGF-beta_Signaling",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_st/Immune_System",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_st/ECM_Organization",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_st/Cell_Cycle",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_st/Programmed_Cell_Death",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_mean/TGF-beta_Signaling",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_mean/Immune_System",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_mean/ECM_Organization",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_mean/Cell_Cycle",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G5_noise_floor",
+            "scope": "z_mean/Programmed_Cell_Death",
+            "status": "pass",
+            "note": ""
+          },
+          {
+            "guard": "G2_held_out_honesty",
+            "scope": "z_he",
+            "status": "pass",
+            "note": "fitted on 30625 units, scored on 4969 from subjects never fitted on"
+          },
+          {
+            "guard": "G2_held_out_honesty",
+            "scope": "z_st",
+            "status": "pass",
+            "note": "fitted on 30625 units, scored on 4969 from subjects never fitted on"
+          },
+          {
+            "guard": "G2_held_out_honesty",
+            "scope": "z_mean",
+            "status": "pass",
+            "note": "fitted on 30625 units, scored on 4969 from subjects never fitted on"
+          },
+          {
+            "guard": "G4_specificity",
+            "scope": "z_he",
+            "status": "fail",
+            "note": ""
+          },
+          {
+            "guard": "G4_specificity",
+            "scope": "z_st",
+            "status": "fail",
+            "note": ""
+          },
+          {
+            "guard": "G4_specificity",
+            "scope": "z_mean",
+            "status": "pass",
+            "note": ""
+          }
+        ]
+      },
+      "criterion": "the direction generalises, and the axes are distinct",
+      "result": "15 signal-view transfer(s) survive BH-FDR at 0.05 on 4969 held-out units from 3 subject(s); axes alias in ['z_he', 'z_st']",
+      "decision": "the axes alias, so each magnitude is one direction wearing several labels - the cosine travels with every magnitude",
+      "guards": []
+    },
+    "hypothesis_verdict": {
+      "step_id": "hypothesis_verdict",
+      "kind": "diagnostic",
+      "status": "not_run",
+      "actor": "deterministic",
+      "record_id": "",
+      "params": {},
+      "inputs": [],
+      "outputs": [],
+      "caveats": [],
+      "started_at": "2026-10-29T17:27:18+00:00",
+      "duration_s": 0.0,
+      "code_version": null,
+      "protocol_version": null,
+      "method": "",
+      "scope": "",
+      "observed": {},
+      "criterion": "",
+      "result": "cohort supplied no params for this step",
+      "decision": "a step with no params is skipped, never guessed at",
+      "guards": []
+    }
+  }
+}

@@ -50,6 +50,9 @@ PUBLISHED = {"k": 14, "n_init": 10, "seed": 42, "silhouette_sample": 5000,
 F32 = 1e-6
 
 
+AUCELL = ROOT / "data/embeddings/biological_signals/niche_aucell_5targets.parquet"
+
+
 def _present() -> bool:
     return ((RUNS / RUN / "embeddings_test.parquet").is_file()
             and (RUNS / "eval/H2/mc_coherence.parquet").is_file()
@@ -65,7 +68,13 @@ _CACHE: dict = {}
 
 
 def _ctx_and_params():
-    """the cohort's arrays in the chain's shape. a cohort adapter, not package code."""
+    """the cohort's arrays in the chain's shape, with mc1/mc12 missing-target
+    coverage. original aligned preparation - not the adapter - because the
+    adapter cannot supply vector sub-indices.
+
+    no confounder_suppression params: this fixture tests H1/H2/H3 and the
+    association_and_specificity refusal path. H2-C uses the adapter fixture.
+    """
     if "ctx" in _CACHE:
         return _CACHE["ctx"]
 
@@ -87,7 +96,6 @@ def _ctx_and_params():
                  on=["subarray", "spot_id"], how="left")
     m = m[m["mc_megacluster"].notna()]
 
-    # float32, the dtype the published ARI was computed at
     he = np.stack([np.asarray(v, np.float32) for v in m["z_he"]])
     st = np.stack([np.asarray(v, np.float32) for v in m["z_st"]])
     mcw = np.stack([np.asarray(v, np.float32) for v in m["mc_weights_niche"]])
@@ -97,15 +105,6 @@ def _ctx_and_params():
         "paired": {"z_he": st},
         "labels": {"mc_megacluster": m["mc_megacluster"].astype(int).to_numpy()},
         "confounder": m["patient_id"].to_numpy(),
-        # continuous signals, handed over AS THEY ARE. these are SUPERVISION
-        # columns used as TARGETS and never as features - the distinction G6
-        # enforces, and what the published H2-C does with its signature scores.
-        #
-        # two of the three do not cover every unit: the supervision table is
-        # absent for 4,353 of them. the adapter does NOT fill that in. imputing
-        # a target invents the signal being tested for every unit it was absent
-        # from, so the step is what decides, and it refuses those signals by
-        # name while evaluating the one that is complete.
         "scores": {"tls": m["tls"].to_numpy(float),
                    "mc1": mcw[:, 0].astype(float),
                    "mc12": mcw[:, 11].astype(float)},
@@ -156,14 +155,67 @@ def _raw() -> dict:
     return json.loads((RUNS / RUN / "metrics_h1_raw.json").read_text())
 
 
+# --- adapter fixture: graph-vs-direct parity with H2-C ----------------------
+# separate from the original fixture because the adapter cannot supply vector
+# sub-indices (mc1/mc12), and this fixture tests confounder_suppression (H2-C)
+# which the original fixture does not declare.
+_ADAPTER_CACHE: dict = {}
+
+
+def _adapter_ctx_and_params():
+    """adapter-based context with confounder_suppression for H2-C. no mc_weights
+    - those are tested in the original fixture. both direct and graph paths use
+    identical reduced permutation counts."""
+    if "ctx" in _ADAPTER_CACHE:
+        return _ADAPTER_CACHE["ctx"]
+
+    from omicstra.adapters.evaluation import arrays
+    from omicstra.settings import settings
+
+    ctx = arrays(settings.project_root("tnbc-92"), RUN,
+                 paired_view="z_st", signals=("tls",))
+
+    cohort = json.loads((ROOT / "projects/tnbc-92/cohort.json").read_text())
+    params = dict(cohort["evaluate_params"])
+    params["structure_and_its_null"] = {
+        **params["structure_and_its_null"],
+        "n_permutations": 20}
+    params["association_and_specificity"] = {
+        **params["association_and_specificity"],
+        "n_permutations": 20}
+    params["confounder_suppression"] = {
+        **params["confounder_suppression"],
+        "n_permutations": 20, "n_rho_null": 20}
+
+    _ADAPTER_CACHE["ctx"] = (ctx, params)
+    return _ADAPTER_CACHE["ctx"]
+
+
+def _adapter_records():
+    if "recs" not in _ADAPTER_CACHE:
+        ctx, params = _adapter_ctx_and_params()
+        _ADAPTER_CACHE["recs"] = build_protocol(EVALUATE_STEPS, "evaluate").invoke(
+            {**ctx, "params": params})
+    return _ADAPTER_CACHE["recs"]
+
+
+def _adapter_obs(step: str) -> dict:
+    return _adapter_records()[step]["observed"]
+
+
 # ------------------------------------------------------- the chain at scale ---
 def test_every_step_either_passes_or_states_why_it_could_not_run():
-    """H3 is `not_run` on this cohort and the test below says why. every other
-    step passes; nothing is `error` and nothing is a silent pass."""
+    """H3 is `not_run` on this cohort and the test below says why.
+    confounder_suppression is `not_run` because the synthetic ctx carries
+    no biology_labels or confounder_suppression params (it needs the
+    adapter and project.json declaration). every other step passes."""
     recs = _records()
-    assert recs["association_and_specificity"]["status"] == "not_run"
+    expected_not_run = {"association_and_specificity", "confounder_suppression",
+                        "pathway_transfer_cca"}
+    for step in expected_not_run:
+        assert recs[step]["status"] == "not_run", (step, recs[step])
     others = {k: r["result"] for k, r in recs.items()
-              if k != "association_and_specificity" and r["status"] != "pass"}
+              if k not in expected_not_run and r["status"] != "pass"}
     assert not others, others
     assert not [k for k, r in recs.items() if r["status"] == "error"]
 
@@ -378,6 +430,7 @@ def test_the_within_subject_auc_is_lower_than_the_cross_subject_one():
 # reachable path is measuring something else.
 def _through_the_graph():
     if "graph" not in _CACHE:
+        import copy
         import json as _json
 
         from omicstra.graphs.evaluate import build_evaluate_graph
@@ -385,6 +438,11 @@ def _through_the_graph():
         cohort = _json.loads((ROOT / "projects/tnbc-92/cohort.json").read_text())
         if "evaluate_params" not in cohort:
             pytest.skip("this cohort declares no evaluate_params")
+        cohort = copy.deepcopy(cohort)
+        if "confounder_suppression" in cohort["evaluate_params"]:
+            cohort["evaluate_params"]["confounder_suppression"] = {
+                **cohort["evaluate_params"]["confounder_suppression"],
+                "n_permutations": 20, "n_rho_null": 20}
         _CACHE["graph"] = build_evaluate_graph().invoke(
             {"project_id": "tnbc-92", "arm": "evaluate", "compute": True,
              "run": RUN, "paired_view": "z_st", "signals": ["tls"],
@@ -402,12 +460,55 @@ def test_the_graphs_compute_arm_measures_the_same_units():
 
 
 def test_the_graph_reaches_the_same_verdicts_as_the_chain_directly():
-    """the reachability claim, as a test: a client's path and a notebook's path
-    answer the same question with the same answer."""
+    """the reachability claim: a client's path and a notebook's path answer the
+    same question with the same answer. the adapter-based fixture includes
+    confounder_suppression (H2-C) with reduced permutation counts matching the
+    graph path."""
     theirs = _through_the_graph()["report"]["verdicts"]
-    mine = _obs("hypothesis_verdict")["verdicts"]
-    assert {h: d["verdict"] for h, d in theirs.items()} == \
-           {h: d["verdict"] for h, d in mine.items()}
+    mine = _adapter_obs("hypothesis_verdict")["verdicts"]
+    assert set(theirs) == set(mine), \
+        f"hypothesis keys differ: graph={sorted(theirs)}, direct={sorted(mine)}"
+    assert "H2-C" in theirs, "graph did not produce H2-C verdict"
+    assert theirs["H2-C"]["verdict"] not in ("unguarded", "not_run"), \
+        f"H2-C guards did not reach the verdict: {theirs['H2-C']}"
+    for h in theirs:
+        assert theirs[h]["verdict"] == mine[h]["verdict"], \
+            f"verdict mismatch for {h}: graph={theirs[h]['verdict']}, " \
+            f"direct={mine[h]['verdict']}"
+
+    # H2-C numerical outputs: per_view biology z, patient z
+    g_recs = {r["step_id"]: r for r in _through_the_graph().get("records", [])
+              if isinstance(r, dict) and r.get("step_id")}
+    d_recs = _adapter_records()
+    g_cs = g_recs.get("confounder_suppression", {}).get("observed", {})
+    d_cs = d_recs.get("confounder_suppression", {}).get("observed", {})
+    g_pv = g_cs.get("per_view", {})
+    d_pv = d_cs.get("per_view", {})
+    assert set(g_pv) == set(d_pv), \
+        f"H2-C views differ: graph={sorted(g_pv)}, direct={sorted(d_pv)}"
+    for view in g_pv:
+        g_pt = g_pv[view].get("patient", {})
+        d_pt = d_pv[view].get("patient", {})
+        assert g_pt["z"] == pytest.approx(d_pt["z"]), \
+            f"H2-C patient z mismatch in {view}"
+        for label in g_pv[view].get("biology", {}):
+            assert label in d_pv[view].get("biology", {}), \
+                f"biology label {label} in graph but not direct for {view}"
+            assert g_pv[view]["biology"][label]["z"] == pytest.approx(
+                d_pv[view]["biology"][label]["z"]), \
+                f"H2-C biology z mismatch for {label} in {view}"
+        for label in g_pv[view].get("ratio", {}):
+            assert label in d_pv[view].get("ratio", {}), \
+                f"ratio label {label} in graph but not direct for {view}"
+            assert g_pv[view]["ratio"][label]["ratio"] == pytest.approx(
+                d_pv[view]["ratio"][label]["ratio"]), \
+                f"H2-C ratio mismatch for {label} in {view}"
+
+    # H2-C guard outcomes
+    g_guards = {g["guard"]: g["status"] for g in g_cs.get("guards", [])}
+    d_guards = {g["guard"]: g["status"] for g in d_cs.get("guards", [])}
+    assert g_guards == d_guards, \
+        f"H2-C guard outcomes differ: graph={g_guards}, direct={d_guards}"
 
 
 def test_the_declared_reader_finds_the_sentinel_the_join_writes():
@@ -447,3 +548,152 @@ def test_each_guards_note_is_its_own_finding():
     for g in g5:
         assert "encodes the confounder" not in (g.get("note") or ""), g
         assert "permutation" in (g.get("note") or ""), g
+
+
+# ------------------------------- H3 through the graph with pathway scores ---
+@pytest.mark.skipif(not AUCELL.is_file(),
+                    reason="niche_aucell_5targets.parquet is git-ignored")
+def test_h3_through_the_graph_with_pathway_scores():
+    """the graph path with include_pathway_scores=True finds evaluable signals
+    and produces an H3 verdict that is not not_run."""
+    import copy
+    import json as _json
+
+    from omicstra.graphs.evaluate import build_evaluate_graph
+
+    cohort = _json.loads((ROOT / "projects/tnbc-92/cohort.json").read_text())
+    if "evaluate_params" not in cohort:
+        pytest.skip("this cohort declares no evaluate_params")
+    cohort = copy.deepcopy(cohort)
+    if "confounder_suppression" in cohort["evaluate_params"]:
+        cohort["evaluate_params"]["confounder_suppression"] = {
+            **cohort["evaluate_params"]["confounder_suppression"],
+            "n_permutations": 20, "n_rho_null": 20}
+    result = build_evaluate_graph().invoke(
+        {"project_id": "tnbc-92", "arm": "evaluate", "compute": True,
+         "run": RUN, "paired_view": "z_st", "signals": ["tls"],
+         "include_pathway_scores": True, "cohort": cohort})
+    r = result["report"]
+    assert r["status"] == "measured"
+    v = r["verdicts"]
+    assert v["H3"]["verdict"] in ("biological", "diagnostic")
+    steps = r.get("steps", {})
+    assert steps.get("association_and_specificity") == "pass"
+
+
+# ---------- H3 variant 2: pathway_transfer_cca parity against the artifact ---
+H3V2_ART = RUNS / "eval/H3/pathway_cca_gpath2vec_v3/per_pathway_cca.parquet"
+
+
+def _h3v2_present() -> bool:
+    return (_present() and H3V2_ART.is_file()
+            and (ROOT / "data/embeddings/gpath2vec").is_dir()
+            and (ROOT / "knowledge/reactome/ReactomePathwaysRelation.txt").is_file())
+
+
+_H3V2_CACHE: dict = {}
+
+
+def _h3v2_step_rows():
+    """run pathway_transfer_cca on R1_v3 with 20 perms and return the rows."""
+    if "rows" in _H3V2_CACHE:
+        return _H3V2_CACHE["rows"]
+
+    from omicstra.adapters.evaluation import arrays
+    from omicstra.protocols.evaluate import pathway_transfer_cca
+    from omicstra.settings import settings
+
+    ctx = arrays(settings.project_root("tnbc-92"), RUN,
+                 paired_view="z_st", signals=("tls",),
+                 extra_views=("z_st", "z_mean"),
+                 include_pathway_cosines=True)
+    ctx["params"] = {
+        "n_permutations": 20,
+        "n_test_pats": 3,
+        "seed": 42,
+        "alpha": 0.05,
+        "min_testable_set": 5,
+        "pathway_feature": "gpath2vec_niche",
+    }
+    rec, _ = pathway_transfer_cca(ctx)
+    _H3V2_CACHE["rows"] = rec.observed["per_pathway_cca_rows"]
+    return _H3V2_CACHE["rows"]
+
+
+@pytest.mark.skipif(not _h3v2_present(),
+                    reason="H3 variant 2 artifacts are git-ignored")
+def test_h3v2_point_estimates_match_artifact():
+    """obs_A, obs_B and obs_train are perm-independent and must match exactly."""
+    art = pd.read_parquet(H3V2_ART)
+    art_r1 = art[art["run_id"] == RUN].set_index(["view", "pathway_name"])
+    rows = _h3v2_step_rows()
+    for r in rows:
+        a = art_r1.loc[(r["view"], r["pathway_name"])]
+        for col in ("top_corr_test", "top_corr_train", "top_corr_full"):
+            sv, av = float(r[col]), float(a[col])
+            if np.isnan(sv) and np.isnan(av):
+                continue
+            assert sv == pytest.approx(av, abs=1e-14), \
+                f"{r['view']}/{r['pathway_name']} {col}: step={sv} art={av}"
+
+
+@pytest.mark.skipif(not _h3v2_present(),
+                    reason="H3 variant 2 artifacts are git-ignored")
+def test_h3v2_structural_columns_match_artifact():
+    art = pd.read_parquet(H3V2_ART)
+    art_r1 = art[art["run_id"] == RUN].set_index(["view", "pathway_name"])
+    rows = _h3v2_step_rows()
+    assert len(rows) == len(art_r1), \
+        f"step rows {len(rows)} vs artifact {len(art_r1)}"
+    for r in rows:
+        a = art_r1.loc[(r["view"], r["pathway_name"])]
+        assert r["set_size"] == int(a["set_size"])
+        assert r["testable"] == bool(a["testable"])
+        assert r["view_clean"] == bool(a["view_clean"])
+        assert r["n_full"] == int(a["n_full"])
+        assert r["n_train"] == int(a["n_train"])
+        assert r["n_test"] == int(a["n_test"])
+        assert float(r["coverage_frac"]) == pytest.approx(
+            float(a["coverage_frac"]), abs=1e-14)
+
+
+@pytest.mark.skipif(not _h3v2_present(),
+                    reason="H3 variant 2 artifacts are git-ignored")
+def test_h3v2_produces_all_views_and_pathways():
+    rows = _h3v2_step_rows()
+    views = {r["view"] for r in rows}
+    pathways = {r["pathway_name"] for r in rows}
+    assert views == {"z_he", "z_st", "z_mean"}
+    assert len(pathways) == 5
+    assert "TGF-beta_Signaling" in pathways
+    assert len(rows) == 15
+
+
+@pytest.mark.skipif(not _h3v2_present(),
+                    reason="H3 variant 2 artifacts are git-ignored")
+def test_h3v2_circularity_flag_derived_from_st_features():
+    """z_he is always clean; z_st and z_mean are circular for CONTRASTIVE runs
+    whose ST input includes gpath2vec_niche. R1_v3 is contrastive with
+    gpath2vec, so z_st/z_mean are circular. baselines (B1-B3) are clean on
+    all views despite declaring gpath2vec_niche in st_features."""
+    rows = _h3v2_step_rows()
+    for r in rows:
+        if r["view"] == "z_he":
+            assert r["view_clean"] is True, r["pathway_name"]
+        else:
+            assert r["view_clean"] is False, \
+                f"{r['view']}/{r['pathway_name']} should be circular for {RUN}"
+
+
+@pytest.mark.skipif(not _h3v2_present(),
+                    reason="H3 variant 2 artifacts are git-ignored")
+def test_h3v2_fdr_columns_are_deferred_to_finalization():
+    """the step outputs NaN for fdr_A/fdr_B because cross-run FDR needs all
+    runs collected. finalize_pathway_cca_fdr applies BH-FDR across the full
+    family."""
+    rows = _h3v2_step_rows()
+    for r in rows:
+        assert np.isnan(r["fdr_A"]), "fdr_A should be NaN before finalization"
+        assert np.isnan(r["fdr_B"]), "fdr_B should be NaN before finalization"
+        assert r["sig_A_05"] is False
+        assert r["sig_B_05"] is False

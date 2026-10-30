@@ -56,6 +56,9 @@ class EvaluateState(TypedDict, total=False):
     run: str                   # which fitted run the compute arm measures
     signals: list[str]         # which continuous signals to test. the caller's
                                # question, not the cohort's declaration
+    include_pathway_scores: bool  # True loads declared AUCell scores into
+                               # ctx["scores"] for H3. False (default) keeps
+                               # ctx["scores"] to only the niche-table signals
     paired_view: str | None    # the other modality's view. absent means
                                # identifiability is not_applicable, which is a
                                # true answer for a single-modality cohort
@@ -290,7 +293,9 @@ def measure(state: EvaluateState) -> dict:
         # report, so a caller saw a traceback where the server had an answer.
         ctx = arrays(settings.project_root(state.get("project_id")), run,
                      paired_view=state.get("paired_view"),
-                     signals=tuple(state.get("signals") or ()))
+                     signals=tuple(state.get("signals") or ()),
+                     include_pathway_scores=bool(
+                         state.get("include_pathway_scores")))
     except (DeclarationMissing, ValueError, FileNotFoundError, KeyError) as e:
         return {"report": {"status": "unavailable", "stage": "arrays", "why": str(e)},
                 "records": [*state.get("records", []),

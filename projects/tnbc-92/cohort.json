@@ -83,6 +83,14 @@
       "negative_seed": 0,
       "min_units_per_subject": 50
     },
+    "confounder_suppression": {
+      "biology_labels": ["MC_global", "MC_tumor", "TIME"],
+      "n_permutations": 100000,
+      "n_rho_null": 1000,
+      "seed": 42,
+      "alpha": 0.05,
+      "note": "verified against scripts/eval_alignment_biology.py defaults. biology_labels are the aliases declared in project.json#biology_labels.columns. correction is BH-FDR per test family (biology and patient separately), not Bonferroni. the published counts are 100000/1000; reduced counts belong in test fixtures only"
+    },
     "association_and_specificity": {
       "n_permutations": 20,
       "alpha": 0.05,
@@ -93,6 +101,14 @@
       "within_cohort_seed": 42,
       "min_units_per_side": 100
     },
+    "pathway_transfer_cca": {
+      "n_permutations": 500,
+      "n_test_pats": 3,
+      "seed": 42,
+      "alpha": 0.05,
+      "min_testable_set": 5,
+      "pathway_feature": "gpath2vec_niche"
+    },
     "hypothesis_verdict": {
       "hypotheses": {
         "H1": [
@@ -102,8 +118,12 @@
         "H2": [
           "structure_and_its_null"
         ],
+        "H2-C": [
+          "confounder_suppression"
+        ],
         "H3": [
-          "association_and_specificity"
+          "association_and_specificity",
+          "pathway_transfer_cca"
         ]
       }
     }

@@ -59,6 +59,7 @@
       "note": "The server executes nothing a model wrote. A model has three narrow jobs, all client-side: classify a question into a closed task set, choose among enumerated options at a gate, and write the rationale. Every consequence resolves from lookup tables, so swapping the model cannot change a route. Verified against a Claude-on-Bedrock client over stdio, from a workstation and from a scheduled cluster node: three runs took three different routes through the tools and every server answer was identical to the same tool called with no model on the path.",
       "tools": [
         "align_run",
+        "ask",
         "check_compute_gates",
         "check_eda_gate",
         "decision_record",

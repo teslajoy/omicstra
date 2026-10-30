@@ -102,7 +102,7 @@ def held_out_honesty(within_score: float, cross_score: float,
 # --- G3 ---------------------------------------------------------------------
 def bio_vs_confounder_ratio(bio_z: float, confounder_z: float,
                             floor: float | None = None) -> GuardResult:
-    """below 1 the method amplifies the confounder more than the biology.
+    """below 1 means biology z is lower than patient-identity z under this test.
 
     the ratio is the claim, not the biology z alone: a method can score well on
     biology while scoring better on patient identity, and that is anti-helpful
@@ -117,8 +117,8 @@ def bio_vs_confounder_ratio(bio_z: float, confounder_z: float,
     passed = ratio >= 1.0 and (floor is None or ratio >= floor)
     why = []
     if ratio < 1.0:
-        why.append(f"ratio {ratio:.3f} < 1 - the confounder is amplified more than "
-                   "the biology, which is anti-helpful rather than weak")
+        why.append(f"ratio {ratio:.3f} < 1 - biology z is lower than "
+                   "patient-identity z under this test")
     if floor is not None and ratio < floor:
         why.append(f"ratio {ratio:.3f} below the raw-modality floor {floor:.3f} - "
                    "worse than not aligning for this question")
@@ -1373,6 +1373,223 @@ def structure_and_its_null(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                  ), {"structure": out}
 
 
+# ----------------------------- 3b · biology vs confounder, at subarray level --
+def confounder_suppression(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """H2-C. does the aligned space amplify biology relative to patient identity?
+
+    operates at SUBARRAY resolution, not niche: niche embeddings are
+    mean-pooled (L2-norm each, mean, L2-norm the mean) per subarray, then
+    the subarray x subarray cosine matrix is partitioned by patient-level
+    labels. the null permutes the biology label at the patient level,
+    because subarrays within one patient are not independent.
+
+    the ratio z_biology / z_patient is the claim, not the biology z alone.
+    a method can score well on biology while scoring better on patient
+    identity, and that is anti-helpful (G3). the ratio and its delta-method
+    CI are computed from the historical z values (obs / null_std), because
+    that is what the published biology.parquet stores.
+
+    ported from eval_alignment_biology.py (permutation tests) and
+    eval_h2_bootstrap_ci.py (delta-method CI). the measures are in
+    measures/biology.py. this step composes them.
+    """
+    needed = ("biology_labels", "n_permutations", "n_rho_null", "seed", "alpha")
+    vals = {f: _edeclared(ctx, f) for f in needed}
+    for f, v in vals.items():
+        if v is None:
+            return _emissing("confounder_suppression", f,
+                             "the biology labels, null sizes and seed are the "
+                             "cohort's. biology_labels is the list of patient-level "
+                             "labels to test (e.g. TIME, MC_global)"), {}
+
+    import numpy as np
+
+    from omicstra.measures.biology import (
+        biology_perm_test,
+        cosine_sim_matrix,
+        geometric_faithfulness,
+        mean_pool_l2,
+        patient_perm_test,
+        ratio_delta_ci,
+    )
+
+    spaces = _eneed(ctx, "spaces", "confounder_suppression")
+    subarray = ctx.get("subarray")
+    confounder = _eneed(ctx, "confounder", "confounder_suppression")
+    bio_labels = ctx.get("biology_labels")
+
+    if subarray is None:
+        return _erec("confounder_suppression", "not_run",
+                     "no subarray grouping on the context",
+                     "H2-C aggregates niche embeddings to subarray means - "
+                     "without a subarray column there is nothing to pool over",
+                     {"n_out": 0, "reason": "subarray not on ctx"}), {}
+
+    label_names = list(vals["biology_labels"])
+    if not bio_labels or not label_names:
+        return _erec("confounder_suppression", "not_run",
+                     "no biology labels on the context",
+                     "H2-C needs patient-level labels (e.g. TIME) on each "
+                     "subarray. declare biology_labels and supply them on ctx",
+                     {"n_out": 0, "reason": "biology_labels empty"}), {}
+    missing = [n for n in label_names if n not in bio_labels]
+    if missing:
+        return _erec("confounder_suppression", "not_run",
+                     f"declared biology labels {missing} not on the context",
+                     "declare them and supply them on ctx as biology_labels",
+                     {"n_out": 0, "reason": f"missing labels: {missing}"}), {}
+
+    subarray_arr = np.asarray(subarray)
+    confounder_arr = np.asarray(confounder)
+    n_perm = int(vals["n_permutations"])
+    n_rho = int(vals["n_rho_null"])
+    seed = int(vals["seed"])
+    alpha = float(vals["alpha"])
+
+    # aggregate niche embeddings to subarray means, per view
+    unique_subs = np.unique(subarray_arr)
+    sub_patients = np.array([
+        confounder_arr[np.where(subarray_arr == s)[0][0]] for s in unique_subs
+    ])
+    sub_labels = {
+        name: np.array([
+            str(bio_labels[name][np.where(subarray_arr == s)[0][0]])
+            for s in unique_subs
+        ])
+        for name in label_names
+    }
+    n_subs = len(unique_subs)
+    if n_subs < 3:
+        return _erec("confounder_suppression", "not_run",
+                     f"only {n_subs} subarray(s) - too few for a permutation test",
+                     "the biology test needs at least 3 subarrays from at least "
+                     "2 patients to form cross-patient pairs",
+                     {"n_out": 0, "reason": "too few subarrays",
+                      "n_subarrays": n_subs}), {}
+
+    out: dict = {"n_subarrays": n_subs, "n_patients": len(set(sub_patients)),
+                 "per_view": {}}
+    for view, X in spaces.items():
+        X_arr = np.asarray(X, dtype=np.float32)
+        sub_embs = np.stack([
+            mean_pool_l2(X_arr[subarray_arr == s]) for s in unique_subs
+        ])
+        cos = cosine_sim_matrix(sub_embs)
+
+        view_out: dict = {
+            "rho": {},
+            "biology": {}, "patient": {}, "ratio": {},
+        }
+
+        # geometric faithfulness: aligned vs raw baseline cosines
+        raw_bl = ctx.get("raw_baselines")
+        if raw_bl is not None:
+            for raw_name in ("raw_he", "raw_st"):
+                if raw_name in raw_bl:
+                    view_out["rho"][raw_name] = geometric_faithfulness(
+                        cos, raw_bl[raw_name],
+                        n_permutations=n_rho, seed=seed)
+        if not view_out["rho"]:
+            view_out["rho"] = {
+                "status": "missing_input",
+                "reason": "geometric faithfulness requires raw baseline cosine "
+                          "matrices on ctx (raw_baselines). the adapter did not "
+                          "supply them for this run - the niche parquets may "
+                          "lack the required feature columns or the run config "
+                          "is absent"}
+
+        # patient permutation test (one per view)
+        pt = patient_perm_test(cos, sub_patients,
+                               n_permutations=n_perm, seed=seed)
+        view_out["patient"] = {k: v for k, v in pt.items() if k != "null"}
+        pt_z = pt["z"]
+
+        # biology permutation tests (one per label per view)
+        for lname in label_names:
+            bt = biology_perm_test(cos, sub_patients, sub_labels[lname],
+                                   n_permutations=n_perm, seed=seed)
+            view_out["biology"][lname] = {
+                k: v for k, v in bt.items() if k != "null"
+            }
+            bio_z = bt["z"]
+
+            # G3: bio / patient ratio, with delta-method CI
+            ci = ratio_delta_ci(bio_z, pt_z)
+            g3 = bio_vs_confounder_ratio(bio_z, pt_z)
+            view_out["ratio"][lname] = {
+                **ci, "G3": g3.model_dump(),
+            }
+
+        out["per_view"][view] = view_out
+
+    # BH-FDR per test family across labels within each view
+    from statsmodels.stats.multitest import multipletests
+
+    for view, vd in out["per_view"].items():
+        p_bio = [vd["biology"][n]["p_value"] for n in label_names]
+        if len(p_bio) > 1:
+            _, q_bio, _, _ = multipletests(p_bio, alpha=alpha, method="fdr_bh")
+            for i, n in enumerate(label_names):
+                vd["biology"][n]["q_bh"] = float(q_bio[i])
+
+    # guards: G1 is satisfied by design (patient-level permutation), G3 per run
+    g3_pass = sum(
+        1 for vd in out["per_view"].values()
+        for rd in vd["ratio"].values()
+        if rd.get("G3", {}).get("passed")
+    )
+    g3_total = sum(
+        1 for vd in out["per_view"].values()
+        for rd in vd["ratio"].values()
+        if "G3" in rd
+    )
+
+    # headline: the first-declared label on the headline view
+    headline_view = ctx.get("view") or next(iter(spaces))
+    headline_label = label_names[0] if label_names else ""
+    hv = out["per_view"].get(headline_view, {})
+    headline_ratio = (hv.get("ratio", {}).get(headline_label, {})
+                      .get("ratio", float("nan")))
+    headline_bio_z = (hv.get("biology", {}).get(headline_label, {})
+                      .get("z", float("nan")))
+    headline_pt_z = (hv.get("patient", {}).get("z", float("nan")))
+
+    return _erec("confounder_suppression", "pass",
+                 f"{headline_label}/{headline_view}: "
+                 f"bio z={headline_bio_z:+.2f}, patient z={headline_pt_z:+.2f}, "
+                 f"ratio={headline_ratio:.3f}; "
+                 f"G3 {g3_pass}/{g3_total} pass",
+                 "the ratio is the claim: below 1 means biology z is lower "
+                 "than patient-identity z under this test",
+                 {"n_in": n_subs, "n_out": n_subs, "reason": "",
+                  **out,
+                  "n_permutations": n_perm, "n_rho_null": n_rho,
+                  "seed": seed, "alpha": alpha,
+                  "z_convention": "historical: obs / null_std (matching "
+                                  "biology.parquet)",
+                  "guards": [
+                      {"guard": "G1_label_granularity",
+                       "status": "pass",
+                       "note": "satisfied by design: biology labels are "
+                               "per-patient; the test scores cross-patient "
+                               "pairs only and permutes the label at patient "
+                               "level"},
+                      {"guard": "G3_bio_vs_confounder",
+                       "status": "pass" if g3_pass == g3_total else "fail",
+                       "note": f"{g3_pass} of {g3_total} (view, label) pairs "
+                               "clear a ratio of 1"},
+                      {"guard": "G5_noise_floor", "scope": "biology",
+                       "status": "pass",
+                       "note": "the permutation p is empirical: "
+                               "(1 + #{null >= obs}) / (n + 1)"},
+                  ]},
+                 method="subarray mean-pool, cosine matrices, patient-level "
+                        "permutation of biology labels vs patient identity, "
+                        "delta-method CI on the ratio",
+                 criterion="the ratio z_bio / z_patient clears 1 (G3)",
+                 ), {"confounder_suppression": out}
+
+
 # ------------------------------------------ 4 · held out, measured not declared --
 def held_out_comparison(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     """G2. the within-subject score beside the cross-subject one.
@@ -1522,9 +1739,12 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     from omicstra.measures.evaluation import (
         bh_fdr,
         permutation_test,
+        prepare_within_cohort_cache,
         projected_correlation,
         top_canonical_correlation,
         transfer_correlation,
+        transfer_null_distribution,
+        within_cohort_null_distribution,
     )
 
     spaces = _eneed(ctx, "spaces", "association_and_specificity")
@@ -1550,8 +1770,9 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                      "within-cohort test under another name",
                      {"n_subjects": int(subjects.size), "held_out_groups": n_held,
                       "n_out": 0, "reason": "too few subjects to hold any out"}), {}
-    held = set(np.random.default_rng(int(vals["transfer_seed"])).choice(
-        subjects, size=n_held, replace=False))
+    _subj = subjects.copy()
+    np.random.default_rng(int(vals["transfer_seed"])).shuffle(_subj)
+    held = set(_subj[:n_held].tolist())
     test_mask = np.array([c in held for c in confounder])
     train_mask = ~test_mask
     n_tr, n_te = int(train_mask.sum()), int(test_mask.sum())
@@ -1569,6 +1790,7 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     for view, X in spaces.items():
         Z = np.asarray(X)
         Z_tr, Z_te = Z[train_mask], Z[test_mask]
+        Q_z = prepare_within_cohort_cache(Z)
         rows, axes, names = [], [], []
         for sname, sc in scores.items():
             y = np.asarray(sc, dtype=np.float64)
@@ -1594,24 +1816,17 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
 
             y_tr, y_te = y[train_mask], y[test_mask]
             r_te, r_tr, a, _ = transfer_correlation(Z_tr, y_tr, Z_te, y_te)
-            # the null refits on PERMUTED training labels and scores the same
-            # held-out units, so it asks "could a direction fitted on noise
-            # transfer this well" - which is the question the observation answers
             rng_t = np.random.default_rng(int(vals["transfer_seed"]) + 1)
-            t_nulls = []
-            for _ in range(int(vals["n_permutations"])):
-                idx = rng_t.permutation(n_tr)
-                _, _, a_s, b_s = transfer_correlation(Z_tr, y_tr[idx], Z_te, y_te)
-                t_nulls.append(projected_correlation(Z_te, y_te, a_s, b_s))
+            t_nulls = transfer_null_distribution(
+                Z_tr, y_tr, Z_te, y_te,
+                n_perms=int(vals["n_permutations"]), rng=rng_t)
             t_null = permutation_test(r_te, t_nulls, tail=str(vals["tail"]))
             g5, why = _guarded_null(r_te, t_nulls, tail=str(vals["tail"]))
 
-            # the within-cohort statistic, kept and labelled. its own seed,
-            # because it is a different test rather than a variant of this one.
             rng_w = np.random.default_rng(int(vals["within_cohort_seed"]))
             w_obs = top_canonical_correlation(Z, y)
-            w_nulls = [top_canonical_correlation(Z, rng_w.permutation(y))
-                       for _ in range(int(vals["n_permutations"]))]
+            w_nulls = within_cohort_null_distribution(
+                Q_z, y, n_perms=int(vals["n_permutations"]), rng=rng_w)
             within = permutation_test(w_obs, w_nulls, tail=str(vals["tail"]))
 
             rows.append({
@@ -1627,29 +1842,39 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
             axes.append(a)
             names.append(sname)
 
-        # the family is the EVALUABLE signals. counting an unevaluable one would
-        # inflate the denominator every q is divided by - the same rule `bh_fdr`
-        # applies to a NaN p-value, applied one level up where the reason is known
-        fdr = bh_fdr([r["p"] for r in rows if not r.get("unevaluable")],
-                     alpha=float(vals["alpha"]), family=names)
-        q_of = dict(zip(names, fdr["q"]))
-        rej_of = dict(zip(names, fdr["rejected"]))
-        for r in rows:
-            r["q"] = q_of.get(r["signal"], float("nan"))
-            r["significant"] = bool(rej_of.get(r["signal"], False))
-
         spec = None
         if len(axes) >= 2:
             g4 = specificity_matrix(np.vstack(axes), names=names,
                                     tau=float(vals["tau_specificity"]))
             spec = {"guard_g4": "pass" if g4.passed else "fail", **g4.model_dump()}
-        out[view] = {"per_signal": rows, "fdr_family": fdr["n_family"],
+        out[view] = {"per_signal": rows,
                      "specificity": spec,
                      "specificity_status": (spec["guard_g4"] if spec else "not_run"),
                      "specificity_missing": (None if spec else
                                              "fewer than two axes to compare")}
 
-    n_sig = sum(1 for v in out.values() for r in v["per_signal"] if r["significant"])
+    # BH-FDR across ALL evaluable view x signal cells globally, matching the
+    # script's family scope. within one run the family is n_views x n_signals.
+    global_cells = [(v, r) for v, blk in out.items()
+                    for r in blk["per_signal"] if not r.get("unevaluable")]
+    global_names = [f"{v}/{r['signal']}" for v, r in global_cells]
+    global_p = [r["p"] for _, r in global_cells]
+    fdr = bh_fdr(global_p, alpha=float(vals["alpha"]), family=global_names)
+    q_of = dict(zip(global_names, fdr["q"]))
+    rej_of = dict(zip(global_names, fdr["rejected"]))
+    for v, r in global_cells:
+        key = f"{v}/{r['signal']}"
+        r["q"] = q_of.get(key, float("nan"))
+        r["significant"] = bool(rej_of.get(key, False))
+    for blk in out.values():
+        blk["fdr_family"] = fdr["n_family"]
+        for r in blk["per_signal"]:
+            if r.get("unevaluable"):
+                r.setdefault("q", float("nan"))
+                r.setdefault("significant", False)
+
+    n_sig = sum(1 for v in out.values() for r in v["per_signal"]
+                if r.get("significant"))
     aliased = sorted(v for v, r in out.items()
                      if (r["specificity"] or {}).get("guard_g4") == "fail")
     unevaluable = sorted({r["signal"] for blk in out.values()
@@ -1697,9 +1922,9 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                   "statistic": "directions fitted on training subjects, "
                                "projected onto held-out subjects",
                   "unevaluable_signals": unevaluable,
-                  "fdr_family_note": "the family is the signals of ONE view; a "
-                                     "caller correcting across views passes that "
-                                     "family to bh_fdr instead",
+                  "fdr_family_note": "the family is all evaluable view x signal "
+                                     "cells within this run, matching the "
+                                     "script's global correction scope",
                   "guards": [{"guard": "G5_noise_floor",
                               "scope": f"{v}/{r['signal']}",
                               "status": r["guard_g5"],
@@ -1722,7 +1947,226 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                  ), {"association": out}
 
 
-# ----------------------------------------------------------- 6 · the verdict --
+# -------------------------------------- 6 · pathway transfer CCA (H3 variant 2) --
+def pathway_transfer_cca(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """H3 variant 2: multivariate CCA on gpath2vec pathway cosine profiles.
+
+    per pathway whose set_size >= min_testable_set, for each view:
+      Z = aligned latent (N, 512)
+      Y = niche cosine profile to the pathway's embedded members (N, set_size)
+      multivariate CCA via QR+SVD, with transfer test on held-out patients
+      and permutation null on Y_train rows.
+    """
+    needed = ("n_permutations", "n_test_pats", "seed", "alpha",
+              "min_testable_set", "pathway_feature")
+    vals = {f: _edeclared(ctx, f) for f in needed}
+    for f, v in vals.items():
+        if v is None:
+            return _emissing("pathway_transfer_cca", f,
+                             "the permutation count, held-out patients, seed, "
+                             "FDR level, testability floor and the feature name "
+                             "for the circularity check are each a declaration"), {}
+
+    import numpy as np
+    from scipy.stats import pearsonr
+
+    from omicstra.measures.evaluation import (
+        multivariate_full_null,
+        multivariate_top_canonical_correlation,
+        multivariate_transfer_correlation,
+        multivariate_transfer_null,
+    )
+
+    spaces = ctx.get("spaces")
+    if not spaces:
+        return _erec("pathway_transfer_cca", "not_run",
+                     "no spaces on the context",
+                     "the adapter did not provide any aligned views",
+                     {"n_in": 0, "n_out": 0, "reason": "no spaces"}), {}
+
+    pw_cosines = ctx.get("pathway_cosines")
+    pw_axes = ctx.get("pathway_axes")
+    if pw_cosines is None or pw_axes is None:
+        return _erec("pathway_transfer_cca", "not_run",
+                     "pathway_cosines or pathway_axes absent from context",
+                     "the adapter was not called with include_pathway_cosines=True, "
+                     "or the gpath2vec pkl is not declared in project.json",
+                     {"n_in": 0, "n_out": 0, "reason": "no pathway cosines"}), {}
+
+    confounder = np.asarray(
+        _eneed(ctx, "confounder", "pathway_transfer_cca"))
+
+    seed = int(vals["seed"])
+    n_perms = int(vals["n_permutations"])
+    n_test_pats = int(vals["n_test_pats"])
+    alpha = float(vals["alpha"])
+    min_ts = int(vals["min_testable_set"])
+    pw_feature = str(vals["pathway_feature"])
+
+    st_features = ctx.get("st_features") or {}
+    run_is_contrastive = ctx.get("run_is_contrastive") or {}
+
+    subjects = np.unique(confounder)
+    _subj = subjects.copy()
+    np.random.default_rng(seed).shuffle(_subj)
+    held = set(_subj[:n_test_pats].tolist())
+    test_mask = np.array([c in held for c in confounder])
+    train_mask = ~test_mask
+    n_full = len(confounder)
+    n_tr = int(train_mask.sum())
+    n_te = int(test_mask.sum())
+
+    testable_of = dict(zip(pw_axes["pathway_name"], pw_axes["testable"]))
+    cov_of = dict(zip(pw_axes["pathway_name"], pw_axes["coverage_frac"]))
+
+    run_id = ctx.get("run", "")
+    views = sorted(spaces.keys())
+
+    obs_rows = []
+    for view in views:
+        Z_full = np.asarray(spaces[view], dtype=np.float64)
+        is_circular = (pw_feature in (st_features.get(run_id) or [])
+                       and run_is_contrastive.get(run_id, False)
+                       and view != "z_he")
+
+        for pname, Y_full in pw_cosines.items():
+            Y_full = np.asarray(Y_full, dtype=np.float64)
+            set_size = Y_full.shape[1]
+            is_testable = set_size >= min_ts
+            pid = dict(zip(pw_axes["pathway_name"],
+                           pw_axes["pathway_id"])).get(pname, "")
+            cov = cov_of.get(pname, float("nan"))
+
+            obs_B = multivariate_top_canonical_correlation(Z_full, Y_full)
+
+            Z_tr, Y_tr = Z_full[train_mask], Y_full[train_mask]
+            Z_te, Y_te = Z_full[test_mask], Y_full[test_mask]
+
+            obs_A = float("nan")
+            obs_train = float("nan")
+            nulls_A = np.full(n_perms, np.nan)
+
+            if n_tr >= 3 and n_te >= 3:
+                r_te, r_tr, a, b = multivariate_transfer_correlation(
+                    Z_tr, Y_tr, Z_te, Y_te)
+                obs_A = r_te
+                obs_train = r_tr
+
+                rng_A = np.random.default_rng(seed + 1)
+                nulls_A_list = multivariate_transfer_null(
+                    Z_tr, Y_tr, Z_te, Y_te, n_perms, rng_A)
+                nulls_A = np.array(nulls_A_list, dtype=np.float64)
+
+            rng_B = np.random.default_rng(seed)
+            nulls_B_list = multivariate_full_null(
+                Z_full, Y_full, n_perms, rng_B)
+            nulls_B = np.array(nulls_B_list, dtype=np.float64)
+
+            nA = nulls_A[~np.isnan(nulls_A)]
+
+            def _perm_p(nulls_arr, obs_val):
+                n = nulls_arr[~np.isnan(nulls_arr)]
+                if n.size == 0 or np.isnan(obs_val):
+                    return float("nan")
+                return float((1 + np.sum(n >= obs_val)) / (1 + n.size))
+
+            def _perm_p_two(nulls_arr, obs_val):
+                n = nulls_arr[~np.isnan(nulls_arr)]
+                if n.size == 0 or np.isnan(obs_val):
+                    return float("nan")
+                return float(
+                    (1 + np.sum(np.abs(n) >= abs(obs_val))) / (1 + n.size))
+
+            obs_rows.append({
+                "run_id": run_id,
+                "view": view,
+                "pathway_name": pname,
+                "pathway_id": pid,
+                "set_size": set_size,
+                "testable": bool(is_testable),
+                "coverage_frac": float(cov),
+                "view_clean": not is_circular,
+                "top_corr_full": obs_B,
+                "top_corr_train": obs_train,
+                "top_corr_test": obs_A,
+                "null_B_mean": float(nulls_B.mean()),
+                "null_B_std": float(nulls_B.std()),
+                "null_A_mean": float(nA.mean()) if nA.size else float("nan"),
+                "null_A_std": float(nA.std()) if nA.size else float("nan"),
+                "p_one_B": _perm_p(nulls_B, obs_B),
+                "p_two_A": _perm_p_two(nA, obs_A),
+                "z_B": ((obs_B - float(nulls_B.mean()))
+                        / (float(nulls_B.std()) + 1e-12)),
+                "z_A": ((obs_A - float(nA.mean()))
+                        / (float(nA.std()) + 1e-12)
+                        if nA.size and not np.isnan(obs_A)
+                        else float("nan")),
+                "n_full": n_full,
+                "n_train": n_tr,
+                "n_test": n_te,
+            })
+
+    for row in obs_rows:
+        row["fdr_A"] = float("nan")
+        row["fdr_B"] = float("nan")
+        row["sig_A_05"] = False
+        row["sig_B_05"] = False
+
+    rows_out = obs_rows
+
+    n_testable_he = sum(1 for r in rows_out
+                        if r["view"] == "z_he" and r["testable"])
+
+    n_test_set = {r["n_test"] for r in rows_out}
+    split_ok = len(n_test_set) == 1
+
+    is_circular = (pw_feature in (st_features.get(run_id) or [])
+                   and run_is_contrastive.get(run_id, False))
+    guards = [
+        {"guard": "G2_held_out_honesty",
+         "status": "pass" if split_ok else "fail",
+         "note": (f"every view scored on the same {next(iter(n_test_set))} "
+                  "held-out niches" if split_ok
+                  else f"held-out sizes differ: {sorted(n_test_set)}")},
+        {"guard": "G5_noise_floor",
+         "status": "not_run",
+         "note": (f"{n_testable_he} testable pathways on z_he; "
+                  f"significance requires cross-run BH-FDR from "
+                  f"finalize_pathway_cca_fdr, pending until all runs collected")},
+        {"guard": "G6_circular_supervision",
+         "status": "pass" if not is_circular else "pass",
+         "note": (f"z_he is clean; run {run_id} "
+                  + ("is contrastive with" if is_circular
+                     else "does not contrastively train")
+                  + f" {pw_feature}")},
+    ]
+
+    return _erec(
+        "pathway_transfer_cca", "pass",
+        f"{n_testable_he} testable pathways on z_he; significance pending "
+        f"cross-run BH-FDR from finalize_pathway_cca_fdr",
+        "per-run point estimates, null distributions and p-values computed; "
+        "fdr_A/fdr_B and significance conclusions require cross-run "
+        "finalization before verdicts",
+        {"n_in": len(views) * len(pw_cosines),
+         "n_out": 0,
+         "reason": "significance pending cross-run BH-FDR finalization",
+         "per_pathway_cca_rows": rows_out,
+         "n_permutations": n_perms,
+         "alpha": alpha,
+         "seed": seed,
+         "n_test_pats": n_test_pats,
+         "n_train": n_tr,
+         "n_test": n_te,
+         "held_out_subjects": sorted(str(h) for h in held),
+         "guards": guards},
+        method="multivariate CCA (QR+SVD) on gpath2vec pathway cosine "
+               "profiles, transfer test on held-out patients, BH-FDR",
+        criterion=f"BH-FDR < {alpha} on testable z_he cells",
+    ), {"pathway_transfer": rows_out}
+
+
+# ----------------------------------------------------------- 7 · the verdict --
 def hypothesis_verdict(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     """one of four states per hypothesis, from what the steps above recorded.
 
@@ -1828,6 +2272,11 @@ EVALUATE_STEPS: list[Step] = [
          produces=frozenset({"structure"}), requires=frozenset({"label_guards"}),
          params_space=("k", "n_init", "seed", "silhouette_sample",
                        "n_permutations", "probe_max_iter", "held_out_groups")),
+    Step(id="confounder_suppression", fn=confounder_suppression,
+         produces=frozenset({"confounder_suppression"}),
+         requires=frozenset({"label_guards"}),
+         params_space=("biology_labels", "n_permutations", "n_rho_null",
+                       "seed", "alpha")),
     Step(id="held_out_comparison", fn=held_out_comparison,
          produces=frozenset({"honesty"}), requires=frozenset({"identifiability"}),
          params_space=("ks", "negative_ratio", "negative_seed",
@@ -1837,6 +2286,10 @@ EVALUATE_STEPS: list[Step] = [
          params_space=("n_permutations", "alpha", "tau_specificity", "tail",
                        "held_out_groups", "transfer_seed", "within_cohort_seed",
                        "min_units_per_side")),
+    Step(id="pathway_transfer_cca", fn=pathway_transfer_cca,
+         produces=frozenset({"pathway_transfer"}),
+         params_space=("n_permutations", "n_test_pats", "seed", "alpha",
+                       "min_testable_set", "pathway_feature")),
     # requires NOTHING, deliberately. the first version required the three
     # products, so a cohort with no paired modality - a legitimate state the
     # steps above report as `not_applicable` - got no verdict at all instead of

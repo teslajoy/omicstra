@@ -982,6 +982,7 @@ def evaluate_run(project_id: str | None = None,
 def evaluate_measure(run: str, project_id: str | None = None,
                      paired_view: str | None = None,
                      signals: list[str] | None = None,
+                     include_pathway_scores: bool = False,
                      run_id: str | None = None) -> dict:
     import uuid
 
@@ -998,8 +999,7 @@ def evaluate_measure(run: str, project_id: str | None = None,
     out = app.invoke({"project_id": project_id, "arm": HandleArm.EVALUATE,
                       "cohort": cohort, "compute": True, "run": run,
                       "paired_view": paired_view,
-                      # the caller's question, not the cohort's declaration: a
-                      # cohort declares what it HAS, not what will be asked of it
+                      "include_pathway_scores": include_pathway_scores,
                       "signals": list(signals or [])}, cfg)
     return {**_handle(app, rid, out), "checkpointer": spec}
 
@@ -1232,6 +1232,62 @@ def unit_notebook(unit: str, project_id: str | None = None,
             "steps": [r["step_id"] for r in b["records"]],
             "produced_by_run": b.get("run_id"),
             "ledger": str(led.path) if led.path else None}
+
+
+@srv.tool(description=(
+    "Execute a biological analysis from structured parameters the client model "
+    "has already interpreted. The client (Claude Desktop, Claude Code, or any "
+    "MCP client) reads the question, decides the task_id and run from "
+    "list_task_families, and passes them here. This tool calls no model - it "
+    "validates the request against project declarations, invokes the existing "
+    "evaluation graph and LCEL chain, generates a notebook, and returns "
+    "computed results with linked provenance.\n\n"
+    "Call list_task_families first to see what this cohort can answer, then "
+    "choose the task_id and run. Pass the researcher's original question in "
+    "`question` for provenance.\n\n"
+    "Use evaluate_measure directly when you already know every parameter and "
+    "do not need interpretation provenance or notebook generation."))
+def ask(question: str, task_id: str, run: str,
+        objective: str = "",
+        paired_view: str | None = None,
+        signals: list[str] | None = None,
+        include_pathway_scores: bool = False,
+        interpretation_model: str = "",
+        notes: list[str] | None = None,
+        project_id: str | None = None) -> dict:
+    from omicstra.question import ValidationError, execute, validate
+
+    pid = project_id or _bound_id(project_id)
+
+    raw = {
+        "question": question,
+        "objective": objective,
+        "task_id": task_id,
+        "run": run,
+        "project_id": pid,
+        "paired_view": paired_view,
+        "signals": list(signals or []),
+        "include_pathway_scores": include_pathway_scores,
+        "interpretation_model": interpretation_model,
+        "notes": list(notes or []),
+    }
+
+    try:
+        request = validate(raw, project_id=pid)
+    except ValidationError as e:
+        return {"status": "validation_failed", "problems": e.problems,
+                "interpreted_as": raw, "question": question}
+
+    try:
+        result = execute(request)
+    except Exception as e:
+        return {"status": "execution_failed", "why": str(e),
+                "request": raw, "question": question}
+
+    return {
+        "status": result.report.get("status", "unknown"),
+        **result.summary(),
+    }
 
 
 # LAST in the file, and that is load-bearing. it sat above `_resources` and the

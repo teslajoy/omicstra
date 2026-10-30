@@ -71,7 +71,7 @@ def test_g2_a_score_that_survives_passes():
 def test_g3_below_one_is_anti_helpful():
     """one classical arm reached 0.071 - a contraindication, not a caution."""
     r = bio_vs_confounder_ratio(0.071, 1.0)
-    assert not r.passed and "anti-helpful" in r.note
+    assert not r.passed and "biology z is lower" in r.note
 
 
 def test_g3_above_one_but_below_the_raw_floor_still_fails():

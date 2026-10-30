@@ -130,6 +130,7 @@ class OmicstraState(TypedDict, total=False):
     # told about, which the test above this file's own rule asserts.
     run: str                 # the fitted run the compute arm measures
     signals: list[str]       # continuous signals to associate, caller-chosen
+    include_pathway_scores: bool  # True loads AUCell scores for H3
     paired_view: str | None  # the other modality's view, for identifiability
     gates: list[dict]
     answers: dict

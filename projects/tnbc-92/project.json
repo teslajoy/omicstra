@@ -54,6 +54,29 @@
   ],
   "niches_dir": "../../data/embeddings/niches_v3",
   "runs_dir": "../../runs/tnbc-92_v3",
+  "pathway_scores": {
+    "path": "../../data/embeddings/biological_signals/niche_aucell_5targets.parquet",
+    "columns": ["TGF-beta_Signaling", "Immune_System", "ECM_Organization", "Cell_Cycle", "Programmed_Cell_Death"],
+    "pathway_ids": {
+      "TGF-beta_Signaling": "R-HSA-170834",
+      "Immune_System": "R-HSA-168256",
+      "ECM_Organization": "R-HSA-1474244",
+      "Cell_Cycle": "R-HSA-1640170",
+      "Programmed_Cell_Death": "R-HSA-5357801"
+    },
+    "note": "niche-level AUCell enrichment scores for 5 Reactome pathways. indexed by niche_id (subarray::spot_id). used by H3 association_and_specificity"
+  },
+  "biology_labels": {
+    "labels_path": "../../data/embeddings/biological_signals/clinical_labels.tsv",
+    "labels_key": "patient_id",
+    "subject_key": "patient_id",
+    "columns": {
+      "MC_global": "molecular_subtype_global",
+      "MC_tumor": "molecular_subtype_tumor",
+      "TIME": "TIME_expression_global"
+    },
+    "note": "patient-level biology labels for H2-C. columns maps output alias -> source column in labels_path. the alias is what the evaluation chain and biology.parquet use; the source column is the clinical file's own name"
+  },
   "read_only_inputs": {
     "note": "artifacts that PRODUCED the published grid. every port in this repo is verified by diffing against them, so they are the oracle and not output. writing into one does not merely lose data - it destroys the ability to verify anything, because the diff then compares a port against its own output and passes.",
     "policy": "refuse_writes",

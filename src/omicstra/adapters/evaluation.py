@@ -106,7 +106,10 @@ def _views(runs_path: Path, run: str, view: str):
 
 
 def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
-           signals: tuple[str, ...] = ()) -> dict[str, Any]:
+           signals: tuple[str, ...] = (),
+           extra_views: tuple[str, ...] = (),
+           include_pathway_scores: bool = False,
+           include_pathway_cosines: bool = False) -> dict[str, Any]:
     """the ctx `EVALUATE_STEPS` reads, assembled from one run of one cohort.
 
     `signals` is the caller's, not the cohort's: which continuous signals to
@@ -130,6 +133,31 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
 
     he, frame = _views(runs_path, run, view)
     spaces = {view: he}
+
+    # extra views for multi-view steps (H3 uses z_he, z_st, z_mean)
+    for ev in extra_views:
+        if ev == view:
+            continue
+        if ev == "z_mean":
+            _z_he = spaces.get("z_he")
+            if _z_he is None:
+                _z_he = np.stack([np.asarray(v, np.float32)
+                                  for v in frame["z_he"]])
+                spaces["z_he"] = _z_he
+            _z_st = spaces.get("z_st")
+            if _z_st is None:
+                _z_st = np.stack([np.asarray(v, np.float32)
+                                  for v in frame["z_st"]])
+                spaces["z_st"] = _z_st
+            spaces["z_mean"] = (0.5 * (_z_he + _z_st)).astype(np.float32)
+        elif ev in frame.columns:
+            spaces[ev] = np.stack([np.asarray(v, np.float32)
+                                   for v in frame[ev]])
+        else:
+            raise DeclarationMissing(
+                f"extra view {ev!r} is not a column of {run}'s "
+                "embeddings_test.parquet")
+
     paired: dict[str, Any] = {}
     if paired_view:
         if paired_view not in frame.columns:
@@ -187,6 +215,36 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
             "axis to hold out by. every split and every confound guard is taken "
             "on it")
 
+    sub_arr = m["subarray"].to_numpy()
+    conf_arr = m[subject].to_numpy()
+
+    # patient-level biology labels (H2-C), if declared
+    bl = biology_labels(project_dir, sub_arr, conf_arr)
+    bio_ctx: dict[str, Any] = {}
+    bio_report: dict[str, Any] = {}
+    if bl is not None:
+        bio_ctx = bl["labels"]
+        bio_report = bl["report"]
+
+    # raw baseline cosine matrices for geometric faithfulness (rho)
+    raw_bl = raw_baseline_cosines(project_dir, run, m)
+
+    ps = pathway_scores(project_dir, m) if include_pathway_scores else None
+
+    ps_decl = json.loads((Path(project_dir) / "project.json").read_text()
+                         ).get("pathway_scores", {})
+    ps_available = sorted(ps_decl.get("columns", []))
+
+    pc = pathway_cosines(project_dir, m) if include_pathway_cosines else None
+
+    run_cfg_path = cfg.path(dec["runs_dir"]) / run / "run_config.json"
+    run_st_features: dict[str, list[str]] = {}
+    run_is_contrastive: dict[str, bool] = {}
+    if run_cfg_path.is_file():
+        rc = json.loads(run_cfg_path.read_text())
+        run_st_features = {run: list(rc.get("st_features", []))}
+        run_is_contrastive = {run: "loss" in rc and "baseline" not in rc}
+
     return {
         "sample_count": int(m["subarray"].nunique()),
         "n_units_total": len(frame),
@@ -202,12 +260,403 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
             "move a published number, and reported because scoring an absence "
             "marker as a class is not a biological claim"
             if sentinels else ""),
-        "confounder": m[subject].to_numpy(),
-        "scores": {s: m[s].to_numpy(dtype=float) for s in signals},
+        "subarray": sub_arr,
+        "confounder": conf_arr,
+        "biology_labels": bio_ctx or None,
+        "biology_labels_report": bio_report or None,
+        "scores": ({s: m[s].to_numpy(dtype=float) for s in signals}
+                   | (ps if ps is not None else {})),
+        "pathway_scores_available": ps_available,
+        "raw_baselines": raw_bl,
+        "pathway_cosines": pc["cosines"] if pc is not None else None,
+        "pathway_axes": pc["axes"] if pc is not None else None,
+        "st_features": run_st_features,
+        "run_is_contrastive": run_is_contrastive,
         "declared": dec,
         "run": run,
         "view": view,
     }
 
 
-__all__ = ["REQUIRED", "DeclarationMissing", "arrays", "declared"]
+def biology_labels(project_dir: str | Path,
+                   subarrays: Any,
+                   patients: Any,
+                   ) -> dict[str, Any] | None:
+    """patient-level biology labels propagated to the unit (niche) level.
+
+    reads the declaration from project.json's `biology_labels` block:
+        labels_path   - path to the patient-level labels file (tsv)
+        labels_key    - column in that file keying patients (e.g. patient_id)
+        subject_key   - column on the niche frame that identifies the patient
+        columns       - {output_alias: source_column} mapping
+
+    returns {alias: niche_array} or None if no declaration exists. raises
+    DeclarationMissing on structural errors (missing file, broken join).
+    """
+    import numpy as np
+    import pandas as pd
+
+    d = Path(project_dir)
+    p = d / "project.json"
+    if not p.is_file():
+        return None
+    raw = json.loads(p.read_text())
+    bl = raw.get("biology_labels")
+    if not bl or not isinstance(bl, dict):
+        return None
+
+    for field in ("labels_path", "labels_key", "subject_key", "columns"):
+        if field not in bl or not bl[field]:
+            raise DeclarationMissing(
+                f"biology_labels is declared but {field!r} is absent. "
+                "every field is required: labels_path, labels_key, "
+                "subject_key, columns")
+
+    labels_file = (d / bl["labels_path"]).resolve()
+    if not labels_file.is_file():
+        raise DeclarationMissing(
+            f"biology_labels.labels_path points at {labels_file} which "
+            "does not exist")
+
+    lf = pd.read_csv(labels_file, sep="\t")
+    lk = bl["labels_key"]
+    if lk not in lf.columns:
+        raise DeclarationMissing(
+            f"biology_labels.labels_key={lk!r} is not a column of "
+            f"{labels_file}. columns: {list(lf.columns)}")
+
+    col_map: dict[str, str] = bl["columns"]
+    missing_cols = [src for src in col_map.values() if src not in lf.columns]
+    if missing_cols:
+        raise DeclarationMissing(
+            f"biology_labels.columns references {missing_cols} which are "
+            f"not in {labels_file}. columns: {list(lf.columns)}")
+
+    # build patient -> {alias: value} lookup from the labels file
+    dup = lf[lf[lk].duplicated(keep=False)]
+    if not dup.empty:
+        raise DeclarationMissing(
+            f"biology_labels file has {len(dup)} rows with duplicate "
+            f"{lk!r} values: {sorted(dup[lk].unique()[:5])}...")
+
+    pt_lookup: dict[Any, dict[str, str]] = {}
+    for _, row in lf.iterrows():
+        pid = row[lk]
+        pt_lookup[pid] = {alias: str(row[src])
+                          for alias, src in col_map.items()}
+
+    # propagate to niche level via the subject (patient) column
+    sub_arr = np.asarray(subarrays)
+    pat_arr = np.asarray(patients)
+
+    # validate: every subarray's niches must agree on patient_id
+    unique_subs = np.unique(sub_arr)
+    for s in unique_subs:
+        mask = sub_arr == s
+        pts_in_sub = np.unique(pat_arr[mask])
+        if len(pts_in_sub) > 1:
+            raise DeclarationMissing(
+                f"subarray {s!r} maps to multiple patients: {pts_in_sub}. "
+                "the join is inconsistent")
+
+    # build per-niche arrays; track missing patients
+    n = len(pat_arr)
+    result: dict[str, Any] = {}
+    missing_patients: set = set()
+    for alias in col_map:
+        arr = np.empty(n, dtype=object)
+        for i in range(n):
+            pid = pat_arr[i]
+            entry = pt_lookup.get(pid)
+            if entry is None:
+                # try numeric coercion: patient_id may be int in one, str in other
+                try:
+                    entry = pt_lookup.get(int(pid))
+                except (ValueError, TypeError):
+                    pass
+            if entry is None:
+                missing_patients.add(pid)
+                arr[i] = None
+            else:
+                arr[i] = entry[alias]
+        result[alias] = arr
+
+    report: dict[str, Any] = {
+        "n_units": n,
+        "n_patients": len(np.unique(pat_arr)),
+        "n_labels_file": len(lf),
+        "aliases": list(col_map.keys()),
+        "sources": list(col_map.values()),
+    }
+    if missing_patients:
+        report["missing_patients"] = sorted(str(p) for p in missing_patients)
+        report["n_missing"] = len(missing_patients)
+
+    return {"labels": result, "report": report}
+
+
+def pathway_scores(project_dir: str | Path,
+                   filtered_frame,
+                   ) -> dict[str, Any] | None:
+    """pathway AUCell scores from the declared file, aligned with the frame.
+
+    reads the `pathway_scores` declaration from project.json. the file is
+    indexed by niche_id (subarray::spot_id); the scores are aligned with
+    `filtered_frame` by constructing the same key.
+
+    returns {pathway_name: niche_array} or None if no declaration exists.
+    the file being absent (git-ignored) returns None; a structural error
+    in the declaration raises.
+    """
+    import numpy as np
+    import pandas as pd
+
+    d = Path(project_dir)
+    raw = json.loads((d / "project.json").read_text())
+    ps = raw.get("pathway_scores")
+    if not ps or not isinstance(ps, dict):
+        return None
+
+    for field in ("path", "columns"):
+        if field not in ps or not ps[field]:
+            raise DeclarationMissing(
+                f"pathway_scores is declared but {field!r} is absent. "
+                "both the path and the column list are required")
+
+    from omicstra.contracts.project import ProjectConfig
+    cfg = ProjectConfig.from_dir(d)
+    ps_path = cfg.path(ps["path"])
+    if not ps_path.is_file():
+        return None
+
+    cols = list(ps["columns"])
+    au = pd.read_parquet(ps_path, columns=cols)
+
+    niche_ids = (filtered_frame["subarray"].astype(str) + "::"
+                 + filtered_frame["spot_id"].astype(str))
+    aligned = au.reindex(niche_ids.values)
+
+    return {col: aligned[col].values.astype(np.float64) for col in cols}
+
+
+NAMED_PATHWAY_TARGETS = {
+    "TGF-beta_Signaling":    "R-HSA-170834",
+    "Immune_System":         "R-HSA-168256",
+    "ECM_Organization":      "R-HSA-1474244",
+    "Cell_Cycle":            "R-HSA-1640170",
+    "Programmed_Cell_Death": "R-HSA-5357801",
+}
+
+
+def _reactome_descendants(reactome_dir: Path):
+    """load ReactomePathwaysRelation.txt and return a descendants-of function."""
+    from collections import defaultdict
+
+    children_of: dict[str, set[str]] = defaultdict(set)
+    with open(reactome_dir / "ReactomePathwaysRelation.txt") as f:
+        for line in f:
+            parts = line.strip().split("\t")
+            if len(parts) == 2 and parts[0].startswith("R-HSA-"):
+                children_of[parts[0]].add(parts[1])
+
+    def descendants(root: str) -> set[str]:
+        seen: set[str] = set()
+        stack = [root]
+        while stack:
+            n = stack.pop()
+            for c in children_of.get(n, ()):
+                if c not in seen:
+                    seen.add(c)
+                    stack.append(c)
+        return seen
+    return descendants
+
+
+def pathway_cosines(
+    project_dir: str | Path,
+    filtered_frame,
+    min_testable_set: int = 5,
+) -> dict[str, Any] | None:
+    """gpath2vec pathway cosine profiles for multivariate CCA (H3 variant 2).
+
+    reads `project.json#pathway_node_embeddings` (gpath2vec pkl) and
+    `knowledge/reactome/ReactomePathwaysRelation.txt`. builds the 5 named
+    pathway sets, computes niche cosine tables, aligns with filtered_frame.
+
+    returns {"cosines": {name: (N, set_size) ndarray}, "axes": DataFrame}
+    or None if the declaration is absent or the file does not exist.
+    """
+    import pickle
+
+    import numpy as np
+    import pandas as pd
+
+    d = Path(project_dir)
+    raw = json.loads((d / "project.json").read_text())
+    emb_rel = raw.get("pathway_node_embeddings")
+    if not emb_rel:
+        return None
+
+    from omicstra.contracts.project import ProjectConfig
+    cfg = ProjectConfig.from_dir(d)
+    emb_path = cfg.path(emb_rel)
+    if not emb_path.is_file():
+        return None
+
+    reactome_dir = d.parent.parent / "knowledge" / "reactome"
+    if not (reactome_dir / "ReactomePathwaysRelation.txt").is_file():
+        reactome_dir = Path(__file__).resolve().parents[2] / "knowledge" / "reactome"
+    if not (reactome_dir / "ReactomePathwaysRelation.txt").is_file():
+        return None
+
+    with open(emb_path, "rb") as f:
+        node_emb = pickle.load(f)
+
+    descendants_of = _reactome_descendants(reactome_dir)
+    embedded = {k for k in node_emb
+                if isinstance(k, str) and k.startswith("R-HSA-")}
+
+    axes_rows = []
+    members: dict[str, tuple[list[str], np.ndarray]] = {}
+    for name, pid in NAMED_PATHWAY_TARGETS.items():
+        all_desc = descendants_of(pid)
+        ids: list[str] = []
+        if pid in embedded:
+            ids.append(pid)
+        ids.extend(sorted(all_desc & embedded))
+        if not ids:
+            continue
+        P = np.stack([node_emb[i].astype(np.float64) for i in ids])
+        P = P / (np.linalg.norm(P, axis=1, keepdims=True) + 1e-12)
+        members[name] = (ids, P)
+        n_children = len(ids) - (1 if pid in embedded else 0)
+        total_desc = len(all_desc)
+        cov = (n_children / total_desc) if total_desc else float("nan")
+        axes_rows.append({
+            "pathway_name": name,
+            "pathway_id": pid,
+            "parent_embedded": pid in embedded,
+            "n_children_embedded": n_children,
+            "total_descendants": total_desc,
+            "coverage_frac": cov,
+            "set_size": len(ids),
+            "testable": len(ids) >= min_testable_set,
+        })
+    axes_df = pd.DataFrame(axes_rows)
+
+    niche_keys = [k for k in node_emb
+                  if isinstance(k, str) and k.startswith("cluster_")]
+    N_mat = np.stack([node_emb[k].astype(np.float64) for k in niche_keys])
+    N_mat = N_mat / (np.linalg.norm(N_mat, axis=1, keepdims=True) + 1e-12)
+
+    def _niche_key_to_id(k: str) -> str:
+        s = k.rsplit("__", 1)[-1]
+        return s[len("cluster_"):] if s.startswith("cluster_") else s
+
+    niche_ids = [_niche_key_to_id(k) for k in niche_keys]
+
+    cosine_tables: dict[str, pd.DataFrame] = {}
+    for name, (ids, P) in members.items():
+        C = N_mat @ P.T
+        df = pd.DataFrame(C, index=niche_ids, columns=ids)
+        df = df[~df.index.duplicated(keep="first")]
+        df.index.name = "niche_id"
+        cosine_tables[name] = df
+
+    frame_niche_ids = (
+        filtered_frame["subarray"].astype(str)
+        + "::"
+        + filtered_frame["spot_id"].astype(str)
+    )
+
+    cosines: dict[str, np.ndarray] = {}
+    for name, ct in cosine_tables.items():
+        aligned = ct.reindex(frame_niche_ids.values)
+        cosines[name] = aligned.values.astype(np.float64)
+
+    return {"cosines": cosines, "axes": axes_df}
+
+
+def raw_baseline_cosines(project_dir: str | Path,
+                         run: str,
+                         filtered_frame,
+                         ) -> dict[str, Any] | None:
+    """raw baseline cosine matrices for geometric faithfulness (rho).
+
+    loads raw features (virchow2_niche, novae_niche, gpath2vec_niche) from
+    the niche parquets for the same niches that survived label filtering,
+    mean-pools per subarray, and returns cosine matrices.
+
+    returns None if the niche parquets lack the required feature columns.
+    the returned cosines are in np.unique(subarray) order, matching the
+    step's own subarray ordering.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from omicstra.measures.biology import cosine_sim_matrix, mean_pool_l2
+
+    d = Path(project_dir)
+    raw = json.loads((d / "project.json").read_text())
+
+    from omicstra.contracts.project import ProjectConfig
+    cfg = ProjectConfig.from_dir(d)
+    runs_path = cfg.path(raw["runs_dir"])
+    niches_path = cfg.path(raw["niches_dir"])
+
+    run_cfg_path = runs_path / run / "run_config.json"
+    if not run_cfg_path.is_file():
+        return None
+    run_cfg = json.loads(run_cfg_path.read_text())
+    st_features = tuple(run_cfg.get("st_features", ("novae_niche", "gpath2vec_niche")))
+
+    unique_subs = np.unique(filtered_frame["subarray"])
+    raw_he_pooled = []
+    raw_st_pooled = []
+
+    for sub in unique_subs:
+        jp = niches_path / f"{sub}.parquet"
+        if not jp.is_file():
+            return None
+        nf = pd.read_parquet(jp).reset_index()
+
+        sub_spots = set(filtered_frame.loc[
+            filtered_frame["subarray"] == sub, "spot_id"])
+        if "spot_id" in nf.columns:
+            mask = nf["spot_id"].isin(sub_spots)
+        else:
+            mask = nf.index.isin(sub_spots)
+        nf = nf[mask]
+
+        if len(nf) == 0:
+            return None
+
+        if "virchow2_niche" not in nf.columns:
+            return None
+        he = np.stack([np.asarray(v, np.float32) for v in nf["virchow2_niche"]])
+        raw_he_pooled.append(mean_pool_l2(he))
+
+        st_parts = []
+        for feat in st_features:
+            if feat not in nf.columns:
+                return None
+            arr = np.stack([np.asarray(v, np.float32) for v in nf[feat]])
+            st_parts.append(arr)
+        st = np.concatenate(st_parts, axis=1)
+        raw_st_pooled.append(mean_pool_l2(st))
+
+    R_he = np.stack(raw_he_pooled)
+    R_st = np.stack(raw_st_pooled)
+
+    return {
+        "raw_he": cosine_sim_matrix(R_he),
+        "raw_st": cosine_sim_matrix(R_st),
+        "n_subarrays": len(unique_subs),
+        "he_dim": int(R_he.shape[1]),
+        "st_dim": int(R_st.shape[1]),
+        "st_features": list(st_features),
+    }
+
+
+__all__ = ["REQUIRED", "DeclarationMissing", "arrays", "biology_labels",
+           "pathway_scores", "raw_baseline_cosines", "declared"]
