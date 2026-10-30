@@ -37,6 +37,11 @@ everything else is a PROTOCOL.
              │                               │
              │                        graphs/st.py      ──── molecular, same shards
              │                               │
+             │                        pathway_assay      ──── pathway protocols, when
+             │                        (graph.py)              the caller's flags
+             │                               │                request them. function
+             │                               │                node, not a subgraph
+             │                               │
              │                        graphs/align.py   ──── the grid. RESOLVES; it has
              │                               │                never trained through here
              └───────────────┬───────────────┘

@@ -147,8 +147,12 @@ def _context(unit: str, b: dict) -> tuple[str, str]:
     """
     kind, module = UNITS[unit].context
     if kind == "arrays":
-        # the join reads one SAMPLE; the evaluation chain reads one fitted RUN
-        key = repr(b.get("sample")) if unit == "join" else repr(b.get("run"))
+        # the join and pathway units read one SAMPLE; the evaluation chain reads
+        # one fitted RUN. the two are not interchangeable: a sample is a section,
+        # a run is a fitted alignment.
+        sample_units = {"join", "assay_pathway_genesets", "assay_pathway_aucell",
+                        "assay_niche_membership"}
+        key = repr(b.get("sample")) if unit in sample_units else repr(b.get("run"))
         return f"from {module} import arrays\n", f"ctx = arrays(PROJECT, {key})\n"
     return "", ("ctx = {'project_dir': PROJECT, 'project_id': "
                 f"{str(b.get('project_id'))!r}}}\n")
@@ -384,6 +388,11 @@ def from_records(unit: str, records: list[dict], project_id: str | None = None,
     carried in the graph state) rather than from the file-backed ledger.
     the chain command accumulates records across all stages; this filters
     them to the steps that belong to one unit.
+
+    when `sample` is given, only records carrying that sample are matched.
+    pathway protocol steps fire once per sample, so the same step_id appears
+    for every sample and the last one would win without the filter. a
+    notebook is per-sample for pathway units, per-run for evaluation.
     """
     import importlib
 
@@ -396,9 +405,12 @@ def from_records(unit: str, records: list[dict], project_id: str | None = None,
     latest: dict[str, dict] = {}
     for r in records:
         sid = r.get("step_id") if isinstance(r, dict) else getattr(r, "step_id", None)
-        if sid in ids:
-            d = r if isinstance(r, dict) else r.model_dump(mode="json")
-            latest[sid] = d
+        if sid not in ids:
+            continue
+        d = r if isinstance(r, dict) else r.model_dump(mode="json")
+        if sample is not None and d.get("sample") and d["sample"] != sample:
+            continue
+        latest[sid] = d
     return {"unit": unit, "project_id": project_id,
             "project_dir": str(settings.project_root(project_id)),
             "run": run, "sample": sample, "run_id": run_id,

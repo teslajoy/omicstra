@@ -203,17 +203,24 @@ def test_the_compute_arm_reaches_the_verdict():
     thing that had happened to encode, one release earlier."""
     g = _chain().get_graph()
     nodes = set(g.nodes)
-    assert {"discover", "eda", "carry_counts", "encode", "st", "align",
-            "evaluate"} <= nodes
+    assert {"discover", "eda", "carry_counts", "encode", "st",
+            "pathway_assay", "align", "evaluate"} <= nodes
 
     edges = {(e.source, e.target) for e in g.edges}
     assert ("eda", "carry_counts") in edges
     assert ("carry_counts", "encode") in edges
-    # the keeper nodes carry each stage's report before the next overwrites it
-    for a, b in (("encode", "st"), ("st", "align"), ("align", "evaluate")):
+    # the keeper nodes carry each stage's report before the next overwrites it.
+    # encode -> st and align -> evaluate are direct; st -> align goes through
+    # the assay bridge node (like carry_counts between eda and encode).
+    for a, b in (("encode", "st"), ("align", "evaluate")):
         assert (a, f"after_{a}") in edges, f"{a} does not record its stage"
         assert (f"after_{a}", b) in edges, f"{a} does not reach {b}"
         assert (f"after_{a}", "__end__") in edges, f"{a} cannot stop the chain"
+    # st -> pathway_assay -> align (pathway_assay is a bridge node, not a subgraph)
+    assert ("st", "after_st") in edges, "st does not record its stage"
+    assert ("after_st", "pathway_assay") in edges, "st does not reach pathway_assay"
+    assert ("after_st", "__end__") in edges, "st cannot stop the chain"
+    assert ("pathway_assay", "align") in edges, "pathway_assay does not reach align"
 
 
 def test_a_stage_that_only_submitted_stops_the_chain():

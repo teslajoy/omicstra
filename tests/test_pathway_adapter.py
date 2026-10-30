@@ -193,3 +193,157 @@ def test_pathway_unit_notebooks_build_with_empty_records():
         setup = nb["cells"][1]["source"]
         assert "from omicstra.adapters.pathway import arrays" in setup
         assert "ctx = arrays(PROJECT," in setup
+
+
+# --- integration: assay node -> records -> notebook -------------------------
+
+
+def test_aucell_chain_builds_with_shared_qc_step():
+    """the aucell chain cannot build standalone because niche_sum requires
+    qc_niches. composing niche_qc into the chain resolves this."""
+    from omicstra.protocols import build_protocol
+    from omicstra.protocols.pathway import AUCELL_STEPS, VARIABLE_GENE_STEPS
+
+    qc = VARIABLE_GENE_STEPS[0]
+    assert qc.id == "niche_qc"
+    chain = build_protocol([qc, *AUCELL_STEPS], "aucell_with_qc")
+    assert chain is not None
+
+
+def test_assay_skips_when_no_pathway_flags_set():
+    """the assay node is a no-op when neither include_pathway_scores nor
+    include_pathway_cosines is set."""
+    from omicstra.graph import pathway_assay as assay
+
+    state = {"task_id": "cross_modal_retrieval"}
+    out = assay(state)
+    assert out["stages"][0]["status"] == "nothing_to_run"
+    assert "records" not in out
+
+
+def test_assay_reuses_declared_pathway_scores(pathway_cohort):
+    """when include_pathway_scores is set and the declared file exists,
+    the assay resolves without computation."""
+    from omicstra.graph import pathway_assay as assay
+    from omicstra.settings import settings
+
+    root, sample = pathway_cohort
+    # create a declared pathway_scores artifact on disk
+    scores_path = root / "data" / "scores" / "aucell.parquet"
+    scores_path.parent.mkdir(parents=True, exist_ok=True)
+    import pandas as pd
+    pd.DataFrame({"pathway_A": [0.1, 0.2]}).to_parquet(scores_path)
+
+    # update project.json with the declaration
+    import json
+    proj = json.loads((root / "project.json").read_text())
+    proj["pathway_scores"] = {"path": "data/scores/aucell.parquet",
+                               "columns": ["pathway_A"]}
+    (root / "project.json").write_text(json.dumps(proj))
+
+    before = settings.project_dir
+    settings.project_dir = root
+    try:
+        state = {"include_pathway_scores": True, "project_id": "test"}
+        out = assay(state)
+    finally:
+        settings.project_dir = before
+
+    assert out["stages"][0]["status"] == "resolved"
+    assert "pathway_scores" in out["stages"][0]["report"]["reused"]
+
+
+def test_assay_refuses_missing_cosines_with_no_producer(pathway_cohort):
+    """when include_pathway_cosines is set but the declared artifact is absent,
+    the assay refuses because no chain produces gpath2vec embeddings."""
+    from omicstra.graph import pathway_assay as assay
+    from omicstra.settings import settings
+
+    root, _ = pathway_cohort
+    before = settings.project_dir
+    settings.project_dir = root
+    try:
+        state = {"include_pathway_cosines": True, "project_id": "test"}
+        out = assay(state)
+    finally:
+        settings.project_dir = before
+
+    assert out["stages"][0]["status"] == "refused"
+    assert "pathway_node_embeddings" in str(out["stages"][0]["report"])
+
+
+def test_assay_refuses_missing_scores_without_params(pathway_cohort):
+    """when include_pathway_scores is set, the artifact is absent, and no
+    pathway_params are declared, the assay refuses explicitly."""
+    from omicstra.graph import pathway_assay as assay
+    from omicstra.settings import settings
+
+    root, _ = pathway_cohort
+    before = settings.project_dir
+    settings.project_dir = root
+    try:
+        state = {"include_pathway_scores": True,
+                 "project_id": "test", "cohort": {}}
+        out = assay(state)
+    finally:
+        settings.project_dir = before
+
+    assert out["stages"][0]["status"] == "refused"
+    assert "pathway_params" in out["stages"][0]["report"]["why"]
+
+
+def test_assay_reuse_generates_notebook_from_resolved_stage(pathway_cohort):
+    """the resolved stage report (artifact reused) carries enough information
+    for the notebook generator to produce provenance."""
+    from omicstra.graph import pathway_assay as assay
+    from omicstra.settings import settings
+
+    root, sample = pathway_cohort
+    # create a declared pathway_scores artifact
+    scores_path = root / "data" / "scores" / "aucell.parquet"
+    scores_path.parent.mkdir(parents=True, exist_ok=True)
+    import pandas as pd
+    pd.DataFrame({"pathway_A": [0.1, 0.2]}).to_parquet(scores_path)
+
+    import json
+    proj = json.loads((root / "project.json").read_text())
+    proj["pathway_scores"] = {"path": "data/scores/aucell.parquet",
+                               "columns": ["pathway_A"]}
+    (root / "project.json").write_text(json.dumps(proj))
+
+    before = settings.project_dir
+    settings.project_dir = root
+    try:
+        state = {"include_pathway_scores": True, "project_id": "test"}
+        out = assay(state)
+    finally:
+        settings.project_dir = before
+
+    stage = out["stages"][0]
+    assert stage["status"] == "resolved"
+    assert stage["report"]["reused"]["pathway_scores"] == str(scores_path)
+    assert "pathway_scores" in stage["report"]["required"]
+
+
+def test_from_records_filters_by_sample(pathway_cohort):
+    """records with different samples don't overwrite each other."""
+    from omicstra.notebook import from_records
+    from omicstra.settings import settings
+
+    root, _ = pathway_cohort
+    before = settings.project_dir
+    settings.project_dir = root
+    try:
+        recs = [
+            {"step_id": "niche_qc", "status": "pass", "sample": "S1",
+             "result": "s1", "observed": {"n_out": 10}, "params": {}},
+            {"step_id": "niche_qc", "status": "pass", "sample": "S2",
+             "result": "s2", "observed": {"n_out": 20}, "params": {}},
+        ]
+        b1 = from_records("assay_pathway_genesets", recs, "test", sample="S1")
+        b2 = from_records("assay_pathway_genesets", recs, "test", sample="S2")
+    finally:
+        settings.project_dir = before
+
+    assert b1["records"][0]["result"] == "s1"
+    assert b2["records"][0]["result"] == "s2"
