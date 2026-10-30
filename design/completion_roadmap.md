@@ -187,16 +187,28 @@ request. complete-artifact question executes and returns results.
 stages, supports decisions/resume and invokes existing LCEL workflows.
 
 **gap**: entry-point inconsistency (MCP tools build subgraphs directly).
-artifact reuse not tested end-to-end. resume-to-results not demonstrated.
+resume-to-results not demonstrated.
 
-**checkpoint**: all entry points enter through level 0. tests demonstrate:
+**partial checkpoint (0bd0516 + current)**: pathway_assay bridge node wired
+into the compute chain (st -> pathway_assay -> align). demonstrated:
 
-- artifact reuse (completed stage skipped)
-- missing-work execution (needed stage runs)
-- interruption at gate, resume with answer, completion to results
-- failure propagation (refused stage stops chain with reason)
+- artifact reuse: declared artifact on disk -> resolved, chain continues
+- failure propagation: missing unproducible artifact -> refused, chain stops
+  before align (keeper + conditional after pathway_assay)
+- flag-driven selection: include_pathway_scores / include_pathway_cosines
+  on state determine required artifacts, not task-family lookup
+- per-sample records and notebook generation from stage provenance
 
-**effort**: 6-8h. **depends on**: workstream 5.
+**not yet demonstrated**:
+
+- question interpretation -> flag selection (workstream 5)
+- end-to-end chain execution producing a NEW artifact (all current tests
+  reuse declared artifacts or test blocking)
+- entry-point consistency (MCP tools)
+- gate interrupt + resume to completed results
+- encode and alignment notebook coverage
+
+**remaining effort**: 4-6h. **depends on**: workstream 5.
 
 ---
 

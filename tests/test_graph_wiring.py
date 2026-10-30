@@ -216,11 +216,17 @@ def test_the_compute_arm_reaches_the_verdict():
         assert (a, f"after_{a}") in edges, f"{a} does not record its stage"
         assert (f"after_{a}", b) in edges, f"{a} does not reach {b}"
         assert (f"after_{a}", "__end__") in edges, f"{a} cannot stop the chain"
-    # st -> pathway_assay -> align (pathway_assay is a bridge node, not a subgraph)
+    # st -> pathway_assay -> align (pathway_assay has its own keeper because
+    # it can refuse, unlike carry_counts which only lifts data)
     assert ("st", "after_st") in edges, "st does not record its stage"
     assert ("after_st", "pathway_assay") in edges, "st does not reach pathway_assay"
     assert ("after_st", "__end__") in edges, "st cannot stop the chain"
-    assert ("pathway_assay", "align") in edges, "pathway_assay does not reach align"
+    assert ("pathway_assay", "after_pathway_assay") in edges, \
+        "pathway_assay does not record its stage"
+    assert ("after_pathway_assay", "align") in edges, \
+        "pathway_assay does not reach align"
+    assert ("after_pathway_assay", "__end__") in edges, \
+        "pathway_assay cannot stop the chain"
 
 
 def test_a_stage_that_only_submitted_stops_the_chain():
