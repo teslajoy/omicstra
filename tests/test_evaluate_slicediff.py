@@ -68,7 +68,13 @@ _CACHE: dict = {}
 
 
 def _ctx_and_params():
-    """the cohort's arrays in the chain's shape. a cohort adapter, not package code."""
+    """the cohort's arrays in the chain's shape, with mc1/mc12 missing-target
+    coverage. original aligned preparation - not the adapter - because the
+    adapter cannot supply vector sub-indices.
+
+    no confounder_suppression params: this fixture tests H1/H2/H3 and the
+    association_and_specificity refusal path. H2-C uses the adapter fixture.
+    """
     if "ctx" in _CACHE:
         return _CACHE["ctx"]
 
@@ -90,7 +96,6 @@ def _ctx_and_params():
                  on=["subarray", "spot_id"], how="left")
     m = m[m["mc_megacluster"].notna()]
 
-    # float32, the dtype the published ARI was computed at
     he = np.stack([np.asarray(v, np.float32) for v in m["z_he"]])
     st = np.stack([np.asarray(v, np.float32) for v in m["z_st"]])
     mcw = np.stack([np.asarray(v, np.float32) for v in m["mc_weights_niche"]])
@@ -100,15 +105,6 @@ def _ctx_and_params():
         "paired": {"z_he": st},
         "labels": {"mc_megacluster": m["mc_megacluster"].astype(int).to_numpy()},
         "confounder": m["patient_id"].to_numpy(),
-        # continuous signals, handed over AS THEY ARE. these are SUPERVISION
-        # columns used as TARGETS and never as features - the distinction G6
-        # enforces, and what the published H2-C does with its signature scores.
-        #
-        # two of the three do not cover every unit: the supervision table is
-        # absent for 4,353 of them. the adapter does NOT fill that in. imputing
-        # a target invents the signal being tested for every unit it was absent
-        # from, so the step is what decides, and it refuses those signals by
-        # name while evaluating the one that is complete.
         "scores": {"tls": m["tls"].to_numpy(float),
                    "mc1": mcw[:, 0].astype(float),
                    "mc12": mcw[:, 11].astype(float)},
@@ -157,6 +153,54 @@ def _obs(step: str) -> dict:
 
 def _raw() -> dict:
     return json.loads((RUNS / RUN / "metrics_h1_raw.json").read_text())
+
+
+# --- adapter fixture: graph-vs-direct parity with H2-C ----------------------
+# separate from the original fixture because the adapter cannot supply vector
+# sub-indices (mc1/mc12), and this fixture tests confounder_suppression (H2-C)
+# which the original fixture does not declare.
+_ADAPTER_CACHE: dict = {}
+
+
+def _adapter_ctx_and_params():
+    """adapter-based context with confounder_suppression for H2-C. no mc_weights
+    - those are tested in the original fixture. both direct and graph paths use
+    identical reduced permutation counts."""
+    if "ctx" in _ADAPTER_CACHE:
+        return _ADAPTER_CACHE["ctx"]
+
+    from omicstra.adapters.evaluation import arrays
+    from omicstra.settings import settings
+
+    ctx = arrays(settings.project_root("tnbc-92"), RUN,
+                 paired_view="z_st", signals=("tls",))
+
+    cohort = json.loads((ROOT / "projects/tnbc-92/cohort.json").read_text())
+    params = dict(cohort["evaluate_params"])
+    params["structure_and_its_null"] = {
+        **params["structure_and_its_null"],
+        "n_permutations": 20}
+    params["association_and_specificity"] = {
+        **params["association_and_specificity"],
+        "n_permutations": 20}
+    params["confounder_suppression"] = {
+        **params["confounder_suppression"],
+        "n_permutations": 20, "n_rho_null": 20}
+
+    _ADAPTER_CACHE["ctx"] = (ctx, params)
+    return _ADAPTER_CACHE["ctx"]
+
+
+def _adapter_records():
+    if "recs" not in _ADAPTER_CACHE:
+        ctx, params = _adapter_ctx_and_params()
+        _ADAPTER_CACHE["recs"] = build_protocol(EVALUATE_STEPS, "evaluate").invoke(
+            {**ctx, "params": params})
+    return _ADAPTER_CACHE["recs"]
+
+
+def _adapter_obs(step: str) -> dict:
+    return _adapter_records()[step]["observed"]
 
 
 # ------------------------------------------------------- the chain at scale ---
@@ -386,6 +430,7 @@ def test_the_within_subject_auc_is_lower_than_the_cross_subject_one():
 # reachable path is measuring something else.
 def _through_the_graph():
     if "graph" not in _CACHE:
+        import copy
         import json as _json
 
         from omicstra.graphs.evaluate import build_evaluate_graph
@@ -393,6 +438,11 @@ def _through_the_graph():
         cohort = _json.loads((ROOT / "projects/tnbc-92/cohort.json").read_text())
         if "evaluate_params" not in cohort:
             pytest.skip("this cohort declares no evaluate_params")
+        cohort = copy.deepcopy(cohort)
+        if "confounder_suppression" in cohort["evaluate_params"]:
+            cohort["evaluate_params"]["confounder_suppression"] = {
+                **cohort["evaluate_params"]["confounder_suppression"],
+                "n_permutations": 20, "n_rho_null": 20}
         _CACHE["graph"] = build_evaluate_graph().invoke(
             {"project_id": "tnbc-92", "arm": "evaluate", "compute": True,
              "run": RUN, "paired_view": "z_st", "signals": ["tls"],
@@ -410,12 +460,55 @@ def test_the_graphs_compute_arm_measures_the_same_units():
 
 
 def test_the_graph_reaches_the_same_verdicts_as_the_chain_directly():
-    """the reachability claim, as a test: a client's path and a notebook's path
-    answer the same question with the same answer."""
+    """the reachability claim: a client's path and a notebook's path answer the
+    same question with the same answer. the adapter-based fixture includes
+    confounder_suppression (H2-C) with reduced permutation counts matching the
+    graph path."""
     theirs = _through_the_graph()["report"]["verdicts"]
-    mine = _obs("hypothesis_verdict")["verdicts"]
-    assert {h: d["verdict"] for h, d in theirs.items()} == \
-           {h: d["verdict"] for h, d in mine.items()}
+    mine = _adapter_obs("hypothesis_verdict")["verdicts"]
+    assert set(theirs) == set(mine), \
+        f"hypothesis keys differ: graph={sorted(theirs)}, direct={sorted(mine)}"
+    assert "H2-C" in theirs, "graph did not produce H2-C verdict"
+    assert theirs["H2-C"]["verdict"] not in ("unguarded", "not_run"), \
+        f"H2-C guards did not reach the verdict: {theirs['H2-C']}"
+    for h in theirs:
+        assert theirs[h]["verdict"] == mine[h]["verdict"], \
+            f"verdict mismatch for {h}: graph={theirs[h]['verdict']}, " \
+            f"direct={mine[h]['verdict']}"
+
+    # H2-C numerical outputs: per_view biology z, patient z
+    g_recs = {r["step_id"]: r for r in _through_the_graph().get("records", [])
+              if isinstance(r, dict) and r.get("step_id")}
+    d_recs = _adapter_records()
+    g_cs = g_recs.get("confounder_suppression", {}).get("observed", {})
+    d_cs = d_recs.get("confounder_suppression", {}).get("observed", {})
+    g_pv = g_cs.get("per_view", {})
+    d_pv = d_cs.get("per_view", {})
+    assert set(g_pv) == set(d_pv), \
+        f"H2-C views differ: graph={sorted(g_pv)}, direct={sorted(d_pv)}"
+    for view in g_pv:
+        g_pt = g_pv[view].get("patient", {})
+        d_pt = d_pv[view].get("patient", {})
+        assert g_pt["z"] == pytest.approx(d_pt["z"]), \
+            f"H2-C patient z mismatch in {view}"
+        for label in g_pv[view].get("biology", {}):
+            assert label in d_pv[view].get("biology", {}), \
+                f"biology label {label} in graph but not direct for {view}"
+            assert g_pv[view]["biology"][label]["z"] == pytest.approx(
+                d_pv[view]["biology"][label]["z"]), \
+                f"H2-C biology z mismatch for {label} in {view}"
+        for label in g_pv[view].get("ratio", {}):
+            assert label in d_pv[view].get("ratio", {}), \
+                f"ratio label {label} in graph but not direct for {view}"
+            assert g_pv[view]["ratio"][label]["ratio"] == pytest.approx(
+                d_pv[view]["ratio"][label]["ratio"]), \
+                f"H2-C ratio mismatch for {label} in {view}"
+
+    # H2-C guard outcomes
+    g_guards = {g["guard"]: g["status"] for g in g_cs.get("guards", [])}
+    d_guards = {g["guard"]: g["status"] for g in d_cs.get("guards", [])}
+    assert g_guards == d_guards, \
+        f"H2-C guard outcomes differ: graph={g_guards}, direct={d_guards}"
 
 
 def test_the_declared_reader_finds_the_sentinel_the_join_writes():
@@ -463,6 +556,7 @@ def test_each_guards_note_is_its_own_finding():
 def test_h3_through_the_graph_with_pathway_scores():
     """the graph path with include_pathway_scores=True finds evaluable signals
     and produces an H3 verdict that is not not_run."""
+    import copy
     import json as _json
 
     from omicstra.graphs.evaluate import build_evaluate_graph
@@ -470,6 +564,11 @@ def test_h3_through_the_graph_with_pathway_scores():
     cohort = _json.loads((ROOT / "projects/tnbc-92/cohort.json").read_text())
     if "evaluate_params" not in cohort:
         pytest.skip("this cohort declares no evaluate_params")
+    cohort = copy.deepcopy(cohort)
+    if "confounder_suppression" in cohort["evaluate_params"]:
+        cohort["evaluate_params"]["confounder_suppression"] = {
+            **cohort["evaluate_params"]["confounder_suppression"],
+            "n_permutations": 20, "n_rho_null": 20}
     result = build_evaluate_graph().invoke(
         {"project_id": "tnbc-92", "arm": "evaluate", "compute": True,
          "run": RUN, "paired_view": "z_st", "signals": ["tls"],

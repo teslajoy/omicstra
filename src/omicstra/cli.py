@@ -1145,5 +1145,122 @@ def chain(project_dir, project_id, task_id, hypotheses, compute, answers, thread
         click.echo("\nnothing ran - every stage resolved. pass --compute to execute.")
 
 
+@main.command()
+@click.argument("question")
+@click.option("--task-id", required=True,
+              help="the task family. `omicstra families` lists them.")
+@click.option("--run", required=True, help="the fitted run to evaluate.")
+@click.option("--paired-view", default=None, help="which embedding view to use.")
+@click.option("--objective", default="", help="why this is being asked, for provenance.")
+@click.option("--signals", multiple=True, help="pathway or signal names. repeatable.")
+@click.option("--include-pathway-scores", is_flag=True)
+@click.option("--interpreter", "interpreter_name", default=None,
+              metavar="MODULE:CALLABLE",
+              help="a Python callable that interprets the question into structured "
+                   "params. format: module.path:function_name. receives (question, "
+                   "context) and returns a dict. when omitted, the question argument "
+                   "and explicit options ARE the interpretation - no LLM is called.")
+@click.option("--project-dir", default=None, type=click.Path(path_type=Path))
+@click.option("--project-id", default=None)
+def ask(question: str, task_id: str, run: str, paired_view: str | None,
+        objective: str, signals: tuple[str, ...], include_pathway_scores: bool,
+        interpreter_name: str | None,
+        project_dir: Path | None, project_id: str | None) -> None:
+    """ask a biological question and get computed results.
+
+    the question is recorded verbatim for provenance. when --interpreter is
+    omitted, --task-id and --run are the interpretation: no model is called,
+    and the question is documentation. when --interpreter names a callable,
+    it receives the question and returns the structured params, and --task-id
+    / --run are ignored in favour of what the interpreter returns.
+
+    the evaluation chain runs on the real cohort arrays with the declared
+    scientific parameters (cohort.json#evaluate_params). reduced-count
+    test fixtures are separate and do not reach this command.
+    """
+    if project_dir is not None:
+        settings.project_dir = project_dir.expanduser()
+
+    if interpreter_name:
+        import importlib
+
+        mod_path, _, fn_name = interpreter_name.rpartition(":")
+        if not mod_path or not fn_name:
+            raise click.ClickException(
+                f"--interpreter wants MODULE:CALLABLE, got {interpreter_name!r}")
+        try:
+            mod = importlib.import_module(mod_path)
+            interpreter = getattr(mod, fn_name)
+        except (ImportError, AttributeError) as e:
+            raise click.ClickException(f"cannot load interpreter: {e}") from e
+
+        from omicstra.question import interpret_and_execute
+
+        with _needs_measure("ask"):
+            result = interpret_and_execute(question, interpreter=interpreter,
+                                           project_id=project_id)
+    else:
+        from omicstra.question import execute, validate
+
+        raw = {
+            "question": question,
+            "objective": objective,
+            "task_id": task_id,
+            "run": run,
+            "paired_view": paired_view,
+            "signals": list(signals),
+            "include_pathway_scores": include_pathway_scores,
+            "interpretation_source": "cli_explicit",
+            "interpretation_model": "",
+        }
+        with _needs_measure("ask"):
+            from omicstra.question import ValidationError
+
+            try:
+                req = validate(raw, project_id=project_id)
+            except ValidationError as e:
+                for p in e.problems:
+                    click.echo(click.style(f"  problem: {p}", fg="red"))
+                raise SystemExit(1)
+            result = execute(req)
+
+    s = result.summary()
+    click.echo(f"hypothesis: {s['hypothesis']}")
+    click.echo(f"run:        {s['run']}")
+    click.echo(f"status:     {result.report.get('status')}")
+
+    for h, v in (s.get("verdicts") or {}).items():
+        click.echo(f"  {h}: {v['verdict']}")
+
+    findings = s.get("findings") or {}
+    for step_id, fd in findings.items():
+        click.echo(f"\n  {step_id}  [{fd.get('status')}]")
+        if fd.get("per_view"):
+            for view, vd in fd["per_view"].items():
+                pt_z = vd.get("patient", {}).get("z")
+                click.echo(f"    {view}  patient z={pt_z}")
+                for label, bl in vd.get("biology", {}).items():
+                    click.echo(f"      {label}: z={bl.get('z')}, p={bl.get('p_value')}")
+                for label, rd in vd.get("ratio", {}).items():
+                    g3 = rd.get("G3", {})
+                    click.echo(f"      ratio({label}): {rd.get('ratio', '?'):.3f} "
+                               f"[{rd.get('ratio_ci_low', '?'):.3f}, "
+                               f"{rd.get('ratio_ci_high', '?'):.3f}] "
+                               f"G3={'pass' if g3.get('passed') else 'fail'}")
+        elif fd.get("values"):
+            for k, v in fd["values"].items():
+                click.echo(f"    {k}: {v}")
+
+    if result.notebook_path:
+        click.echo(f"\nnotebook: {result.notebook_path}")
+    if result.notebook_error:
+        click.echo(click.style(f"\nnotebook error: {result.notebook_error}", fg="yellow"))
+
+    prov = result.provenance()
+    click.echo(click.style(f"\nrun_id: {prov['run_id']}", dim=True))
+    click.echo(click.style(f"interpretation: {prov['interpretation_source']} "
+                           f"({prov['interpretation_model'] or 'none'})", dim=True))
+
+
 if __name__ == "__main__":
     main()

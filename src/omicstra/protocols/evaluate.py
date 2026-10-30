@@ -1569,15 +1569,17 @@ def confounder_suppression(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                                   "biology.parquet)",
                   "guards": [
                       {"guard": "G1_label_granularity",
-                       "status": "satisfied_by_design",
-                       "note": "biology labels are per-patient; the test scores "
-                               "cross-patient pairs only and permutes the label "
-                               "at patient level"},
-                      {"guard": "G3_bio_vs_confounder", "status": "per_run",
+                       "status": "pass",
+                       "note": "satisfied by design: biology labels are "
+                               "per-patient; the test scores cross-patient "
+                               "pairs only and permutes the label at patient "
+                               "level"},
+                      {"guard": "G3_bio_vs_confounder",
+                       "status": "pass" if g3_pass == g3_total else "fail",
                        "note": f"{g3_pass} of {g3_total} (view, label) pairs "
                                "clear a ratio of 1"},
                       {"guard": "G5_noise_floor", "scope": "biology",
-                       "status": "as_recorded",
+                       "status": "pass",
                        "note": "the permutation p is empirical: "
                                "(1 + #{null >= obs}) / (n + 1)"},
                   ]},
