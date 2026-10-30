@@ -55,6 +55,17 @@ def _cohort(*, label_is_subject: bool = False, paired: bool = True,
         bio_classes = np.array(["A", "B", "C"])[sub_patient % 3]
         bio = {"test_bio": bio_classes[subarray]}
 
+    pw_cos = {
+        "test_pathway_A": rng.normal(0, 1, (N, 5)),
+        "test_pathway_B": rng.normal(0, 1, (N, 3)),
+    }
+    pw_axes = {
+        "pathway_name": ["test_pathway_A", "test_pathway_B"],
+        "pathway_id": ["R-HSA-001", "R-HSA-002"],
+        "testable": [True, True],
+        "coverage_frac": [0.8, 0.6],
+    }
+
     ctx: dict = {
         "spaces": {"z_he": he},
         "paired": {"z_he": st} if paired else {},
@@ -63,6 +74,11 @@ def _cohort(*, label_is_subject: bool = False, paired: bool = True,
         "subarray": subarray,
         "biology_labels": bio,
         "scores": sc,
+        "pathway_cosines": pw_cos,
+        "pathway_axes": pw_axes,
+        "run": "test_run",
+        "st_features": {"test_run": []},
+        "run_is_contrastive": {"test_run": False},
     }
     return ctx
 
@@ -87,10 +103,14 @@ def _params(**over) -> dict:
                                         "held_out_groups": 2, "transfer_seed": 42,
                                         "within_cohort_seed": 7,
                                         "min_units_per_side": 20},
+        "pathway_transfer_cca": {"n_permutations": 10, "n_test_pats": 1,
+                                  "seed": 42, "alpha": 0.05,
+                                  "min_testable_set": 2,
+                                  "pathway_feature": "test_feature"},
         "hypothesis_verdict": {"hypotheses": {
             "H1": ("paired_identifiability", "held_out_comparison"),
             "H2": ("structure_and_its_null", "confounder_suppression"),
-            "H3": ("association_and_specificity",)}},
+            "H3": ("association_and_specificity", "pathway_transfer_cca")}},
     }
     for k, v in over.items():
         p[k] = {**p[k], **v} if isinstance(v, dict) and k in p else v
@@ -317,7 +337,10 @@ def test_a_hypothesis_whose_step_never_ran_is_not_run_not_a_silent_pass():
     named, so the gap is readable."""
     ctx = _cohort()
     ctx["scores"] = {}
-    recs = _run(ctx)
+    recs = _run(ctx, _params(hypothesis_verdict={"hypotheses": {
+        "H1": ("paired_identifiability", "held_out_comparison"),
+        "H2": ("structure_and_its_null", "confounder_suppression"),
+        "H3": ("association_and_specificity",)}}))
     assert recs["association_and_specificity"]["status"] == "not_applicable"
     d = _verdicts(recs)["H3"]
     assert d["verdict"] == "not_run"
@@ -555,7 +578,10 @@ def test_a_step_with_every_signal_gapped_is_not_run_not_a_clean_sweep():
         y[0] = np.nan
         gapped[name] = y
     ctx["scores"] = gapped
-    recs = _run(ctx)
+    recs = _run(ctx, _params(hypothesis_verdict={"hypotheses": {
+        "H1": ("paired_identifiability", "held_out_comparison"),
+        "H2": ("structure_and_its_null", "confounder_suppression"),
+        "H3": ("association_and_specificity",)}}))
 
     rec = recs["association_and_specificity"]
     assert rec["status"] == "not_run"
@@ -563,6 +589,26 @@ def test_a_step_with_every_signal_gapped_is_not_run_not_a_clean_sweep():
     assert _obs(recs, "association_and_specificity")["n_out"] == 0
     # and the hypothesis is not_run rather than reported as unguarded
     assert _verdicts(recs)["H3"]["verdict"] == "not_run"
+
+
+def test_combined_h3_carries_pending_fdr_on_pathway_transfer():
+    """when H3 maps to both association_and_specificity and pathway_transfer_cca,
+    the verdict records that cross-run FDR on pathway_transfer_cca has not run.
+    a G5 guard pending finalization means the biological claim is not finalized
+    even when other guards pass."""
+    recs = _run(_cohort())
+    d = _verdicts(recs)["H3"]
+    assert "pathway_transfer_cca" in d["steps"]
+    assert "association_and_specificity" in d["steps"]
+    g5_pending = [g for g in d.get("guards_not_run", [])
+                  if "G5_noise_floor" in g and "pathway_transfer_cca" in g]
+    assert g5_pending, (
+        "H3 verdict must record that pathway_transfer_cca G5 is pending "
+        "cross-run BH-FDR finalization")
+    ptc = _obs(recs, "pathway_transfer_cca")
+    ptc_g5 = [g for g in ptc["guards"] if g["guard"] == "G5_noise_floor"]
+    assert ptc_g5[0]["status"] == "not_run"
+    assert "finalize_pathway_cca_fdr" in ptc_g5[0]["note"]
 
 
 def test_the_cca_refuses_a_non_finite_input_naming_the_rows():
@@ -699,7 +745,7 @@ def test_h2c_step_g3_runs_on_every_label_view_pair():
     guards = o["guards"]
     g3 = [g for g in guards if g["guard"] == "G3_bio_vs_confounder"]
     assert len(g3) == 1
-    assert g3[0]["status"] == "per_run"
+    assert g3[0]["status"] in ("pass", "fail")
 
 
 def test_h2c_step_without_subarray_is_not_run():

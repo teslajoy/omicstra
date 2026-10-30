@@ -1982,7 +1982,7 @@ def pathway_transfer_cca(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
         return _erec("pathway_transfer_cca", "not_run",
                      "no spaces on the context",
                      "the adapter did not provide any aligned views",
-                     {"n_out": 0, "reason": "no spaces"}), {}
+                     {"n_in": 0, "n_out": 0, "reason": "no spaces"}), {}
 
     pw_cosines = ctx.get("pathway_cosines")
     pw_axes = ctx.get("pathway_axes")
@@ -1991,7 +1991,7 @@ def pathway_transfer_cca(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                      "pathway_cosines or pathway_axes absent from context",
                      "the adapter was not called with include_pathway_cosines=True, "
                      "or the gpath2vec pkl is not declared in project.json",
-                     {"n_out": 0, "reason": "no pathway cosines"}), {}
+                     {"n_in": 0, "n_out": 0, "reason": "no pathway cosines"}), {}
 
     confounder = np.asarray(
         _eneed(ctx, "confounder", "pathway_transfer_cca"))
