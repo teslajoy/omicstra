@@ -512,6 +512,9 @@ def pathway_assay(state: OmicstraState) -> dict:
 
         samples_run.append(sid)
 
+    # TODO: persist computed scores to disk as a pathway_scores artifact.
+    # currently the results exist only as records in graph state. downstream
+    # consumption (align reading these as analytical input) depends on this.
     status = "computed" if samples_run else "refused"
     why = (f"{len(samples_run)} sample(s) processed" if samples_run
            else "no sample carried both counts and niche data")
