@@ -72,20 +72,16 @@ UNITS = {
     # the other never collapses them because MAD/mean needs them as several
     # observations of one niche. so they are two units: a notebook holding both
     # would imply a single method where there are two.
-    #
-    # all three carry no context loader. their steps read `niches`,
-    # `gene_symbols` and `pathway_sets`, and nothing in `adapters/` builds those
-    # from a cohort - the published chain assembled them in a script. so the
-    # chain is reachable from a notebook a reader writes, and not yet from a
-    # generated one.
     "assay_pathway_genesets": Unit("omicstra.protocols.pathway",
-                                   "VARIABLE_GENE_STEPS", None,
+                                   "VARIABLE_GENE_STEPS",
+                                   ("arrays", "omicstra.adapters.pathway"),
                                    "which genes vary within a niche"),
     "assay_pathway_aucell": Unit("omicstra.protocols.pathway", "AUCELL_STEPS",
-                                 None,
+                                 ("arrays", "omicstra.adapters.pathway"),
                                  "how enriched a niche is, over the whole universe"),
     "assay_niche_membership": Unit("omicstra.protocols.pathway",
-                                   "NICHE_MEMBERSHIP_STEPS", None,
+                                   "NICHE_MEMBERSHIP_STEPS",
+                                   ("arrays", "omicstra.adapters.pathway"),
                                    "which spots form a niche"),
 }
 
@@ -151,8 +147,12 @@ def _context(unit: str, b: dict) -> tuple[str, str]:
     """
     kind, module = UNITS[unit].context
     if kind == "arrays":
-        # the join reads one SAMPLE; the evaluation chain reads one fitted RUN
-        key = repr(b.get("sample")) if unit == "join" else repr(b.get("run"))
+        # the join and pathway units read one SAMPLE; the evaluation chain reads
+        # one fitted RUN. the two are not interchangeable: a sample is a section,
+        # a run is a fitted alignment.
+        sample_units = {"join", "assay_pathway_genesets", "assay_pathway_aucell",
+                        "assay_niche_membership"}
+        key = repr(b.get("sample")) if unit in sample_units else repr(b.get("run"))
         return f"from {module} import arrays\n", f"ctx = arrays(PROJECT, {key})\n"
     return "", ("ctx = {'project_dir': PROJECT, 'project_id': "
                 f"{str(b.get('project_id'))!r}}}\n")
@@ -379,6 +379,46 @@ def from_ledger(unit: str, project_id: str | None = None, *,
             "records": [latest[sid] for sid in ids if sid in latest]}
 
 
+def from_records(unit: str, records: list[dict], project_id: str | None = None,
+                 *, run: str | None = None, sample: str | None = None,
+                 run_id: str | None = None) -> dict:
+    """the bundle for one unit, built from in-memory records.
+
+    same shape as `from_ledger`, but reads from a list of record dicts (as
+    carried in the graph state) rather than from the file-backed ledger.
+    the chain command accumulates records across all stages; this filters
+    them to the steps that belong to one unit.
+
+    when `sample` is given, only records carrying that sample are matched.
+    pathway protocol steps fire once per sample, so the same step_id appears
+    for every sample and the last one would win without the filter. a
+    notebook is per-sample for pathway units, per-run for evaluation.
+    """
+    import importlib
+
+    from omicstra.settings import settings
+
+    if unit not in UNITS:
+        raise ValueError(f"unknown unit {unit!r}. known: {sorted(UNITS)}")
+    u = UNITS[unit]
+    ids = [st.id for st in getattr(importlib.import_module(u.module), u.steps)]
+    latest: dict[str, dict] = {}
+    for r in records:
+        sid = r.get("step_id") if isinstance(r, dict) else getattr(r, "step_id", None)
+        if sid not in ids:
+            continue
+        d = r if isinstance(r, dict) else r.model_dump(mode="json")
+        if sample is not None and d.get("sample") and d["sample"] != sample:
+            continue
+        latest[sid] = d
+    return {"unit": unit, "project_id": project_id,
+            "project_dir": str(settings.project_root(project_id)),
+            "run": run, "sample": sample, "run_id": run_id,
+            "params": {sid: (rec.get("params") or {})
+                       for sid, rec in latest.items()},
+            "records": [latest[sid] for sid in ids if sid in latest]}
+
+
 def results_dir(project_id: str | None = None):
     """where a cohort's generated results go: `work_root/results`.
 
@@ -438,4 +478,4 @@ def write(b: dict, project_id: str | None = None) -> tuple:
 
 
 __all__ = ["PLACES", "UNITS", "Unit", "build", "filenames", "from_ledger",
-           "results_dir", "write"]
+           "from_records", "results_dir", "write"]

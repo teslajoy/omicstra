@@ -1144,6 +1144,56 @@ def chain(project_dir, project_id, task_id, hypotheses, compute, answers, thread
     if not compute and out.get("route") == Route.COMPUTE:
         click.echo("\nnothing ran - every stage resolved. pass --compute to execute.")
 
+    # persist records to the ledger and generate notebooks
+    records = out.get("records") or []
+    if records:
+        from omicstra.contracts.routing import ledger as _ledger
+
+        n = len(_ledger(project_id).append_new(records))
+        if n:
+            click.echo(f"\n{n} record(s) persisted to ledger")
+
+        from omicstra.notebook import UNITS, from_records, write
+
+        # pathway units are per-sample: the same step_id fires for every sample,
+        # so one notebook per (unit, sample). other units ignore sample.
+        per_sample_units = {"assay_pathway_genesets", "assay_pathway_aucell",
+                            "assay_niche_membership"}
+        sample_ids = sorted({r["sample"] for r in records
+                             if isinstance(r, dict) and r.get("sample")})
+
+        written = []
+        for unit_name, u in UNITS.items():
+            if u.context is None:
+                continue
+            if unit_name in per_sample_units:
+                for sid in sample_ids:
+                    b = from_records(unit_name, records, project_id,
+                                     sample=sid, run_id=thread)
+                    if not b["records"]:
+                        continue
+                    try:
+                        nb, tr = write(b, project_id)
+                        written.append(f"{unit_name}:{sid}")
+                        click.echo(f"  {unit_name} [{sid}]: {nb}")
+                    except Exception as e:
+                        click.echo(click.style(
+                            f"  {unit_name} [{sid}]: notebook failed - {e}",
+                            fg="yellow"))
+            else:
+                b = from_records(unit_name, records, project_id, run_id=thread)
+                if not b["records"]:
+                    continue
+                try:
+                    nb, tr = write(b, project_id)
+                    written.append(unit_name)
+                    click.echo(f"  {unit_name}: {nb}")
+                except Exception as e:
+                    click.echo(click.style(
+                        f"  {unit_name}: notebook failed - {e}", fg="yellow"))
+        if written:
+            click.echo(f"\n{len(written)} notebook(s) written: {', '.join(written)}")
+
 
 @main.command()
 @click.argument("question")

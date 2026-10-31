@@ -131,10 +131,17 @@ class OmicstraState(TypedDict, total=False):
     run: str                 # the fitted run the compute arm measures
     signals: list[str]       # continuous signals to associate, caller-chosen
     include_pathway_scores: bool  # True loads AUCell scores for H3
+    include_pathway_cosines: bool  # True loads gpath2vec cosine profiles for H3v2
     paired_view: str | None  # the other modality's view, for identifiability
     gates: list[dict]
     answers: dict
     hypotheses: list[str]    # which hypotheses the evaluate stage returns a verdict on
+    # --- the assay node's half of the boundary ---------------------------------
+    # pathway protocols need declared thresholds, keyed by step id. the assay
+    # node runs only when the TASK needs pathway data, not when this key is
+    # populated: a cohort may declare its thresholds without every question
+    # triggering the chain. which operations fire is decided by task_id.
+    pathway_params: dict
     # `report` is ONE key and every stage writes it, so the last writer wins.
     # that is correct for a caller asking "where did this end" and useless for
     # "what happened" - hence the accumulator below, written by a keeper node
@@ -330,6 +337,198 @@ def _halted(state: OmicstraState) -> str:
     return "halt" if state.get("halted") else "encode"
 
 
+# --- the pathway bridge, a function node like carry_counts ------------------
+# it is NOT a subgraph because pathway protocols hold no gate. it invokes
+# level-2 chains via build_protocol, once per sample, and appends the records.
+# which chains run is decided by the caller's explicit flags
+# (include_pathway_scores, include_pathway_cosines), not by the presence of
+# params: a cohort may declare pathway_params without every question
+# triggering the chains.
+
+# which project.json declaration each evaluate flag resolves to, and which
+# chain produces it when the declared file is absent. the flag on state is
+# the selection boundary: it says what the caller's variant needs, and the
+# assay node resolves it against declarations, not task families.
+_FLAG_TO_SLOT: dict[str, tuple[str, str | None]] = {
+    # (project.json key that holds the path, chain that produces it)
+    "include_pathway_scores": ("pathway_scores", "assay_pathway_aucell"),
+    "include_pathway_cosines": ("pathway_node_embeddings", None),
+}
+
+
+def _task_needs_pathway(state: OmicstraState) -> bool:
+    """does this walk's task need any assay-level pathway artifact."""
+    return any(state.get(flag) for flag in _FLAG_TO_SLOT)
+
+
+def pathway_assay(state: OmicstraState) -> dict:
+    """ensure assay-level pathway artifacts exist for downstream evaluation.
+
+    the task variant determines which artifacts are required
+    (TASK_ASSAY_REQUIREMENTS). each required artifact is checked against
+    the cohort's project.json declaration: if the file is on disk, it is
+    reused. only missing artifacts trigger computation.
+
+    writes to `stages` (a reducer, so no previous stage's record is lost),
+    `records` (also a reducer), and `report` (scalar, read by `_continue`
+    to decide whether the chain proceeds). the keeper after pathway_assay
+    captures this report before align overwrites it.
+    """
+    if not _task_needs_pathway(state):
+        return {"report": {"status": "nothing_to_run"},
+                "stages": [{"stage": "pathway_assay", "status": "nothing_to_run",
+                            "outcome": "nothing_to_run",
+                            "report": {"why": "the current task does not require "
+                                       "pathway data"}}]}
+
+    import json
+
+    from omicstra.contracts.project import ProjectConfig
+    from omicstra.settings import settings
+
+    pid = state.get("project_id")
+    root = settings.project_root(pid)
+    proj = json.loads((root / "project.json").read_text())
+    cfg = ProjectConfig.from_dir(root)
+
+    # resolve which artifacts the caller's variant needs, and which are on disk
+    required: dict[str, str] = {}     # flag -> project.json slot
+    reused: dict[str, str] = {}       # slot -> path on disk
+    missing: dict[str, str | None] = {}  # slot -> chain that produces it
+    for flag, (slot, chain_name) in _FLAG_TO_SLOT.items():
+        if not state.get(flag):
+            continue
+        required[flag] = slot
+        decl = proj.get(slot)
+        # check declaration AND file compatibility (existence)
+        if isinstance(decl, dict) and decl.get("path"):
+            p = cfg.path(decl["path"])
+            if p.is_file():
+                reused[slot] = str(p)
+                continue
+        elif isinstance(decl, str):
+            p = cfg.path(decl)
+            if p.is_file():
+                reused[slot] = str(p)
+                continue
+        missing[slot] = chain_name
+
+    if not missing:
+        return {"report": {"status": "resolved"},
+                "stages": [{"stage": "pathway_assay", "status": "resolved",
+                            "outcome": "resolved",
+                            "report": {"why": "all required artifacts already on disk",
+                                       "reused": reused,
+                                       "required": sorted(required.values())}}]}
+
+    # any missing slot with no registered producer chain is an explicit refusal
+    unproducible = {s for s, c in missing.items() if c is None}
+    if unproducible:
+        return {"report": {"status": "refused"},
+                "stages": [{"stage": "pathway_assay", "status": "refused",
+                            "outcome": "refused",
+                            "report": {"why": f"required artifacts absent and not "
+                                       f"producible: {sorted(unproducible)}",
+                                       "reused": reused,
+                                       "missing": sorted(missing)}}],
+                "records": [{"step_id": "assay_pathway", "status": "not_run",
+                             "result": f"no producer for {sorted(unproducible)}",
+                             "decision": "provide the file or use a variant "
+                                          "whose inputs are available"}]}
+
+    # resolve computation params
+    pathway_params = state.get("pathway_params") or {}
+    if not pathway_params:
+        cohort = state.get("cohort") or {}
+        pathway_params = cohort.get("pathway_params") or {}
+    if not pathway_params:
+        return {"report": {"status": "refused"},
+                "stages": [{"stage": "pathway_assay", "status": "refused",
+                            "outcome": "refused",
+                            "report": {"why": f"missing {sorted(missing)} but the "
+                                       "cohort declares no pathway_params",
+                                       "missing": sorted(missing)}}],
+                "records": [{"step_id": "assay_pathway", "status": "not_run",
+                             "result": f"missing {sorted(missing)}, no pathway_params",
+                             "decision": "declare pathway_params for this cohort"}]}
+
+    from omicstra.adapters.canonical import list_samples
+    from omicstra.adapters.pathway import PathwayDataMissing, arrays
+    from omicstra.protocols import build_protocol
+    from omicstra.protocols.pathway import AUCELL_STEPS, VARIABLE_GENE_STEPS
+
+    # build the chains for each missing artifact
+    chains: list[tuple[str, list]] = []
+    for slot, chain_name in missing.items():
+        if chain_name == "assay_pathway_aucell":
+            niche_qc_step = VARIABLE_GENE_STEPS[0]
+            assert niche_qc_step.id == "niche_qc"
+            chains.append((chain_name, [niche_qc_step, *AUCELL_STEPS]))
+
+    # load pathway_sets for the aucell chain
+    pathway_sets = None
+    if any(cn == "assay_pathway_aucell" for cn, _ in chains):
+        ps_file = pathway_params.get("pathway_sets_file")
+        if ps_file:
+            ps_full = cfg.path(ps_file)
+            if ps_full.is_file():
+                pathway_sets = json.loads(ps_full.read_text())
+            else:
+                return {"report": {"status": "refused"},
+                        "stages": [{"stage": "pathway_assay", "status": "refused",
+                                    "outcome": "refused",
+                                    "report": {"why": f"pathway_sets_file declared "
+                                               f"but absent: {ps_full}"}}],
+                        "records": [{"step_id": "assay_pathway", "status": "not_run",
+                                     "result": f"pathway_sets_file not found: {ps_file}",
+                                     "decision": "provide the file or remove the "
+                                                  "declaration"}]}
+
+    all_records: list[dict] = []
+    samples_run = []
+    samples_skipped = []
+
+    for smp in list_samples(root):
+        sid = smp.sample_id
+        if not (smp.counts and smp.spots):
+            samples_skipped.append({"sample": sid, "why": "no counts or coordinates"})
+            continue
+        try:
+            ctx = arrays(str(root), sid)
+        except PathwayDataMissing as e:
+            samples_skipped.append({"sample": sid, "why": str(e)})
+            continue
+
+        if pathway_sets is not None:
+            ctx["pathway_sets"] = pathway_sets
+
+        for unit_name, steps in chains:
+            chain = build_protocol(steps, unit_name)
+            recs = chain.invoke({**ctx, "params": pathway_params})
+            for step_id, rec in recs.items():
+                rec["sample"] = sid
+                rec["unit"] = unit_name
+                all_records.append(rec)
+
+        samples_run.append(sid)
+
+    # TODO: persist computed scores to disk as a pathway_scores artifact.
+    # currently the results exist only as records in graph state. downstream
+    # consumption (align reading these as analytical input) depends on this.
+    status = "computed" if samples_run else "refused"
+    why = (f"{len(samples_run)} sample(s) processed" if samples_run
+           else "no sample carried both counts and niche data")
+    stage_report = {"status": status, "why": why,
+                    "samples_run": samples_run,
+                    "samples_skipped": samples_skipped,
+                    "reused": reused, "missing": sorted(missing)}
+
+    return {"report": {"status": status},
+            "records": all_records,
+            "stages": [{"stage": "pathway_assay", "status": status,
+                        "outcome": status, "report": stage_report}]}
+
+
 # the stages of the compute arm, in the order their inputs allow. a stage is
 # wired only if it was injected, so a host without a tensor library still builds
 # the graph - the same discipline the encode slot has had since it existed.
@@ -482,7 +681,7 @@ def build_omicstra_graph(checkpointer: Any = None,
     `route` runs the ASK arm, for a cohort that has an evidence pack. the
     COMPUTE arm is a chain, in the order each stage's inputs allow:
 
-        eda -> carry_counts -> encode -> st -> align -> evaluate
+        eda -> carry_counts -> encode -> st -> pathway_assay -> align -> evaluate
 
     and it stops at the first stage that leaves work in flight or cannot run.
     `submitted` is the usual stop: an encode with compute=True returns at
@@ -516,9 +715,18 @@ def build_omicstra_graph(checkpointer: Any = None,
     # encode gate reads counts the inventory already measured, and something has
     # to lift them out of the records the eda subgraph appended. putting that in
     # the subgraph would make it re-read the inventory; an edge cannot hold code.
+    #
+    # pathway_assay is the same pattern between st and align: it resolves
+    # pathway artifacts the caller's flags request. unlike carry_counts it CAN
+    # refuse, so it gets its own keeper + conditional: a refusal stops the chain
+    # before align runs on missing inputs.
     pre = {"encode": "carry_counts"} if {"eda", "encode"} <= set(chain) else {}
-    if pre:
+    if {"st", "align"} <= set(chain):
+        pre["align"] = "pathway_assay"
+    if pre.get("encode") == "carry_counts":
         g.add_node("carry_counts", carry_counts)
+    if pre.get("align") == "pathway_assay":
+        g.add_node("pathway_assay", pathway_assay)
 
     for i, name in enumerate(chain):
         nxt = chain[i + 1] if i + 1 < len(chain) else None
@@ -539,7 +747,17 @@ def build_omicstra_graph(checkpointer: Any = None,
         g.add_edge(name, keep)
         g.add_conditional_edges(keep, _continue, {"go": entry, "stop": END})
         if entry != nxt:
-            g.add_edge(entry, nxt)
+            # bridge nodes that can refuse need their own keeper + conditional
+            # so a refusal blocks the downstream stage. carry_counts never
+            # refuses so it wires directly; pathway_assay does.
+            if entry == "pathway_assay":
+                keep_bridge = "after_pathway_assay"
+                g.add_node(keep_bridge, _keeper("pathway_assay"))
+                g.add_edge(entry, keep_bridge)
+                g.add_conditional_edges(keep_bridge, _continue,
+                                        {"go": nxt, "stop": END})
+            else:
+                g.add_edge(entry, nxt)
 
     targets: dict[str, str] = {}
     if chain:
