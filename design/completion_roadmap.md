@@ -198,12 +198,18 @@ into the compute chain (st -> pathway_assay -> align). demonstrated:
 - flag-driven selection: include_pathway_scores / include_pathway_cosines
   on state determine required artifacts, not task-family lookup
 - per-sample records and notebook generation from stage provenance
+- computation: AUCell chain runs on synthetic data, all 6 steps pass,
+  records carry sample identity and step params, propagate through graph
+  state to the align node, notebook generates with provenance (bugfix:
+  pathway_sets injection was broken by reversed tuple unpacking)
 
 **not yet demonstrated**:
 
+- artifact persistence: computed scores exist only as records in graph
+  state, not as a saved artifact on disk
+- actual downstream consumption: the align stub captures state but does
+  not read or use the pathway records as analytical input
 - question interpretation -> flag selection (workstream 5)
-- end-to-end chain execution producing a NEW artifact (all current tests
-  reuse declared artifacts or test blocking)
 - entry-point consistency (MCP tools)
 - gate interrupt + resume to completed results
 - encode and alignment notebook coverage

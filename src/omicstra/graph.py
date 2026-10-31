@@ -467,7 +467,7 @@ def pathway_assay(state: OmicstraState) -> dict:
 
     # load pathway_sets for the aucell chain
     pathway_sets = None
-    if any(cn == "assay_pathway_aucell" for _, cn in chains):
+    if any(cn == "assay_pathway_aucell" for cn, _ in chains):
         ps_file = pathway_params.get("pathway_sets_file")
         if ps_file:
             ps_full = cfg.path(ps_file)
