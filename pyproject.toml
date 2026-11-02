@@ -109,6 +109,7 @@ dev = ["pytest", "ruff", "build", "statsmodels>=0.14"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m 'not paid_api and not resource_intensive'"
 markers = [
     "paid_api: incurs paid API usage - exclude from routine runs",
     "resource_intensive: uses substantial CPU/memory - exclude from routine runs",

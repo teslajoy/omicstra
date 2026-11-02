@@ -1,5 +1,7 @@
 """shared fixtures. one synthetic cohort, because two would drift.
 
+paid_api tests are skipped by default. set OMICSTRA_RUN_PAID=1 to run them.
+
 why a synthetic cohort exists at all: five tests in `test_encode_graph.py`
 asserted the encode node reports `ready`, and `ready` became conditional on the
 cohort's slides and `_spots.parquet` being on disk the moment the node started
@@ -13,8 +15,18 @@ thing the oracle diffs against, not a test fixture.
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
+
+
+def pytest_collection_modifyitems(config, items):
+    if os.environ.get("OMICSTRA_RUN_PAID") == "1":
+        return
+    skip_paid = pytest.mark.skip(reason="set OMICSTRA_RUN_PAID=1 to run paid api tests")
+    for item in items:
+        if "paid_api" in item.keywords:
+            item.add_marker(skip_paid)
 
 # four sections, twelve spots each, no counts, a 64x64 slide apiece. small enough
 # that building it costs nothing and large enough that k=6 niches are real.
