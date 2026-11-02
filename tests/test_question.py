@@ -135,6 +135,7 @@ def test_validate_multiple_problems_reported_together():
 
 @pytest.mark.skipif(not _data_present(),
                     reason="run artifacts are git-ignored")
+@pytest.mark.resource_intensive
 def test_h2c_question_to_execution():
     """the full H2-C path: validate -> graph -> LCEL -> results.
 
@@ -240,6 +241,7 @@ def test_h2c_question_to_execution():
 
 @pytest.mark.skipif(not _data_present(),
                     reason="run artifacts are git-ignored")
+@pytest.mark.resource_intensive
 def test_h2c_interpret_and_execute():
     """the CLI path: interpreter callable -> validate -> execute.
 
@@ -276,6 +278,7 @@ def test_h2c_interpret_and_execute():
 
 @pytest.mark.skipif(not _data_present(),
                     reason="run artifacts are git-ignored")
+@pytest.mark.resource_intensive
 def test_execution_result_matches_direct_evaluate():
     """the question path must agree with direct evaluate_measure on
     identical inputs and parameters."""
@@ -351,6 +354,7 @@ def test_execution_result_matches_direct_evaluate():
 
 @pytest.mark.skipif(not _data_present(),
                     reason="run artifacts are git-ignored")
+@pytest.mark.resource_intensive
 def test_mcp_ask_tool():
     """the MCP `ask` tool reaches the same execution path."""
     from omicstra.mcp.server import ask
