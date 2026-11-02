@@ -100,8 +100,8 @@ not work.
 | # | item | where | kind | the record's own words | status |
 |---|---|---|---|---|---|
 | 44 | question execution bypasses discover() | `src/omicstra/question.py` `execute()` | gap | execute() calls build_evaluate_graph() directly, cannot trigger upstream work when artifacts are missing | open - links to completion_roadmap WS 5 |
-| 45 | pathway artifact persistence is TODO | `src/omicstra/graphs/st.py` pathway_assay bridge | gap | computed scores exist only as records in graph state, not as a saved artifact on disk. code marks this explicitly as TODO | open - links to completion_roadmap WS 6 |
-| 46 | pathway downstream consumption not demonstrated | `src/omicstra/graphs/st.py` pathway_assay bridge | gap | align stub captures state but does not read or use pathway records as analytical input | open - links to completion_roadmap WS 6 |
+| 45 | pathway artifact persistence is TODO | `src/omicstra/graph.py` pathway_assay bridge | gap | computed scores exist only as records in graph state, not as a saved artifact on disk. code marks this explicitly as TODO | open - links to completion_roadmap WS 6 |
+| 46 | pathway downstream consumption not demonstrated | `src/omicstra/graph.py` pathway_assay bridge | gap | AUCell scores need to reach the selected analysis that uses them; not yet demonstrated | open - links to completion_roadmap WS 6 |
 | 47 | interrupt/resume not demonstrated end-to-end | `design/completion_roadmap.md` WS 6 | gap | gate interrupt declared, resume wiring exists but not shown working through to completed results | open - links to completion_roadmap WS 6 |
 
 ## hygiene

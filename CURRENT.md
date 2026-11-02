@@ -13,6 +13,12 @@ is not worked on, discussed, or measured until the task card is closed.
 
 **one schema-driven input contract consumed by one real adapter.**
 
+parent goal: a supported question -> required tasks -> grounded result,
+notebook and provenance. the schema contract is the first slice of that path.
+
+previous task card (v1.3.0 build, 5 items done 2026-10-20) preserved at
+`design/_scratch/CURRENT_v1.3.0.md`.
+
 three layers, kept separate:
 
 1. **biomedical schema** - declares Representation (encoder, modality, dim,
@@ -36,8 +42,8 @@ before writing schema code, document in `design/schema_standards.md`:
   conventions)
 - what maps to FHIR (observation model, specimen hierarchy, if anything)
 - what omicstra must define itself (Representation with derivation lineage,
-  CoordinateFrame, analytical role bindings - things no existing standard
-  covers)
+  CoordinateFrame, analytical role bindings - requirements whose coverage in
+  existing standards must be checked)
 - whether linkml-schemauto / schemasheets / schema_crush is tooling (a build
   step that generates validators) or a model dependency (imported at runtime,
   required by the wheel)
@@ -55,8 +61,9 @@ bounded to the first adapter slice.
 - returns correctly aligned arrays with declared dimensions
 - missing or incompatible inputs reported precisely, every problem named
 - `question.validate()` uses the same contract for parameter resolution
-- no code path inspects cohort name, encoder name or column name to decide
-  behavior
+- generic column access and supported encoder dispatch are fine. no
+  cohort-specific special cases, no encoder-name branches, no inferred
+  column-name conventions
 
 ### stopping condition
 
@@ -96,11 +103,11 @@ also:
 
 - **second cohort evidence pack** - the v1.3 defining claim, not delivered.
   tracked: completion_roadmap WS 10
-- **pathway artifact persistence** - bridge is wired, AUCell chain
-  demonstrated (flag-driven selection, refusal on missing inputs, per-sample
-  records, notebook generation). computed scores exist only in graph state
-  (explicit TODO in code). downstream consumption by align not demonstrated.
-  tracked: completion_roadmap WS 6
+- **pathway artifact persistence** - bridge in `src/omicstra/graph.py` is
+  wired, AUCell chain demonstrated (flag-driven selection, refusal on missing
+  inputs, per-sample records, notebook generation). computed scores exist only
+  in graph state (explicit TODO in code). downstream consumption by the
+  selected analysis not demonstrated. tracked: completion_roadmap WS 6
 - **generalizable schema** - the three-layer architecture is the
   completion_roadmap's subject. existing adapters and declarations provide
   partial implementations; the shared schema and consistent integration remain

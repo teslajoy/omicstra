@@ -403,8 +403,8 @@ which file owns which step. read this file for what comes next.
 | hardcoded column names in alignment_data.py | 3 | partial - adapter works but hardcodes virchow2_niche, virchow2_cell_tokens, .reshape(7,1280), patient_id |
 | silent project defaults (h2_label, supervision, headline_view) | 3-4 | partial - defaults exist, refusal pattern not applied |
 | question execution bypasses discover() | 5 | not wired - execute() calls build_evaluate_graph() directly |
-| pathway bridge | 6 | wired and demonstrated: AUCell chain, flag-driven artifact selection, refusal on missing inputs, per-sample records, notebook generation |
+| pathway bridge (`src/omicstra/graph.py`) | 6 | wired and demonstrated: AUCell chain, flag-driven artifact selection, refusal on missing inputs, per-sample records, notebook generation |
 | pathway artifact persistence | 6 | TODO in bridge code - computed scores exist only in graph state |
-| pathway downstream consumption by align | 6 | not demonstrated - align stub captures state but does not read pathway records as analytical input |
+| pathway downstream consumption by selected analysis | 6 | not demonstrated - AUCell scores need to reach the analysis that uses them, not necessarily alignment |
 | interrupt/resume to completed results | 6 | not demonstrated end-to-end - gate interrupt declared, resume wiring exists but not shown working through to results |
 | second cohort evidence pack | 10 | v1.3 commitment, not delivered |
