@@ -107,6 +107,13 @@ durable = ["temporalio>=1.32"]
 # dependency here had to clear.
 dev = ["pytest", "ruff", "build", "statsmodels>=0.14"]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "paid_api: incurs paid API usage - exclude from routine runs",
+    "resource_intensive: uses substantial CPU/memory - exclude from routine runs",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
