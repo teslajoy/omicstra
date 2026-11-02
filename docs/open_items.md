@@ -95,6 +95,15 @@ not work.
 | 42 | `omicstra inventory` overwrites the committed full-cohort record with a capped run | `src/omicstra/cli.py:213` `inventory` | defect | `--max-samples 2` rewrote `projects/tnbc-92/inventory.json` from 280 samples to 2, and the only warning was "CAPPED" in the console | open - a capped run should not be able to replace an uncapped record. either write capped output to a separate name or refuse the overwrite |
 | 43 | the CLI step chains write no ledger records | `src/omicstra/cli.py` `inventory`, `eda` | gap | `inventory` ran 8 steps and `runs/{id}/records/decisions.jsonl` stayed empty; only the graph arms persist, through `mcp/server.py:_persist` | open - so `report`, `trace` and `omicstra notebook` see nothing for a cohort driven from the CLI. the one-ledger rule covers the arms and not this path |
 
+## code-verified gaps (2026-11-02, main @ af19798)
+
+| # | item | where | kind | the record's own words | status |
+|---|---|---|---|---|---|
+| 44 | question execution bypasses discover() | `src/omicstra/question.py` `execute()` | gap | execute() calls build_evaluate_graph() directly, cannot trigger upstream work when artifacts are missing | open - links to completion_roadmap WS 5 |
+| 45 | pathway artifact persistence is TODO | `src/omicstra/graphs/st.py` pathway_assay bridge | gap | computed scores exist only as records in graph state, not as a saved artifact on disk. code marks this explicitly as TODO | open - links to completion_roadmap WS 6 |
+| 46 | pathway downstream consumption not demonstrated | `src/omicstra/graphs/st.py` pathway_assay bridge | gap | align stub captures state but does not read or use pathway records as analytical input | open - links to completion_roadmap WS 6 |
+| 47 | interrupt/resume not demonstrated end-to-end | `design/completion_roadmap.md` WS 6 | gap | gate interrupt declared, resume wiring exists but not shown working through to completed results | open - links to completion_roadmap WS 6 |
+
 ## hygiene
 
 | # | item | where | kind | the record's own words | status |

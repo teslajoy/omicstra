@@ -1,3 +1,6 @@
+> **superseded.** the forward plan is [completion_roadmap.md](completion_roadmap.md).
+> this file is the historical build log through v1.2.
+
 # progress
 
 running log of what is built, what it does, and how to exercise it.

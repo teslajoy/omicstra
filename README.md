@@ -339,16 +339,21 @@ read as a pass.
 **what it cannot do yet**
 
 ```
-fuse or align on a second cohort         1.3 - its EDA gate does not pass, and
-                                         nothing may run past a failed gate
-produce that cohort's own evidence pack  1.3 - the release claim it is named for
-a package path for the pathway arm       1.3
+fuse or align on a second cohort         v1.3 commitment, not yet delivered.
+                                         tracked: completion_roadmap WS 10
+produce that cohort's own evidence pack  v1.3 commitment, not yet delivered.
+                                         the release claim it was named for
+a package path for the pathway arm       v1.3 commitment, partially delivered.
+                                         bridge wired, persistence TODO (WS 6)
 registration across sections             declared, not built. both cohorts are
                                          same-section, so nothing here needs it
 mitochondrial-fraction exclusion         not implemented. a proposal commitment,
-                                         recorded in design/v1_3_scope.md
-SLURM                                    1.3
+                                         recorded in open_items.md #18
+SLURM                                    not implemented
 ```
+
+tracked in [open_items.md](docs/open_items.md) and
+[completion_roadmap.md](design/completion_roadmap.md).
 
 ---
 

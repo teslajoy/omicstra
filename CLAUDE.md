@@ -203,20 +203,24 @@ root and needs no `../..`.
 
 ## where the work is
 
-**released: v1.2.0, 2026-10-02.** tag on `main`, PyPI, GitHub release. both
-modality agents (`he_encode`, `st_encode`) are reachable by a client, a run
-handle survives the process, the ST port is exact against the Novae cache, and
-the EDA chain runs. the second cohort's evidence pack did NOT ship.
+**tagged: v1.3.0 on main (af19798).** not yet published to PyPI (latest there:
+1.2.0). `design/v1_3_scope.md` build steps A-E all done. the v1.3 defining
+claim - second cohort produces its own evidence pack - did NOT ship.
 
-**read `design/v1_3_scope.md` before starting anything.** it holds what 1.3 is,
-every open question with the measurement behind it, the build order A-E with what
-each one closed, and the decisions that are the human's rather than the agent's.
-`design/graph.md` is the companion: the route a question takes and which file
-owns each step, which is the question a session actually has first.
+**read `design/completion_roadmap.md` before starting anything.** it holds the
+11 workstreams, approved for checkpoint 1 (WS 1-3, schema + normalization).
+`CURRENT.md` is the one task in flight. `design/graph.md` is the companion:
+which file owns which step.
 
-the scope docs are the plan, one per release, each written before the work and
-corrected after it. `design/v1_1_scope.md`, `design/v1_2_scope.md`,
-`design/v1_3_scope.md`. the one named for the NEXT version is the live one.
+**three-layer architecture status** (verified 2026-11-02): biomedical schema
+(LinkML) not implemented. source normalization and analytical bindings partial -
+existing adapters and declarations work but are hardcoded to the seed cohort.
+the shared schema and consistent integration are the completion_roadmap's
+subject.
+
+the scope docs are the historical record, one per release, each written before
+the work and corrected after it. `design/v1_1_scope.md`, `design/v1_2_scope.md`,
+`design/v1_3_scope.md`.
 
 ## rules that span releases
 

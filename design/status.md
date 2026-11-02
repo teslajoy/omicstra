@@ -1,3 +1,6 @@
+> **superseded.** the forward plan is [completion_roadmap.md](completion_roadmap.md).
+> this file is the pre-MCP status snapshot (2026-07-28).
+
 # status - 2026-07-28
 
 snapshot before the first MCP component lands. covers: environment verification, the `scripts/`
