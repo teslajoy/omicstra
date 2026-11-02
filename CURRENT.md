@@ -36,17 +36,40 @@ inferred column-name conventions or silent tnbc defaults in production code.
 
 ### pre-step: standards decision
 
-before writing schema code, document in `design/schema_standards.md`:
+before writing schema code, document in `design/schema_standards.md`.
 
-- what we reuse from HTAN (entity definitions, controlled vocabularies, field
-  conventions)
-- what maps to FHIR (observation model, specimen hierarchy, if anything)
-- what omicstra must define itself (Representation with derivation lineage,
-  CoordinateFrame, analytical role bindings - requirements whose coverage in
-  existing standards must be checked)
-- whether linkml-schemauto / schemasheets / schema_crush is tooling (a build
-  step that generates validators) or a model dependency (imported at runtime,
-  required by the wheel)
+two existing foundations:
+
+- **schema_crush** (`teslajoy/schema_crush` @ ad04ded) - curated
+  HTAN/GDC-to-FHIR mappings, field and content mapping loaders, cached
+  mapping database, matchers. the mapping foundation for omicstra. reuse
+  applicable mappings deterministically at runtime; do not introduce
+  mandatory model calls or rebuild the mapping framework
+- **HTAN2** (`ncihtan/htan2-data-model` @ 0f13d60) - LinkML modules for
+  clinical data, biospecimens, imaging, digital pathology and Spatial Omics.
+  the SpatialOmics module covers Visium, Xenium, CosMx and other platforms,
+  processed bundles, interoperable h5ad/RDS/Zarr, panel info, QC and
+  processing metadata. spatial transcriptomics metadata is not absent from
+  the standard
+
+the standards decision must identify:
+
+1. the exact reusable HTAN2 definitions for the first adapter slice, with
+   pinned versions. distinguish older HTAN mappings (bts: terms, incomplete
+   entries) from current HTAN2 coverage
+2. which schema_crush mappings apply to this slice, and whether they cover
+   current HTAN2 fields or only older HTAN
+3. what omicstra must define itself: the analytical contracts not covered by
+   either foundation - observation alignment, neighborhood membership,
+   embedding dimensions, analytical lineage (Representation with derivation),
+   task-specific role bindings
+4. schema_crush's runtime role: reuse reviewed mappings deterministically.
+   optional mapping assistance does not run during every analysis. FHIR
+   remains an interoperability mapping where appropriate, not the storage
+   format for expression matrices or embeddings
+
+direction: HTAN2 definitions + applicable schema_crush mappings -> validated
+omicstra inputs -> task-specific analytical bindings.
 
 do not invent a parallel biomedical standard. do not assume LinkML itself
 supplies the domain model - it is a schema language, not a vocabulary.
