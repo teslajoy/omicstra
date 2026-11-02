@@ -1,0 +1,702 @@
+<title>Omicstra Capability Report</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* layout: single-column report, tabular data, code-adjacent typography */
+:root {
+  --bg: #fafaf9;
+  --fg: #1c1917;
+  --muted: #78716c;
+  --accent: #7c3aed;
+  --surface: #ffffff;
+  --border: #e7e5e4;
+  --gap-met: #16a34a;
+  --gap-partial: #d97706;
+  --gap-missing: #dc2626;
+  --code-bg: #f5f5f4;
+  font-family: 'IBM Plex Sans', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1c1917;
+    --fg: #e7e5e4;
+    --muted: #a8a29e;
+    --accent: #a78bfa;
+    --surface: #292524;
+    --border: #44403c;
+    --gap-met: #4ade80;
+    --gap-partial: #fbbf24;
+    --gap-missing: #f87171;
+    --code-bg: #292524;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #1c1917;
+  --fg: #e7e5e4;
+  --muted: #a8a29e;
+  --accent: #a78bfa;
+  --surface: #292524;
+  --border: #44403c;
+  --gap-met: #4ade80;
+  --gap-partial: #fbbf24;
+  --gap-missing: #f87171;
+  --code-bg: #292524;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg);
+  color: var(--fg);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 2rem;
+  max-width: 960px;
+  margin: 0 auto;
+}
+h1 {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.6rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+  text-wrap: balance;
+}
+h2 {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 2.5rem 0 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid var(--accent);
+  text-wrap: balance;
+}
+h3 {
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 1.5rem 0 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+p, li { max-width: 72ch; }
+.subtitle {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0 0 2rem;
+}
+code {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.85em;
+  background: var(--code-bg);
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+}
+.badge {
+  display: inline-block;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.15em 0.5em;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+}
+.badge-met { background: var(--gap-met); color: #fff; }
+.badge-partial { background: var(--gap-partial); color: #fff; }
+.badge-gap { background: var(--gap-missing); color: #fff; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .badge-met { color: #052e16; }
+  :root:not([data-theme="light"]) .badge-partial { color: #422006; }
+  :root:not([data-theme="light"]) .badge-gap { color: #450a0a; }
+}
+:root[data-theme="dark"] .badge-met { color: #052e16; }
+:root[data-theme="dark"] .badge-partial { color: #422006; }
+:root[data-theme="dark"] .badge-gap { color: #450a0a; }
+
+.area {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 1.25rem 1.25rem 1rem;
+  margin: 1rem 0;
+}
+.area-header {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+.area-title {
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+  font-size: 1rem;
+}
+.row-grid {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.88rem;
+  margin-bottom: 0.5rem;
+}
+.row-grid dt {
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.row-grid dd { margin: 0; min-width: 0; }
+.gap-note {
+  font-size: 0.85rem;
+  color: var(--gap-missing);
+  margin-top: 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--gap-missing);
+}
+.partial-note {
+  font-size: 0.85rem;
+  color: var(--gap-partial);
+  margin-top: 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--gap-partial);
+}
+
+/* MCP table */
+.mcp-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  margin: 0.75rem 0;
+}
+.mcp-table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 2px solid var(--border);
+  white-space: nowrap;
+}
+.mcp-table td {
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.mcp-table code { font-size: 0.9em; }
+.mcp-cat {
+  font-weight: 600;
+  color: var(--accent);
+  padding-top: 0.6rem;
+}
+.tbl-wrap { overflow-x: auto; }
+
+/* proposal comparison */
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin: 0.75rem 0;
+}
+.compare-table th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 2px solid var(--border);
+}
+.compare-table td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+@media (max-width: 600px) {
+  h1 { font-size: 1.3rem; }
+  .row-grid { grid-template-columns: 1fr; gap: 0.1rem; }
+  .row-grid dt { margin-top: 0.4rem; }
+  .area { padding: 1rem 0.75rem; }
+  body { font-size: 14px; }
+}
+</style>
+
+<h1>omicstra capability-to-deliverable report</h1>
+<p class="subtitle">verified against main @ af19798 (v1.3.0), 2026-11-02. no tests run. code-read only.</p>
+
+<!-- ===== MCP SURFACE ===== -->
+<h2>MCP surface</h2>
+<p>22 tools, 4 resources, stdio + HTTP (stateless, streamable). zero server-side model calls. the client model (Claude Desktop, Claude Code, or any MCP client) interprets questions; the server validates, computes and returns.</p>
+
+<div class="tbl-wrap">
+<table class="mcp-table">
+<thead><tr><th>#</th><th>tool</th><th>kind</th><th>does</th></tr></thead>
+<tbody>
+<tr><td colspan="4" class="mcp-cat">read - declarations and evidence</td></tr>
+<tr><td>1</td><td><code>check_eda_gate</code></td><td>read</td><td>EDA admissibility verdict from committed artifacts</td></tr>
+<tr><td>2</td><td><code>describe_encoder_fit</code></td><td>read</td><td>encoder-data compatibility per platform (footprint ratio or out-of-class)</td></tr>
+<tr><td>3</td><td><code>describe_data_structure</code></td><td>read</td><td>cohort structure: platform, encoders, dimensions, split, supervision roles</td></tr>
+<tr><td>4</td><td><code>list_task_families</code></td><td>read</td><td>biological question types this cohort can route (7 families)</td></tr>
+<tr><td>5</td><td><code>route</code></td><td>read</td><td>route question to method by rule over evidence: recommend / tie / escalate / refuse / override_ack</td></tr>
+<tr><td>6</td><td><code>decision_record</code></td><td>read</td><td>decision ledger summary: how many decisions, how resolved, reproducibility ratio</td></tr>
+<tr><td>7</td><td><code>plot_evidence</code></td><td>read+render</td><td>evidence chart for one task_id with CIs, floor, contraindications</td></tr>
+<tr><td>8</td><td><code>plot_spatial_autocorrelation</code></td><td>read+render</td><td>Moran's I: single subarray vs cohort median for encoder gate</td></tr>
+<tr><td>9</td><td><code>check_compute_gates</code></td><td>read</td><td>preflight gates for one encoder: which resolved, which open, what each forecloses</td></tr>
+<tr><td>10</td><td><code>describe_compute_plan</code></td><td>read</td><td>what compute would do: shards, existing outputs, cost estimate. runs nothing</td></tr>
+<tr><td>11</td><td><code>runs_status</code></td><td>read</td><td>run progress: shards done/missing, open gates, failures. filesystem truth</td></tr>
+<tr><td>12</td><td><code>runs_trace</code></td><td>read</td><td>run timeline: every step, duration, actor. answers "where did this spend its time"</td></tr>
+<tr><td>13</td><td><code>runs_record</code></td><td>read</td><td>run decision record: gates answered, by whom, declaration resolved from</td></tr>
+
+<tr><td colspan="4" class="mcp-cat">compute - agents and evaluation</td></tr>
+<tr><td>14</td><td><code>run_eda_step</code></td><td>compute</td><td>run one EDA step on cached data (count_statistics, marker_expression, spatial_autocorrelation, batch_structure)</td></tr>
+<tr><td>15</td><td><code>he_encode</code></td><td>compute</td><td>H&E morphology agent: preflight gates as interrupts, then dispatch shards. returns run handle</td></tr>
+<tr><td>16</td><td><code>st_encode</code></td><td>compute</td><td>ST agent: prototype floor, edge scale, gene axis. refuses undeclared inputs. returns run handle</td></tr>
+<tr><td>17</td><td><code>align_run</code></td><td>compute</td><td>resolve alignment grid from artifacts. compute=true trains contrastive + classical. EDA gate enforced</td></tr>
+<tr><td>18</td><td><code>evaluate_run</code></td><td>compute</td><td>verdict on H1/H2/H3 from evidence pack: scope gate, sha256 pin, guard-failure demotion</td></tr>
+<tr><td>19</td><td><code>evaluate_measure</code></td><td>compute</td><td>compute verdict from arrays: within-subject comparison, permutation null, off-diagonal cosine</td></tr>
+<tr><td>20</td><td><code>runs_resume</code></td><td>compute</td><td>answer open gate or re-dispatch missing shards. cross-process, survives restart</td></tr>
+<tr><td>21</td><td><code>unit_notebook</code></td><td>compute</td><td>write one analysis unit as rerunnable .ipynb + .md trace (7 units: eda, inventory, join, evaluate, 3 pathway assays)</td></tr>
+<tr><td>22</td><td><code>ask</code></td><td>compute</td><td>execute biological analysis from structured params: validate -> evaluate graph -> notebook -> provenance</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>resources (4)</h3>
+<div class="tbl-wrap">
+<table class="mcp-table">
+<thead><tr><th>URI</th><th>scope</th><th>content</th></tr></thead>
+<tbody>
+<tr><td><code>omicstra://eda-contract</code></td><td>static</td><td>generalizable EDA gate: thresholds + verdict logic, no cohort</td></tr>
+<tr><td><code>omicstra://routing-contract</code></td><td>static</td><td>task taxonomy, outcome vocabulary, decision rules, no cohort</td></tr>
+<tr><td><code>omicstra://project/{id}/routing-evidence</code></td><td>per-cohort</td><td>measured numbers a route resolves against</td></tr>
+<tr><td><code>omicstra://project/{id}/eda-summary</code></td><td>per-cohort</td><td>measured EDA summary</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>transport</h3>
+<p>stdio and HTTP are the same server. HTTP is stateless - any instance handles any request. run handle (<code>run_id</code>) is an ordinary parameter, no sticky session. protocol negotiation: MCP 2026-07-28 (july revision, OAuth 2.1 resource server); <code>REQUIRE_PROTOCOL_2026=1</code> refuses older clients.</p>
+
+<h3>decision architecture (no server-side model)</h3>
+<ul>
+  <li><code>route</code> resolves by deterministic rule over measured evidence (recommend / tie / escalate / refuse)</li>
+  <li><code>evaluate_run</code> / <code>evaluate_measure</code> compute verdicts (biological / diagnostic / unguarded / not_run) from guards and permutation statistics</li>
+  <li><code>ask</code> validates and executes, returns findings + provenance</li>
+</ul>
+<p>synthesis (drawing conclusions across hypotheses, writing the narrative) happens on the client model, not in the server. there is no server-side "judge" or "brain" agent.</p>
+
+
+<!-- ===== 10-AREA TABLE ===== -->
+<h2>capability-to-deliverable: 10 areas</h2>
+
+<!-- 1. DATA INPUT -->
+<div class="area">
+<div class="area-header">
+  <span class="area-title">1. data input</span>
+  <span class="badge badge-partial">partial</span>
+</div>
+<dl class="row-grid">
+  <dt>entry point</dt>
+  <dd><code>scripts/ingest_tnbc92.py</code> (CLI, one script per cohort), <code>describe_data_structure</code> (MCP, read)</dd>
+  <dt>code path</dt>
+  <dd>ingest script -> <code>adapters/canonical.py</code> Sample dataclass -> .h5ad + _spots.parquet + ingest.json under <code>projects/{id}/data/canonical/</code></dd>
+  <dt>inputs</dt>
+  <dd>native format files (byArray/, Images/, clinical). format-specific reader lives in the script, not the package</dd>
+  <dt>output</dt>
+  <dd>.h5ad (counts), coordinates parquet, ingest.json (record with sha256, n_spots, gene_axis per section). parquet and h5ad git-ignored; ingest.json tracked</dd>
+  <dt>verification</dt>
+  <dd>tnbc-92: 280 samples, 0 coordinate mismatches vs cache. canonical.py deliberately thin - adding a cohort costs an ingest script and no package edit</dd>
+  <dt>MCP</dt>
+  <dd><code>describe_data_structure</code> reads declarations (platform, encoders, dimensions, split, supervision). <code>describe_compute_plan</code> reads ingest record for unit counts</dd>
+</dl>
+<div class="partial-note">gap: one hand-written script per cohort. HEST ingest is a stub. no schema-driven contract yet (completion_roadmap WS 2-3). the adapter contract (canonical.py) is the stopping condition for checkpoint 1</div>
+</div>
+
+<!-- 2. EDA -->
+<div class="area">
+<div class="area-header">
+  <span class="area-title">2. EDA</span>
+  <span class="badge badge-met">met</span>
+</div>
+<dl class="row-grid">
+  <dt>entry point</dt>
+  <dd><code>omicstra eda</code> (CLI), <code>check_eda_gate</code> / <code>run_eda_step</code> / <code>plot_spatial_autocorrelation</code> (MCP)</dd>
+  <dt>code path</dt>
+  <dd><code>protocols/eda.py</code> (10 checks) -> <code>graphs/eda.py</code> (subgraph, one interrupt) -> eda_summary.json. steps with no fn body report <code>not_run</code> rather than being silently absent</dd>
+  <dt>inputs</dt>
+  <dd>canonical .h5ad, eda_contract.json (thresholds + verdict logic)</dd>
+  <dt>output</dt>
+  <dd><code>eda_summary.json</code> with verdict (proceed / proceed_with_caution / stop), per-check results, authority (universal / cohort_calibrated / advisory)</dd>
+  <dt>verification</dt>
+  <dd>tnbc-92: proceed_with_caution. wired into level 0 as first gate. <code>run_eda_step</code> computes on cached subset with explicit scope_warning (not representative)</dd>
+  <dt>MCP</dt>
+  <dd><code>check_eda_gate</code> reads verdict. <code>run_eda_step</code> computes 4 steps (count_statistics, marker_expression, spatial_autocorrelation, batch_structure). <code>plot_spatial_autocorrelation</code> renders Moran's I chart. resources: <code>omicstra://eda-contract</code>, <code>omicstra://project/{id}/eda-summary</code></dd>
+</dl>
+<div class="partial-note">known items: 3 checks declared with no implementation (open_items #19). Moran's I gated on single subarray, not cohort median (#14). mitochondrial-fraction exclusion not implemented (#18)</div>
+</div>
+
+<!-- 3. REPRESENTATIONS -->
+<div class="area">
+<div class="area-header">
+  <span class="area-title">3. representations (encoding)</span>
+  <span class="badge badge-partial">partial</span>
+</div>
+<dl class="row-grid">
+  <dt>entry point</dt>
+  <dd><code>he_encode</code> / <code>st_encode</code> (MCP), <code>omicstra encode</code> (CLI)</dd>
+  <dt>code path</dt>
+  <dd><code>graph.py</code> discover -> <code>graphs/encode.py</code> preflight (5 gates) -> dispatch shards per section. <code>models/encoders.py</code> registry: <code>spec()</code> is metadata only (no tensor library), <code>load()</code> requires it. third-party registration supported</dd>
+  <dt>inputs</dt>
+  <dd>canonical data, encoder declarations, platform geometry (tile size, edge scale). <code>st_encode</code> refuses undeclared edge scale / gene axis - neither has a default</dd>
+  <dt>output</dt>
+  <dd>embeddings under <code>data/embeddings/</code> (virchow2_niche/ 1280d, novae/ 64d). cache is the oracle - port verified by diff against it, not by re-extracting</dd>
+  <dt>verification</dt>
+  <dd>tnbc-92 H&E: port accepted vs cache, both backends. compute gates wired into level 0, fire zero gates on seed cohort. <code>omicstra worker</code> encode queue process ships in v1.3</dd>
+  <dt>MCP</dt>
+  <dd><code>check_compute_gates</code> (read gates), <code>describe_compute_plan</code> (what would run, cost estimate), <code>he_encode</code> (run or plan), <code>st_encode</code> (run or plan). run handle: <code>runs_status</code> / <code>runs_resume</code> / <code>runs_trace</code> / <code>runs_record</code></dd>
+</dl>
+<div class="partial-note">gap: <code>graphs/encode.py</code> defaults to virchow2 in 6 <code>.get("encoder", "virchow2")</code> calls. novae <code>load()</code> never exercised on live data (cache was computed externally). no encode notebook unit. encoder registry is declaration-driven but the graph that calls it is not</div>
+</div>
+
+<!-- 4. JOIN AND ALIGNMENT -->
+<div class="area">
+<div class="area-header">
+  <span class="area-title">4. join and alignment</span>
+  <span class="badge badge-partial">partial</span>
+</div>
+<dl class="row-grid">
+  <dt>entry point</dt>
+  <dd><code>align_run</code> (MCP), graph.py COMPUTE_CHAIN</dd>
+  <dt>code path</dt>
+  <dd>graph.py -> <code>graphs/align.py</code> (EDA gate enforced) -> <code>protocols/join.py</code> (11 JOIN_STEPS) -> alignment LCEL chain (load_data, split, train, embed_test, evaluate_and_save). classical baselines via <code>scripts/align_classical.py</code></dd>
+  <dt>inputs</dt>
+  <dd>embeddings from encode, niche structure, cohort declarations. R1-R5: 576d ST (novae 64 + gpath2vec 512). R6: novae only 64d. Virchow2: 1280d. shared space: 512d</dd>
+  <dt>output</dt>
+  <dd>aligned 512d embeddings under <code>runs/{id}/</code>. 10-arm grid: 6 contrastive (R1-R6) + 3 classical baselines (B1-B3) + 1 untrained control (B4)</dd>
+  <dt>verification</dt>
+  <dd>v3 grid: 13/13 metrics at 0.00e+00 (deterministic). <code>align_run</code> resolves grid from recorded artifacts. EDA gate is first constraint enforced here</dd>
+  <dt>MCP</dt>
+  <dd><code>align_run</code> (resolve or train, behind run handle). same 4 handle tools</dd>
+</dl>
+<div class="gap-note">gap: <code>adapters/alignment_data.py</code> hardcodes virchow2_niche, virchow2_cell_tokens with .reshape(7,1280), patient_id (lines 29-82). <code>protocols/join.py</code> hardcodes SUPERVISION_ONLY and FEATURE_COLUMNS frozensets. alignment has never executed through the package - scripts are still the method (#33). no alignment notebook unit</div>
+</div>
+
+<!-- 5. EVALUATION -->
+<div class="area">
+<div class="area-header">
+  <span class="area-title">5. evaluation</span>
+  <span class="badge badge-met">met</span>
+</div>
+<dl class="row-grid">
+  <dt>entry point</dt>
+  <dd><code>evaluate_run</code> / <code>evaluate_measure</code> (MCP), graph.py COMPUTE_CHAIN evaluate stage</dd>
+  <dt>code path</dt>
+  <dd><code>graphs/evaluate.py</code> -> <code>protocols/evaluate.py</code> (6 guards G1-G6, EVALUATE_STEPS) -> <code>measures/</code> (pure functions, no ctx). two arms: pack arm (reads evidence, states verdict) and compute arm (measures from arrays)</dd>
+  <dt>inputs</dt>
+  <dd>pack arm: evidence pack (routing_evidence.json), artifact sha256 pins. compute arm: aligned embeddings, label, confounder axis from project.json REQUIRED fields (niches_dir, runs_dir, h2_label, headline_view, supervision, seed)</dd>
+  <dt>output</dt>
+  <dd>per-hypothesis verdict: biological / diagnostic / unguarded / not_run. three gates: scope, sha256 pin (mismatch = refuse), guard-failure demotion</dd>
+  <dt>verification</dt>
+  <dd><code>adapters/evaluation.py</code> REQUIRED + <code>declared()</code> pattern: refuses with every missing field named. v1.3: evaluate_run behind run handle, verdicts per hypothesis. <code>preflight_evaluate</code> checks scope, sha256, claim type</dd>
+  <dt>MCP</dt>
+  <dd><code>evaluate_run</code> (from pack), <code>evaluate_measure</code> (from arrays, minutes not milliseconds). <code>ask</code> reaches evaluation through <code>question.py</code></dd>
+</dl>
+<div class="partial-note">known items: contract declares 7 guards, raw_floor and untrained_control unimplemented. 3 circularity checks hardcode <code>z_he</code> (not 6 - completion_roadmap error). silent defaults in contracts/project.py for h2_label, supervision, headline_view</div>
+</div>
+
+<!-- 6. QUESTION ORCHESTRATION -->
+<div class="area">
+<div class="area-header">
+  <span class="area-title">6. question orchestration</span>
+  <span class="badge badge-partial">partial</span>
+</div>
+<dl class="row-grid">
+  <dt>entry point</dt>
+  <dd><code>ask</code> (MCP), <code>omicstra ask</code> (CLI), <code>question.py</code> interpret_and_execute</dd>
+  <dt>code path</dt>
+  <dd>three clients (Claude Desktop, Claude Code, CLI) reach the same path. client interprets question -> structured params -> <code>question.validate()</code> against declarations -> <code>question.execute()</code> -> <code>build_evaluate_graph()</code> directly -> ExecutionResult (report, records, notebook, provenance)</dd>
+  <dt>inputs</dt>
+  <dd>task_id (from list_task_families), run, project_id. validate() checks task_id against routing contract, run against declared runs, resolves evaluate_params steps per TASK_FAMILY_STEPS (7 families mapped to step sequences)</dd>
+  <dt>output</dt>
+  <dd>ExecutionResult: report dict, records list, notebook path, trace path, provenance (question, interpretation model, param sources, all linked)</dd>
+  <dt>verification</dt>
+  <dd><code>validate()</code> refuses with every problem named at once (not one per call). provenance records interpretation_model and interpretation_source so the model boundary is attributed</dd>
+  <dt>MCP</dt>
+  <dd><code>list_task_families</code> -> <code>route</code> -> <code>ask</code>. routing: 5 resolutions (recommend, tie, escalate, refuse, override_ack). <code>decision_record</code> for the ledger. <code>plot_evidence</code> to see the numbers</dd>
+</dl>
+<div class="gap-note">gap: <code>execute()</code> calls <code>build_evaluate_graph()</code> directly, bypassing <code>discover()</code> and the COMPUTE_CHAIN (#44). cannot trigger upstream work when artifacts are missing. a question whose data has not been encoded gets an execution failure, not a plan of what to compute. completion_roadmap WS 5</div>
+</div>
+
+<!-- 7. PATHWAY WORKFLOWS -->
+<div class="area">
+<div class="area-header">
+  <span class="area-title">7. pathway workflows</span>
+  <span class="badge badge-partial">partial</span>
+</div>
+<dl class="row-grid">
+  <dt>entry point</dt>
+  <dd><code>graph.py</code> pathway_assay bridge node (line 364), wired into COMPUTE_CHAIN between st and align</dd>
+  <dt>code path</dt>
+  <dd><code>_task_needs_pathway()</code> checks flags -> <code>pathway_assay()</code> resolves required artifacts from _FLAG_TO_SLOT (include_pathway_scores -> AUCell chain, include_pathway_cosines -> gpath2vec cosines). existing artifact on disk = reused. missing + producible = computed. missing + unproducible = refused, chain stops before align</dd>
+  <dt>inputs</dt>
+  <dd><code>include_pathway_scores</code> / <code>include_pathway_cosines</code> flags on OmicstraState. pathway_params from cohort. project.json pathway slot declarations</dd>
+  <dt>output</dt>
+  <dd>records in graph state (per-sample, per-step). stages accumulator (reducer). report for _continue decision</dd>
+  <dt>verification</dt>
+  <dd>demonstrated: AUCell chain on synthetic data (6 steps pass), artifact reuse, failure propagation, flag-driven selection, refusal on missing unproducible artifacts, per-sample records, notebook generation for 3 pathway units (assay_pathway_genesets, assay_pathway_aucell, assay_niche_membership)</dd>
+  <dt>MCP</dt>
+  <dd><code>ask</code> with <code>include_pathway_scores=True</code>. <code>unit_notebook</code> for pathway units</dd>
+</dl>
+<div class="gap-note">gap: computed scores exist only in graph state, not as saved artifact on disk (explicit TODO in code, #45). downstream consumption by the selected analysis not demonstrated - AUCell scores need to reach the analysis that uses them (#46). completion_roadmap WS 6</div>
+</div>
+
+<!-- 8. DELIVERY -->
+<div class="area">
+<div class="area-header">
+  <span class="area-title">8. delivery (report + notebook)</span>
+  <span class="badge badge-partial">partial</span>
+</div>
+<dl class="row-grid">
+  <dt>entry point</dt>
+  <dd><code>unit_notebook</code> (MCP), <code>report.py</code> (template), <code>notebook.py</code> (generator)</dd>
+  <dt>code path</dt>
+  <dd><code>notebook.py</code>: 7 UNITS (eda, inventory, join, evaluate, assay_pathway_genesets, assay_pathway_aucell, assay_niche_membership). <code>from_ledger()</code> reads decision ledger -> <code>write()</code> generates .ipynb + .md trace. each cell calls the same step function with recorded params and checks numbers. <code>report.py</code>: pack + ledger in, markdown out, no cohort in the renderer. three rules: section appears because input exists, computed/authored stay marked, nothing recomputed</dd>
+  <dt>inputs</dt>
+  <dd>decision ledger records (<code>runs/{id}/records/decisions.jsonl</code>). report.py takes one dict (_DECLARATIONS: cohort, platform, project, inventory, eda)</dd>
+  <dt>output</dt>
+  <dd>rerunnable .ipynb + .md trace per unit. report markdown from template</dd>
+  <dt>verification</dt>
+  <dd>notebook generation demonstrated for all 7 units. cells are PLACES=4 precision. a clean rerun is the reproduction proof</dd>
+  <dt>MCP</dt>
+  <dd><code>unit_notebook</code> writes one unit. refuses unit with no ledger records (chain run outside graph writes none). <code>ask</code> generates evaluate notebook from execution records</dd>
+</dl>
+<div class="partial-note">gap: encode and alignment units not covered by notebook.py (encoders are not step chains - a notebook would re-run the encoder). report renderer not connected to graph output - pipeline is reproducible, report is not (#4). CLI step chains write no ledger records (#43)</div>
+</div>
+
+<!-- 9. GENERALIZABILITY -->
+<div class="area">
+<div class="area-header">
+  <span class="area-title">9. generalizability</span>
+  <span class="badge badge-partial">partial</span>
+</div>
+<dl class="row-grid">
+  <dt>entry point</dt>
+  <dd><code>adapters/canonical.py</code> (input contract), <code>adapters/evaluation.py</code> REQUIRED + <code>declared()</code>, <code>contracts/project.py</code> ProjectConfig, <code>models/encoders.py</code> registry</dd>
+  <dt>pattern</dt>
+  <dd>declaration-driven where implemented: <code>declared()</code> reads project.json, refuses with every missing field named. encoder registry resolves by declared name. <code>spec()</code> is metadata only. canonical.py is deliberately thin - format-specific readers live in scripts. <code>StGraph</code> requires declared <code>scale_to_microns</code> (no default). ingest scripts are per-cohort, not per-format</dd>
+  <dt>what works</dt>
+  <dd>EDA chain, routing, evaluate (both arms), inventory, notebook generation - all cohort-free in code, proven against synthetic and scaffolded cohorts</dd>
+  <dt>verification</dt>
+  <dd>292 tests at v1.3. cohort-free is nearly all yes (per capabilities.md). scaffolded cohort loads and refuses cleanly when declarations missing</dd>
+</dl>
+<div class="gap-note">concrete hardcoded blockers (all completion_roadmap WS 2-4):
+<br>- <code>adapters/alignment_data.py</code>: virchow2_niche, .reshape(7,1280), patient_id
+<br>- <code>protocols/join.py</code>: SUPERVISION_ONLY, FEATURE_COLUMNS frozensets
+<br>- <code>protocols/evaluate.py</code>: 3 circularity checks hardcode z_he, 7 other z_he uses
+<br>- <code>graphs/encode.py</code>: 6x .get("encoder", "virchow2")
+<br>- <code>contracts/project.py</code>: silent defaults for h2_label (mc_megacluster), supervision (mc_weights_niche), headline_view (z_he)
+<br>- <code>adapters/evaluation.py</code>: NAMED_PATHWAY_TARGETS hardcoded
+<br>no second cohort exercised end-to-end. cross-cohort behavior not verified</div>
+</div>
+
+<!-- 10. RELEASE COMMITMENTS -->
+<div class="area">
+<div class="area-header">
+  <span class="area-title">10. release commitments</span>
+  <span class="badge badge-gap">gaps</span>
+</div>
+<dl class="row-grid">
+  <dt>GitHub</dt>
+  <dd><span class="badge badge-met">met</span> public repo, MIT license, v1.3.0 tagged on main (af19798)</dd>
+  <dt>PyPI</dt>
+  <dd><span class="badge badge-met">met</span> v1.3.0 published (2026-11-02). <code>pip install omicstra</code></dd>
+
+  <dt>Zenodo</dt>
+  <dd><span class="badge badge-partial">partial</span> v1.3.0 archived via GitHub integration (DOI 10.5281/zenodo.23889649). concept record description stale - still describes v1.1/v1.2 features</dd>
+  <dt>manuscript</dt>
+  <dd><span class="badge badge-partial">in progress</span> results summary exists as internal doc, not submitted to ResearchHub Journal</dd>
+  <dt>2nd cohort</dt>
+  <dd><span class="badge badge-partial">in progress</span> v1.3 defining claim. tracked: completion_roadmap WS 10</dd>
+  <dt>Bedrock test</dt>
+  <dd><span class="badge badge-met">met</span> end-to-end: 7 tool calls, 0 mismatches</dd>
+</dl>
+</div>
+
+
+<!-- ===== PROPOSAL COMPARISON ===== -->
+<h2>proposal deliverables vs actual</h2>
+
+<h3>scientific hypotheses</h3>
+<div class="tbl-wrap">
+<table class="compare-table">
+<thead><tr><th>hypothesis</th><th>proposal</th><th>actual</th><th>status</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>H1</strong> cross-modal retrieval</td>
+  <td>contrastive beats 3 baselines, R@K/MRR/AUC, 0.65-0.75 range</td>
+  <td>R4 AUC 0.859 [0.857, 0.862] exceeds range. all 6 contrastive beat every baseline. 10-arm grid vs proposed ~4 conditions. 95% CIs on all metrics</td>
+  <td><span class="badge badge-met">exceeded</span></td>
+</tr>
+<tr>
+  <td><strong>H2-A</strong> structural coherence</td>
+  <td>9 archetypes cluster better in aligned space (ARI + silhouette)</td>
+  <td>construct-validity correction: archetype is patient-level pseudobulk (NMI 0.89 vs patient_id). corrected to mc_megacluster 14-class NMF. 5x ARI lift over raw ST</td>
+  <td><span class="badge badge-met">met + corrected</span></td>
+</tr>
+<tr>
+  <td><strong>H2-B</strong> compartment coherence</td>
+  <td>tumor/TLS/necrosis > stroma on cosine</td>
+  <td>B.1: TLS direction holds, tumor/necrosis invert (annotation granularity). B.2: morphology-preserving methods win, contrastive degrades. 6 Welch contrasts computed</td>
+  <td><span class="badge badge-partial">partially supported</span></td>
+</tr>
+<tr>
+  <td><strong>H2-C</strong> bio-vs-patient</td>
+  <td>(extension, not in original)</td>
+  <td>R6 ratio 0.547. B1 disqualified (0.071, below floor). z-test per arm</td>
+  <td><span class="badge badge-met">extension, supported</span></td>
+</tr>
+<tr>
+  <td><strong>H3</strong> pathway CCA</td>
+  <td>5 Reactome pathways via CCA + spatial maps</td>
+  <td>cross-patient sub-split R4: 4/4 testable pathways significant (z_A 11.2-25.4). both AUCell and gpath2vec arms. DAG extension 395 nodes. aliased specificity (0.97) is SOURCE of generalization</td>
+  <td><span class="badge badge-met">exceeded</span></td>
+</tr>
+<tr>
+  <td><strong>systems</strong></td>
+  <td>no single method dominates</td>
+  <td>confirmed. task-conditional routing table derived. v1->v3 reproducibility confirmed</td>
+  <td><span class="badge badge-met">met</span></td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h3>architecture deviations (deliberate)</h3>
+<div class="tbl-wrap">
+<table class="compare-table">
+<thead><tr><th>proposal</th><th>actual</th><th>why</th></tr></thead>
+<tbody>
+<tr>
+  <td>Claude Sonnet for routing inside server</td>
+  <td>deterministic rule over evidence; model on client</td>
+  <td>routing decisions must be reproducible. a model call is not reproducible. decision ledger records actor: deterministic | llm | human</td>
+</tr>
+<tr>
+  <td>Claude Opus for hypothesis evaluation</td>
+  <td>evaluation is computed metrics + guards, zero model calls server-side</td>
+  <td>a verdict is a measurement, not a judgement. the server computes; the client synthesizes</td>
+</tr>
+<tr>
+  <td>4 components (H&E agent, ST agent, alignment, eval)</td>
+  <td>22 tools, 7 graph files, 6-stage compute chain, 4 resources</td>
+  <td>finer-grained tools enable finer-grained client control</td>
+</tr>
+<tr>
+  <td>Novae 256d, UNI2 1536d</td>
+  <td>Novae 64d, Virchow2 1280d</td>
+  <td>Virchow2 selected via MC linear probe comparison. Novae dim was wrong in proposal</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<h3>proposal factual errors</h3>
+<div class="tbl-wrap">
+<table class="compare-table">
+<thead><tr><th>proposal says</th><th>actual</th></tr></thead>
+<tbody>
+<tr><td>"co-registered Visium"</td><td>original ST (Stahl 2016): 1934 spots, 100um, 150um c-c</td></tr>
+<tr><td>">18,000 co-registered spatial spots"</td><td>208,786 niches (after funnel); 270k-286k spots before</td></tr>
+<tr><td>"17 morphological categories"</td><td>15 tissue classes + 3 non-tissue columns</td></tr>
+<tr><td>"Novae 256-d"</td><td>64-d novae_latent. ST input is 576-d (64 + 512 gpath2vec)</td></tr>
+<tr><td>"UNI2 1536-d, H&E 1536 to 512"</td><td>Virchow2 1280-d, 1280 to 512</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>all corrected in <code>projects/tnbc-92/proposal_deviations.md</code>. none changes a computed result.</p>
+
+
+<!-- ===== WHAT'S MORE COMPLETE ===== -->
+<h2>what exceeds the proposal</h2>
+<ol>
+  <li><strong>10-arm grid</strong> (6 contrastive + 4 baselines) vs proposed ~4 conditions</li>
+  <li><strong>construct-validity audit</strong> that caught archetype = patient pseudobulk, corrected H2</li>
+  <li><strong>bio-vs-patient diagnostic</strong> (H2-C) caught B1 CCA patient amplification (z=122, 3x raw)</li>
+  <li><strong>cross-patient sub-split</strong> for H3 - within-cohort CCA saturates; cross-patient discriminates</li>
+  <li><strong>DAG decomposition</strong> - 395 sub-pathway nodes with interpretable hits (BTLA, integrin, collagen)</li>
+  <li><strong>evidence-based routing</strong> with 5 resolutions, not the proposed model-in-server routing</li>
+  <li><strong>95% CIs</strong> on all headline metrics (Hanley-McNeil for AUC, patient-bootstrap for ARI)</li>
+  <li><strong>v1 -> v3 reproducibility</strong> - directional verdicts reproduce across gpath2vec retrain</li>
+  <li><strong>gpath2vec v3.0.0</strong> released as standalone package (DOI assigned)</li>
+  <li><strong>MCP protocol 2026-07-28</strong> with OAuth 2.1 resource server support</li>
+</ol>
+
+
+<!-- ===== REMAINING WORK ===== -->
+<h2>remaining work, dependency-ordered</h2>
+<p>preserves the shared biomedical schema and question-to-answer goal from the completion roadmap.</p>
+
+<div class="tbl-wrap">
+<table class="compare-table">
+<thead><tr><th>order</th><th>item</th><th>WS</th><th>blocks</th><th>effort</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>standards decision: what to reuse from HTAN2 + schema_crush, what omicstra defines</td><td>2</td><td>everything below</td><td>4-6h</td></tr>
+<tr><td>2</td><td>LinkML schema: Representation with derivation lineage, observation identities</td><td>2</td><td>3, 4</td><td>8-10h</td></tr>
+<tr><td>3</td><td>source mapping: replace hardcoded columns in alignment_data.py, join.py</td><td>3</td><td>4, 5</td><td>8-10h</td></tr>
+<tr><td>4</td><td>analytical bindings: replace z_he circularity checks, silent defaults, encoder name branches</td><td>4</td><td>5, 6</td><td>6-8h</td></tr>
+<tr><td>5</td><td>question enters discover(), resolves COMPUTE_CHAIN dependencies</td><td>5</td><td>6</td><td>6-8h</td></tr>
+<tr><td>6</td><td>pathway persistence + downstream consumption + interrupt/resume to results</td><td>6</td><td>7, 8</td><td>4-6h</td></tr>
+<tr><td>7</td><td>alignment through the package (not scripts)</td><td>7</td><td>8</td><td>8-12h</td></tr>
+<tr><td>8</td><td>delivery bundle: answer + report + notebook + provenance linked</td><td>8</td><td>10</td><td>4-6h</td></tr>
+<tr><td>9</td><td>second cohort end-to-end (the release claim)</td><td>10</td><td>11</td><td>4-6h</td></tr>
+<tr><td>10</td><td>publication artifacts: Zenodo, PyPI 1.3, manuscript</td><td>11</td><td>-</td><td>4-6h</td></tr>
+</tbody>
+</table>
+</div>
+<p>total: 57-78h. checkpoint 1 (WS 1-3, schema + normalization): ~20-26h.</p>
+
+<h3>de-novo clustering for ground truth</h3>
+<p>cohorts without supplied annotations need de-novo niche-type labels for evaluation. the evaluation chain requires an h2_label (niche-type classification) and a supervision signal. a de-novo labeling protocol produces these from the cohort's own embeddings. open_items #48, links to WS 4 + WS 7.</p>
+
+<div class="area">
+<div class="area-header">
+  <span class="area-title">de-novo labeling protocol</span>
+  <span class="badge badge-gap">not built</span>
+</div>
+<dl class="row-grid">
+  <dt>level</dt>
+  <dd>level 2 protocol (fixed method, no state, no interrupt). callable from a notebook</dd>
+  <dt>inputs</dt>
+  <dd>an embedding already on disk (molecular or morphological niche vectors), a resolution parameter (analytical binding, layer 3), a minimum cluster size (method constraint)</dd>
+  <dt>method</dt>
+  <dd>leiden clustering on the encoder's niche embeddings</dd>
+  <dt>output</dt>
+  <dd>a per-niche integer label column, declared as h2_label in the cohort's project.json. the existing evaluation chain scores against it identically to a supplied label - the binding is different, the chain is the same</dd>
+  <dt>where</dt>
+  <dd><code>protocols/</code> as a level 2 step chain. the binding that selects it is layer 3 (WS 4). the protocol itself is WS 7</dd>
+</dl>
+
+<h3 style="margin-top: 1rem; font-size: 0.85rem;">why these choices</h3>
+<dl class="row-grid">
+  <dt>molecular encoder</dt>
+  <dd>the graph attention network learns per-edge attention weights over the spatial graph, so its latent space already encodes spatial co-expression structure. no separate spatial graph construction or spatial-vs-feature weighting needed - clustering its output directly produces niche types that reflect both expression and spatial context</dd>
+  <dt>morphological encoder</dt>
+  <dd>the niche embedding (mean over k+1 tiles within the niche footprint) captures local tissue architecture through the tiling geometry. clustering it produces morphology-derived niche types without pathologist annotation</dd>
+  <dt>leiden</dt>
+  <dd>guarantees connected communities - every member has a path to every other member through the community subgraph. louvain can produce internally disconnected clusters. resolution is the only free parameter and is declared as a binding</dd>
+</dl>
+
+<h3 style="margin-top: 1rem; font-size: 0.85rem;">validation on the seed cohort</h3>
+<ul style="font-size: 0.88rem;">
+  <li>run leiden at several resolutions on both encoder outputs</li>
+  <li>compare against the 6 existing labels (14-class NMF, 17 morphological categories, TLS signature, TIME, patient_id, spatial archetypes) using ARI, NMI and homogeneity</li>
+  <li>de-novo labels should recover niche-level biology (correlate with NMF and morphological categories) and not patient identity (low NMI against patient_id)</li>
+  <li>this comparison is a notebook, not a gate - it calibrates the method rather than blocking it</li>
+</ul>
+</div>
+
+<h3>corrections to committed docs</h3>
+<ul>
+  <li><code>CLAUDE.md</code> line 172: says "21 tools" - should be 22 (<code>ask</code> added after narrative)</li>
+  <li><code>completion_roadmap.md</code> line 149: says "6 circularity checks" - actually 3 circularity checks + 7 other z_he uses</li>
+  <li><code>completion_roadmap.md</code> line 368: says "protocols/evaluate.py" has REQUIRED + declared() - correct location is <code>adapters/evaluation.py</code></li>
+</ul>

@@ -142,6 +142,7 @@ also:
 
 | doc | role |
 |-----|------|
+| `docs/capability_report.html` | 10-area capability-to-deliverable table, MCP surface, proposal comparison |
 | `design/completion_roadmap.md` | 11 workstreams, approved for checkpoint 1 |
 | `docs/open_items.md` | 39+ items with status, the full gap ledger |
 | `design/graph.md` | which file owns which step |

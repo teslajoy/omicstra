@@ -146,7 +146,8 @@ load.
   embedding appears in the derivation chain of the view being tested
 
 **what this replaces in code**: `protocols/evaluate.py` hardcoding `z_he` in
-6 circularity checks. `graphs/encode.py` defaulting to `virchow2`.
+3 circularity checks (plus 7 other z_he uses as defaults and filters).
+`graphs/encode.py` defaulting to `virchow2`.
 `agents/modality.py` resolving by encoder name. `contracts/project.py` silent
 defaults for h2_label/supervision/headline_view. `NAMED_PATHWAY_TARGETS`
 hardcoded in evaluation adapter.
