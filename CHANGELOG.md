@@ -1,5 +1,15 @@
 # changelog
 
+## v1.3.0 (2026-11-02)
+
+- H2-C biology scoring ported to measures/, verified against historical artifacts
+- H3 pathway CCA through graph with cached permutations + multivariate variant 2
+- question-to-execution path restored
+- notebook generation: pathway context loader, all 7 units generable, chain persists records
+- pathway_assay bridge node with flag-driven artifact selection; missing inputs block the chain
+- pytest markers (paid_api, resource_intensive) exclude costly tests from routine CI
+- version consistency enforced across pyproject.toml, server.json, CITATION.cff, .zenodo.json
+
 ## v1.3.0a2 (2026-10-27)
 
 alignment chain integration. dispatch is configuration-driven: each run config
