@@ -374,6 +374,7 @@ def _step_load_data(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     niches_dir = Path(p["niches_dir"])
     st_features = tuple(p["st_features"])
     subset_n = p.get("subset_n")
+    project_dir = p.get("project_dir")
 
     paths = discover_subarrays(niches_dir)
     if not paths:
@@ -385,7 +386,8 @@ def _step_load_data(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     if subset_n:
         paths = paths[:subset_n]
 
-    subarrays = [load_subarray(path, st_features) for path in paths]
+    subarrays = [load_subarray(path, st_features, project_dir=project_dir)
+                 for path in paths]
     n_spots = sum(len(s["spot_id"]) for s in subarrays)
     n_dropped = sum(s["n_dropped_nan"] for s in subarrays)
 
@@ -541,7 +543,7 @@ def _step_evaluate_and_save(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
 ALIGN_TRAIN_STEPS: list[Step] = [
     Step(id="load_data", fn=_step_load_data,
          produces=frozenset({"subarrays"}),
-         params_space=("niches_dir", "st_features", "subset_n")),
+         params_space=("niches_dir", "st_features", "subset_n", "project_dir")),
     Step(id="split", fn=_step_split,
          produces=frozenset({"split"}),
          requires=frozenset({"subarrays"}),
@@ -565,7 +567,8 @@ ALIGN_TRAIN_STEPS: list[Step] = [
 ]
 
 
-def _train_contrastive_chain(run_cfg: dict, niches_dir: str, run_dir: Path) -> dict:
+def _train_contrastive_chain(run_cfg: dict, niches_dir: str, run_dir: Path,
+                             project_dir: str | None = None) -> dict:
     """invoke the five-step LCEL chain for one contrastive run.
 
     returns the records dict from build_protocol - one entry per step id,
@@ -578,6 +581,7 @@ def _train_contrastive_chain(run_cfg: dict, niches_dir: str, run_dir: Path) -> d
             "niches_dir": niches_dir,
             "st_features": tuple(run_cfg.get("st_features", ("novae_niche", "gpath2vec_niche"))),
             "subset_n": run_cfg.get("subset_n_subarrays"),
+            "project_dir": project_dir,
         },
         "split": {
             "val_frac": run_cfg.get("val_frac", 0.15),
@@ -715,7 +719,7 @@ def _step_fit_project(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
 CLASSICAL_BASELINE_STEPS: list[Step] = [
     Step(id="load_data", fn=_step_load_data,
          produces=frozenset({"subarrays"}),
-         params_space=("niches_dir", "st_features", "subset_n")),
+         params_space=("niches_dir", "st_features", "subset_n", "project_dir")),
     Step(id="apply_reference_split", fn=_step_apply_reference_split,
          produces=frozenset({"matrices"}),
          requires=frozenset({"subarrays"}),
@@ -733,6 +737,7 @@ CLASSICAL_BASELINE_STEPS: list[Step] = [
 
 def _train_classical_chain(
     run_cfg: dict, niches_dir: str, ref_split_path: Path, run_dir: Path,
+    project_dir: str | None = None,
 ) -> dict:
     """invoke the four-step chain for one classical baseline.
 
@@ -754,6 +759,7 @@ def _train_classical_chain(
             "niches_dir": niches_dir,
             "st_features": tuple(run_cfg.get(
                 "st_features", ("novae_niche", "gpath2vec_niche"))),
+            "project_dir": project_dir,
         },
         "apply_reference_split": {
             "reference_split": str(ref_split_path),
@@ -822,6 +828,8 @@ def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = Non
     if missing:
         _refuse_protected(cfg, root, "train into")
 
+    project_dir = str(settings.project_root(project_id)) if project_id else None
+
     computed: list[str] = []
     chain_records: dict[str, dict] = {}
     for rid in missing:
@@ -831,7 +839,7 @@ def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = Non
         if method == "contrastive":
             if use_package:
                 recs = _train_contrastive_chain(
-                    run_cfg, nj.niches_dir, root / rid)
+                    run_cfg, nj.niches_dir, root / rid, project_dir=project_dir)
                 chain_records[rid] = recs
             else:
                 cfg_path = settings.resolve(Path("configs/v3")) / f"{rid}.json"
@@ -845,7 +853,7 @@ def run_align(cfg: ProjectConfig, nj: NicheJoin, run_ids: list[str] | None = Non
             ref = root / ref_run / "split.json"
             if use_package:
                 recs = _train_classical_chain(
-                    run_cfg, nj.niches_dir, ref, root / rid)
+                    run_cfg, nj.niches_dir, ref, root / rid, project_dir=project_dir)
                 chain_records[rid] = recs
             else:
                 common = ["--reference-split", str(ref), "--run-id", rid,

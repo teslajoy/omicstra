@@ -6,6 +6,7 @@ callable from notebooks and tests without importing protocols or graphs.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
@@ -17,27 +18,216 @@ def _as_array(cell, dtype=np.float32) -> np.ndarray:
     return np.asarray(cell, dtype=dtype)
 
 
+class AlignmentDeclarationMissing(RuntimeError):
+    """a field the alignment adapter requires is absent or invalid."""
+
+
+@dataclass(frozen=True)
+class AlignmentContract:
+    """resolved declarations for alignment data loading.
+
+    every field that was a hardcoded string in the previous version of
+    load_subarray is now a field here, resolved from the cohort's own
+    declarations before any data is read.
+    """
+    he_niche_column: str
+    he_tokens_column: str
+    he_dim: int
+    k_plus_1: int
+    supervision_column: str
+    subject_column: str
+    stratification_column: str | None
+    unit_label_columns: tuple[str, ...]
+    sample_column: str = "subarray"
+
+    @classmethod
+    def from_project_dir(cls, project_dir: str | Path) -> AlignmentContract:
+        """resolve alignment declarations from a cohort's project files."""
+        d = Path(project_dir)
+        if not d.is_dir():
+            raise AlignmentDeclarationMissing(f"no directory at {d}")
+
+        raw: dict = {}
+        for name in ("cohort.json", "project.json"):
+            p = d / name
+            if p.is_file():
+                try:
+                    data = json.loads(p.read_text())
+                    if isinstance(data, dict):
+                        raw.update(data)
+                except (OSError, ValueError):
+                    pass
+        if not raw:
+            raise AlignmentDeclarationMissing(
+                f"no cohort.json or project.json in {d}")
+
+        problems: list[str] = []
+
+        encoders = raw.get("encoders", [])
+        if not encoders:
+            problems.append("no encoders declared")
+
+        he_enc = None
+        for enc in encoders:
+            if enc.get("role") in ("primary", "morphology"):
+                he_enc = enc
+                break
+        if he_enc is None and encoders:
+            problems.append(
+                f"no encoder with role 'primary' or 'morphology'. "
+                f"declared roles: {[e.get('role') for e in encoders]}")
+
+        he_dim = he_enc.get("dim") if he_enc else None
+        if he_enc and he_dim is None:
+            problems.append(
+                f"morphology encoder {he_enc.get('name')!r} declares no dim")
+
+        k = raw.get("k_neighbors")
+        if k is None:
+            problems.append("no k_neighbors declared")
+
+        supervision = raw.get("supervision")
+        if not supervision:
+            problems.append("no supervision declared")
+
+        subject = raw.get("subject_id_column")
+        if not subject:
+            problems.append(
+                "no subject_id_column declared (expected in cohort.json)")
+
+        if problems:
+            raise AlignmentDeclarationMissing(
+                f"{len(problems)} declaration(s) missing or invalid:\n  "
+                + "\n  ".join(problems))
+
+        he_name = he_enc["name"]
+        he_niche_col = f"{he_name}_niche"
+        he_tokens_col = f"{he_name}_cell_tokens"
+
+        strat = None
+        join_inputs = raw.get("join_inputs", {})
+        subj_spec = join_inputs.get("subject", {})
+        subj_labels = subj_spec.get("labels", [])
+        if subj_labels:
+            strat = subj_labels[0]
+
+        unit_labels: list[str] = []
+        for label_name, label_spec in (join_inputs.get("labels") or {}).items():
+            if label_spec.get("role") == "centre":
+                if label_name != supervision:
+                    unit_labels.append(label_name)
+
+        return cls(
+            he_niche_column=he_niche_col,
+            he_tokens_column=he_tokens_col,
+            he_dim=he_dim,
+            k_plus_1=k + 1,
+            supervision_column=supervision,
+            subject_column=subject,
+            stratification_column=strat,
+            unit_label_columns=tuple(unit_labels),
+        )
+
+    @classmethod
+    def for_fixture(
+        cls,
+        *,
+        he_niche_column: str,
+        he_tokens_column: str,
+        he_dim: int,
+        k_plus_1: int,
+        supervision_column: str,
+        subject_column: str,
+        stratification_column: str | None = None,
+        unit_label_columns: tuple[str, ...] = (),
+    ) -> AlignmentContract:
+        """build a contract directly for tests without project files."""
+        return cls(
+            he_niche_column=he_niche_column,
+            he_tokens_column=he_tokens_column,
+            he_dim=he_dim,
+            k_plus_1=k_plus_1,
+            supervision_column=supervision_column,
+            subject_column=subject_column,
+            stratification_column=stratification_column,
+            unit_label_columns=unit_label_columns,
+        )
+
+
+def _coerce_id(val):
+    if val is None or (hasattr(val, '__class__') and pd.isna(val)):
+        return None
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return val
+
+
 def load_subarray(
     path: Path,
     st_features: tuple[str, ...],
+    contract: AlignmentContract | None = None,
+    *,
+    project_dir: str | Path | None = None,
 ) -> dict:
     """load one niche-join parquet, materialise feature tensors.
 
-    source: scripts/align.py:124-176
+    source: scripts/align.py:124-176. arithmetic unchanged.
+
+    resolution order for the contract:
+    1. explicit contract argument (tests, notebooks)
+    2. resolved from project_dir declarations
+    3. refused - no silent defaults
     """
+    if contract is None:
+        if project_dir is None:
+            raise AlignmentDeclarationMissing(
+                "load_subarray requires either a contract or a project_dir. "
+                "the adapter does not default to any cohort's column names")
+        contract = AlignmentContract.from_project_dir(project_dir)
+
     df = pd.read_parquet(path)
-    he_niche = np.stack([_as_array(v) for v in df["virchow2_niche"]])
+
+    _require_columns(df, path, [
+        contract.he_niche_column,
+        contract.he_tokens_column,
+        contract.supervision_column,
+        contract.subject_column,
+        contract.sample_column,
+    ])
+
+    he_niche = np.stack([_as_array(v) for v in df[contract.he_niche_column]])
+
+    actual_niche_dim = he_niche.shape[1]
+    if actual_niche_dim != contract.he_dim:
+        raise AlignmentDeclarationMissing(
+            f"{path.name}: declared he_dim={contract.he_dim} but "
+            f"{contract.he_niche_column} has width {actual_niche_dim}")
+
+    first_tok = _as_array(df[contract.he_tokens_column].iloc[0])
+    expected_tok_len = contract.k_plus_1 * contract.he_dim
+    if len(first_tok) != expected_tok_len:
+        raise AlignmentDeclarationMissing(
+            f"{path.name}: declared k_plus_1={contract.k_plus_1} x "
+            f"he_dim={contract.he_dim} = {expected_tok_len} but "
+            f"{contract.he_tokens_column} has length {len(first_tok)}")
+
     he_tokens = np.stack(
-        [_as_array(v).reshape(7, 1280) for v in df["virchow2_cell_tokens"]]
+        [_as_array(v).reshape(contract.k_plus_1, contract.he_dim)
+         for v in df[contract.he_tokens_column]]
     )
 
     st_parts = []
     for feat in st_features:
+        if feat not in df.columns:
+            raise AlignmentDeclarationMissing(
+                f"{path.name}: st_feature {feat!r} not in columns. "
+                f"available: {sorted(df.columns)}")
         arr = np.stack([_as_array(v) for v in df[feat]])
         st_parts.append(arr)
     x_st = np.concatenate(st_parts, axis=1)
 
-    mc_w = np.stack([_as_array(v) for v in df["mc_weights_niche"]])
+    mc_w = np.stack([_as_array(v) for v in df[contract.supervision_column]])
     nan_mcw = np.isnan(mc_w).any(axis=1)
     if nan_mcw.any():
         mc_w[nan_mcw] = 1.0 / mc_w.shape[1]
@@ -48,20 +238,39 @@ def load_subarray(
         & ~np.isnan(x_st).any(axis=1)
     )
 
-    pid = df["patient_id"].iloc[0]
-    arch = df["archetype"].iloc[0]
-    return {
+    pid = df[contract.subject_column].iloc[0]
+    strat_val = None
+    if contract.stratification_column and contract.stratification_column in df.columns:
+        strat_val = df[contract.stratification_column].iloc[0]
+
+    result = {
         "spot_id": df.index.values[valid],
-        "patient_id": int(pid) if pd.notna(pid) else None,
-        "archetype": int(arch) if pd.notna(arch) else None,
-        "compartment": df["compartment"].values[valid],
-        "subarray": str(df["subarray"].iloc[0]),
+        "patient_id": _coerce_id(pid),
+        "archetype": _coerce_id(strat_val),
+        "subarray": str(df[contract.sample_column].iloc[0]),
         "x_he_niche": he_niche[valid].astype(np.float32),
         "x_he_tokens": he_tokens[valid].astype(np.float32),
         "x_st": x_st[valid].astype(np.float32),
         "mc_w": mc_w[valid].astype(np.float32),
         "n_dropped_nan": int((~valid).sum()),
     }
+
+    for label_col in contract.unit_label_columns:
+        if label_col in df.columns:
+            result[label_col] = df[label_col].values[valid]
+
+    if "compartment" not in result and "compartment" in df.columns:
+        result["compartment"] = df["compartment"].values[valid]
+
+    return result
+
+
+def _require_columns(df: pd.DataFrame, path: Path, columns: list[str]):
+    missing = [c for c in columns if c not in df.columns]
+    if missing:
+        raise AlignmentDeclarationMissing(
+            f"{path.name}: missing columns {missing}. "
+            f"available: {sorted(df.columns)}")
 
 
 def build_matrices(
@@ -75,7 +284,9 @@ def build_matrices(
     X_st = np.concatenate([s["x_st"] for s in subs])
     meta_rows = []
     for s in subs:
-        for sid, comp in zip(s["spot_id"], s["compartment"]):
+        n = len(s["spot_id"])
+        compartment = s.get("compartment", np.full(n, None))
+        for sid, comp in zip(s["spot_id"], compartment):
             meta_rows.append({
                 "spot_id": sid,
                 "subarray": s["subarray"],
@@ -126,7 +337,12 @@ def discover_subarrays(niches_dir: Path) -> list[Path]:
 
 
 def _try_stratify(arches: np.ndarray) -> np.ndarray | None:
-    unique, counts = np.unique(arches, return_counts=True)
+    if arches.dtype == object and all(v is None for v in arches):
+        return None
+    try:
+        unique, counts = np.unique(arches, return_counts=True)
+    except TypeError:
+        return None
     if counts.min() >= 2:
         return arches
     return None

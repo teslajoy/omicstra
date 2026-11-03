@@ -34,9 +34,38 @@ tnbc-92 and an alternate fixture (different encoder, dimensions, column names)
 are test instances only. no cohort-name branches, encoder-name special cases,
 inferred column-name conventions or silent tnbc defaults in production code.
 
+### progress
+
+**first adapter slice landed** (2026-11-03, branch `checkpoint-1-schema-normalization`).
+
+committed files:
+- `src/omicstra/adapters/alignment_data.py` - AlignmentContract, from_project_dir,
+  dimension validation, refusal on missing declarations
+- `src/omicstra/protocols/align.py` - project_dir passthrough to both chains
+- `tests/test_classical_chain.py` - fixture tokens corrected to 7*HE_DIM,
+  explicit project declarations, project_dir on all chain calls
+- `tests/test_alignment_contract.py` - 19 tests: seed+alt contracts, refusal,
+  dimension mismatch, load with both fixtures
+- `design/schema_standards.md` - standards decision (pre-step)
+
+40/40 focused tests pass. no paid calls.
+
+staged but not committed: `docs/open_items.md` (de-novo labeling design, separate scope).
+
+**next action:** update `tests/test_align_chain.py` (contrastive chain) with the
+same treatment - fixture project declarations, project_dir passthrough. then
+`question.validate()` contract consumption (acceptance criterion 4).
+
+what is NOT done by this commit:
+- full LinkML schema (WS 2)
+- HTAN2/schema_crush integration (WS 2-3)
+- question-to-answer flow using the contract
+- evaluation adapter normalization
+- second cohort evidence pack (WS 10)
+
 ### pre-step: standards decision
 
-before writing schema code, document in `design/schema_standards.md`.
+written: `design/schema_standards.md`, bounded to first adapter slice.
 
 two existing foundations:
 
