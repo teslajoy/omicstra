@@ -82,7 +82,7 @@ def test_the_reader_does_not_fall_back_to_projectconfigs_defaults(tmp_path):
 
     p = _project(tmp_path, h2_label=None)
     cfg = ProjectConfig.from_dir(p)
-    assert cfg.h2_label == "mc_megacluster", "the default under test moved"
+    assert cfg.h2_label is None, "ProjectConfig must not silently default h2_label"
     with pytest.raises(DeclarationMissing, match="h2_label"):
         declared(p)
 

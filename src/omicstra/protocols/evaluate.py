@@ -350,8 +350,9 @@ def gate_h2c(ci: dict, floor: float | None = None, floor_source: str | None = No
 
 
 def gate_h3_pathway(rows: list[dict], st_features: dict[str, list[str]],
-                    view: str = "z_he", alpha: float = 0.05,
-                    pathway_feature: str = "gpath2vec_niche") -> dict:
+                    view: str, alpha: float = 0.05,
+                    pathway_feature: str = "gpath2vec_niche",
+                    clean_view: str | None = None) -> dict:
     """H3 on the artifact the pack cites: per-pathway CCA on held-out patients.
 
     `rows` are per_pathway_cca.parquet records. per run, in the headline view:
@@ -369,6 +370,10 @@ def gate_h3_pathway(rows: list[dict], st_features: dict[str, list[str]],
     """
     import math
 
+    # the clean view excludes the pathway feature by construction (z_he for tnbc-92).
+    # when not declared separately, the headline view IS the clean view.
+    _clean = clean_view if clean_view is not None else view
+
     by_run: dict[str, list[dict]] = {}
     for r in rows:
         by_run.setdefault(r["run_id"], []).append(r)
@@ -378,7 +383,7 @@ def gate_h3_pathway(rows: list[dict], st_features: dict[str, list[str]],
     for rid, rs in sorted(by_run.items()):
         carries = pathway_feature in (st_features.get(rid) or [])
         for r in rs:
-            circular = carries and r["view"] != "z_he"
+            circular = carries and r["view"] != _clean
             if bool(r["view_clean"]) == circular:
                 disagreements.append({"run": rid, "view": r["view"],
                                       "artifact_view_clean": bool(r["view_clean"]),
@@ -391,7 +396,7 @@ def gate_h3_pathway(rows: list[dict], st_features: dict[str, list[str]],
                      "significant": sig,
                      "z": {r["pathway_name"]: r["z_A"] for r in testable},
                      "excluded_untestable": [r["pathway_name"] for r in head if not r["testable"]],
-                     "view_circular": carries and view != "z_he"}
+                     "view_circular": carries and view != _clean}
     # dedupe: one disagreement per (run, view), not per pathway row
     seen, uniq = set(), []
     for d in disagreements:
@@ -821,7 +826,9 @@ def _h3_pathway(task: dict, runs_root: _Path, *, sources: dict, **_) -> dict:
     import pandas as pd
 
     rows = pd.read_parquet(runs_root / task["table"]).to_dict("records")
-    return gate_h3_pathway(rows, st, view=task.get("view", "z_he"),
+    return gate_h3_pathway(rows, st,
+                           view=task.get("view") or sources.get("headline_view") or "z_he",
+                           clean_view=task.get("clean_view") or sources.get("headline_view"),
                            alpha=float(task.get("alpha", 0.05)))
 
 
@@ -1966,6 +1973,9 @@ def pathway_transfer_cca(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                              "the permutation count, held-out patients, seed, "
                              "FDR level, testability floor and the feature name "
                              "for the circularity check are each a declaration"), {}
+    # the view that excludes the pathway feature by construction (z_he for tnbc-92).
+    # read from the cohort's declaration; fallback only used when bypassing the adapter.
+    _cln = _edeclared(ctx, "headline_view") or "z_he"
 
     import numpy as np
     from scipy.stats import pearsonr
@@ -2027,7 +2037,7 @@ def pathway_transfer_cca(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
         Z_full = np.asarray(spaces[view], dtype=np.float64)
         is_circular = (pw_feature in (st_features.get(run_id) or [])
                        and run_is_contrastive.get(run_id, False)
-                       and view != "z_he")
+                       and view != _cln)
 
         for pname, Y_full in pw_cosines.items():
             Y_full = np.asarray(Y_full, dtype=np.float64)
@@ -2115,7 +2125,7 @@ def pathway_transfer_cca(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     rows_out = obs_rows
 
     n_testable_he = sum(1 for r in rows_out
-                        if r["view"] == "z_he" and r["testable"])
+                        if r["view"] == _cln and r["testable"])
 
     n_test_set = {r["n_test"] for r in rows_out}
     split_ok = len(n_test_set) == 1
@@ -2130,12 +2140,12 @@ def pathway_transfer_cca(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                   else f"held-out sizes differ: {sorted(n_test_set)}")},
         {"guard": "G5_noise_floor",
          "status": "not_run",
-         "note": (f"{n_testable_he} testable pathways on z_he; "
+         "note": (f"{n_testable_he} testable pathways on {_cln}; "
                   f"significance requires cross-run BH-FDR from "
                   f"finalize_pathway_cca_fdr, pending until all runs collected")},
         {"guard": "G6_circular_supervision",
          "status": "pass" if not is_circular else "pass",
-         "note": (f"z_he is clean; run {run_id} "
+         "note": (f"{_cln} is clean; run {run_id} "
                   + ("is contrastive with" if is_circular
                      else "does not contrastively train")
                   + f" {pw_feature}")},

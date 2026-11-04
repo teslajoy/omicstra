@@ -2,7 +2,7 @@
 
 bounded to the first adapter slice: `adapters/alignment_data.py`.
 
-written: 2026-11-02. branch: checkpoint-1-schema-normalization.
+written: 2026-11-02. completed: 2026-11-04. branch: checkpoint-1-schema-normalization.
 
 ---
 
@@ -75,23 +75,27 @@ the join's `centre` labels plus the subject resolution.
 - split_by_patient() logic
 - save_test_artifacts() logic
 
-## HTAN2 and schema_crush applicability to this slice
+## HTAN and schema_crush applicability to this slice
 
 this slice operates on niche-join parquets that are already downstream of
 ingest. the HTAN2 participant-biospecimen-section chain and schema_crush
-clinical mappings apply to source normalization (WS 3), not to this adapter.
+clinical mappings apply to the biomedical schema layer (WS 2), not to this
+adapter slice.
 
-the one HTAN2 concept relevant here is `subject_id_column` - the participant
-identity that defines the confounder axis. HTAN2 calls it
+the one HTAN concept relevant here is `subject_id_column` - the participant
+identity that defines the confounder axis. HTAN calls it
 `HTAN_PARTICIPANT_ID`. the schema should map it; this slice reads whatever
 column name the cohort declares.
 
-## acceptance
+## acceptance (all met, 2026-11-04)
 
 1. `load_subarray()` takes a project config (or its relevant fields) instead
-   of hardcoded names
-2. seed cohort loads identically to today (array values unchanged)
+   of hardcoded names — done: `AlignmentContract`, `from_project_dir()`
+2. seed cohort loads identically (array values unchanged) — done: 40/40 tests pass
 3. alternate fixture (uni2/1024d, k=4, donor_id, different supervision column)
-   loads without code changes
-4. missing or mismatched declarations refused with every problem named
-5. no cohort-name or encoder-name branches in the code
+   loads without code changes — done: `ALT_CONTRACT` fixture in
+   `tests/test_alignment_contract.py`
+4. missing or mismatched declarations refused with every problem named — done:
+   `AlignmentDeclarationMissing` with collected problem list
+5. no cohort-name or encoder-name branches in the code — done: resolution is
+   by declared role, not by name inspection

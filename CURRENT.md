@@ -60,8 +60,25 @@ staged but not committed: `docs/open_items.md` (de-novo labeling design, separat
 remaining for WS 3: none - both alignment_data.py and join.py hardcoded columns
 are now declaration-driven.
 
-WS 3 complete. next: WS 4 - analytical bindings (z_he circularity checks,
-silent defaults in contracts/project.py).
+WS 3 complete.
+
+**WS 4 (2026-11-04):** analytical bindings done.
+
+- `contracts/project.py`: h2_label, supervision, headline_view defaults removed
+  (`str | None = None`). tnbc-92 project.json already declares all three - no
+  data file change needed. a second cohort that omits any of them no longer
+  silently inherits seed-cohort values.
+- `protocols/evaluate.py:gate_h3_pathway`: `view` parameter no longer defaults
+  to "z_he". added `clean_view` parameter; `_clean` local resolves which view is
+  non-circular. the two `r["view"] != "z_he"` / `view != "z_he"` checks now use
+  `_clean`. `_h3_pathway` reads view/clean_view from task + sources declarations.
+- `protocols/evaluate.py:pathway_transfer_cca`: `_cln` resolves from declared
+  `headline_view` via `_edeclared(ctx, "headline_view")`. the loop circularity
+  check and guard note strings use `_cln`, not the hardcoded literal.
+- `tests/test_evaluate_reachable.py`: assertion updated - `cfg.h2_label is None`
+  when not declared (the trap the test named is now fixed, not just documented).
+
+WS 4 complete. next: WS 5 - question.validate() contract consumption.
 
 what is NOT done by this commit:
 - full LinkML schema (WS 2)
