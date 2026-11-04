@@ -52,9 +52,16 @@ committed files:
 
 staged but not committed: `docs/open_items.md` (de-novo labeling design, separate scope).
 
-**next action:** update `tests/test_align_chain.py` (contrastive chain) with the
-same treatment - fixture project declarations, project_dir passthrough. then
-`question.validate()` contract consumption (acceptance criterion 4).
+**next action (2026-11-04):** `protocols/join.py` SUPERVISION_ONLY / FEATURE_COLUMNS
+(WS 3, same order) - done. `assert_no_circular_supervision` takes declared
+`supervision_set`; `join_funnel` reads and passes it; params_space updated.
+82/82 join tests pass.
+
+remaining for WS 3: none - both alignment_data.py and join.py hardcoded columns
+are now declaration-driven.
+
+WS 3 complete. next: WS 4 - analytical bindings (z_he circularity checks,
+silent defaults in contracts/project.py).
 
 what is NOT done by this commit:
 - full LinkML schema (WS 2)
