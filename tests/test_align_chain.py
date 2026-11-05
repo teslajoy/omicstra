@@ -184,6 +184,19 @@ class TestStepIsolation:
 class TestFullChainSynthetic:
     """run the full five-step chain on synthetic data."""
 
+    def _make_project_dir(self, td: str) -> str:
+        """minimal project.json + cohort.json matching the synthetic parquets."""
+        proj = Path(td) / "project"
+        proj.mkdir()
+        (proj / "project.json").write_text(json.dumps({
+            "encoders": [{"name": "virchow2", "dim": 1280, "role": "morphology"}],
+            "k_neighbors": 6,
+            "supervision": "mc_weights_niche",
+            "join_inputs": {"subject": {"labels": ["archetype"]}},
+        }))
+        (proj / "cohort.json").write_text(json.dumps({"subject_id_column": "patient_id"}))
+        return str(proj)
+
     def _make_parquets(self, td: str, n_subs: int = 6) -> Path:
         """write synthetic niche-join parquets matching load_subarray's expectations."""
         import pandas as pd
@@ -210,6 +223,7 @@ class TestFullChainSynthetic:
     def test_chain_produces_all_records(self):
         with tempfile.TemporaryDirectory() as td:
             niches = self._make_parquets(td)
+            project_dir = self._make_project_dir(td)
             run_dir = Path(td) / "run"
             run_cfg = {
                 "run_id": "test_run",
@@ -228,7 +242,8 @@ class TestFullChainSynthetic:
                 "barlow_lambda": 0.005,
                 "device": "cpu",
             }
-            records = _train_contrastive_chain(run_cfg, str(niches), run_dir)
+            records = _train_contrastive_chain(run_cfg, str(niches), run_dir,
+                                               project_dir=project_dir)
 
             expected = {"load_data", "split", "train", "embed_test", "evaluate_and_save"}
             assert set(records.keys()) == expected
@@ -259,6 +274,7 @@ class TestFullChainSynthetic:
 
         with tempfile.TemporaryDirectory() as td:
             niches = self._make_parquets(td)
+            project_dir = self._make_project_dir(td)
             run_dir = Path(td) / "run"
 
             patched_steps = []
@@ -284,7 +300,8 @@ class TestFullChainSynthetic:
             chain.invoke({
                 "params": {
                     "load_data": {"niches_dir": str(niches),
-                                  "st_features": ("novae_niche", "gpath2vec_niche")},
+                                  "st_features": ("novae_niche", "gpath2vec_niche"),
+                                  "project_dir": project_dir},
                     "split": {"val_frac": 0.15, "test_frac": 0.15,
                               "seed": SEED, "run_dir": str(run_dir)},
                     "train": {"fusion": "late", "loss": "infonce", "seed": SEED,

@@ -77,6 +77,21 @@ def declared(project_dir: str | Path) -> dict[str, Any]:
     }
 
 
+def missing_declarations(project_dir: str | Path) -> dict[str, str]:
+    """which REQUIRED fields are absent in project.json. returns {} when all declared.
+
+    the soft counterpart of `declared()`: populate AnalysisRequest.missing without
+    blocking validation. does not raise on a missing or malformed file.
+    """
+    d = Path(project_dir)
+    p = d / "project.json"
+    if not p.is_file():
+        return {"project.json": f"not found at {d}. `omicstra init` scaffolds one"}
+    raw = json.loads(p.read_text())
+    return {k: why for k, why in REQUIRED.items()
+            if raw.get(k) in (None, "", [], {})}
+
+
 def _views(runs_path: Path, run: str, view: str):
     """the run's view matrix, and the frame it came from.
 
@@ -659,4 +674,5 @@ def raw_baseline_cosines(project_dir: str | Path,
 
 
 __all__ = ["REQUIRED", "DeclarationMissing", "arrays", "biology_labels",
-           "pathway_scores", "raw_baseline_cosines", "declared"]
+           "pathway_scores", "raw_baseline_cosines", "declared",
+           "missing_declarations"]
