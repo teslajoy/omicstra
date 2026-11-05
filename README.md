@@ -352,6 +352,8 @@ mitochondrial-fraction exclusion         not implemented. a proposal commitment,
 SLURM                                    not implemented
 ```
 
+for a full table of supported questions, required data, methods, outputs and limitations per task family, see [docs/capability_matrix.md](docs/capability_matrix.md).
+
 tracked in [open_items.md](docs/open_items.md) and
 [completion_roadmap.md](design/completion_roadmap.md).
 
