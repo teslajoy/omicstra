@@ -104,6 +104,65 @@ not work.
 | 46 | pathway downstream consumption not demonstrated | `src/omicstra/graph.py` pathway_assay bridge | gap | AUCell scores need to reach the selected analysis that uses them; not yet demonstrated | open - links to completion_roadmap WS 6 |
 | 47 | interrupt/resume not demonstrated end-to-end | `design/completion_roadmap.md` WS 6 | gap | gate interrupt declared, resume wiring exists but not shown working through to completed results | open - links to completion_roadmap WS 6 |
 
+## de-novo ground truth (design, not yet built)
+
+| # | item | where | kind | description | status |
+|---|---|---|---|---|---|
+| 48 | cohorts without supplied labels need de-novo niche-type labels for evaluation | completion_roadmap WS 4, WS 7 | gap | the evaluation chain requires an h2_label (niche-type classification) and a supervision signal. every label the seed cohort uses came with the dataset. a second cohort without equivalent annotations has no evaluation target. a de-novo labeling protocol would produce these from the cohort's own embeddings | open - design below, not built |
+
+### de-novo labeling protocol (level 2 - fixed method, no interrupt)
+
+a cohort that supplies its own annotations (pathologist labels, published
+decompositions) declares them as bindings and skips this. the de-novo path
+exists for cohorts that have embeddings but no external labels.
+
+**inputs:**
+- an embedding already on disk (molecular or morphological niche vectors)
+- a resolution parameter (analytical binding, layer 3)
+- a minimum cluster size (method constraint)
+
+**why these choices:**
+
+- the molecular encoder's graph attention network learns per-edge attention
+  weights over the spatial graph, so its latent space already encodes
+  spatial co-expression structure - no separate spatial graph construction
+  or spatial-vs-feature weighting parameter needed. clustering its output
+  directly produces niche types that reflect both expression and spatial
+  context
+
+- the morphological encoder's niche embedding (mean over k+1 tiles within
+  the niche footprint) captures local tissue architecture. clustering it
+  produces morphology-derived niche types without pathologist annotation
+
+- leiden clustering guarantees connected communities (louvain can produce
+  internally disconnected clusters where members have no path to each
+  other through the community subgraph). resolution is the only free
+  parameter and is declared as a binding
+
+**outputs:**
+- a per-niche integer label column, declared as h2_label in the cohort's
+  project.json (e.g. `leiden_mol_r0.5`, `leiden_morph_r1.0`)
+- the existing evaluation chain scores against it identically to a
+  supplied label - the binding is different, the chain is the same
+
+**validation on the seed cohort:**
+- run leiden at several resolutions on both encoder outputs
+- compare against the 6 existing labels (mc_megacluster, 17 morphological
+  categories, TLS signature, TIME, patient_id, spatial archetypes) using
+  ARI, NMI and homogeneity
+- the de-novo labels should recover niche-level biology (correlate with
+  mc_megacluster and morphological categories) and not patient identity
+  (low NMI against patient_id)
+- this comparison is a notebook, not a gate - it calibrates the method
+  rather than blocking it
+
+**where it lives:** `protocols/` as a level 2 step chain (fixed method, no
+state, no interrupt). callable from a notebook. the binding that selects
+it is layer 3 (analytical binding, WS 4). the protocol itself is WS 7
+(analytical completeness).
+
+---
+
 ## hygiene
 
 | # | item | where | kind | the record's own words | status |
