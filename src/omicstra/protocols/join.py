@@ -102,9 +102,10 @@ SEMANTICS = {
     },
 }
 
-# columns that are SUPERVISION, never input. the join puts them in the same table
-# as the features because a training script needs both, which is exactly why the
-# separation has to be asserted rather than remembered.
+# seed-cohort examples - documented here so the guard's tests have a concrete
+# reference, but NOT used in computation for new cohorts. a cohort declares its
+# own supervision_set in join_funnel params; these are the fallback for callers
+# that pre-date that parameter (backward compat only).
 SUPERVISION_ONLY = frozenset({"mc_weights_niche", "mc_megacluster", "archetype",
                               "compartment", "tls"})
 
@@ -244,19 +245,29 @@ def assert_funnel_not_confounded(dist: dict) -> list[str]:
              "belongs in the writeup rather than in a footnote.")]
 
 
-def assert_no_circular_supervision(feature_columns, supervision: str) -> None:
+def assert_no_circular_supervision(
+    feature_columns,
+    supervision: str,
+    supervision_set: frozenset | None = None,
+) -> None:
     """guard G6. the supervision signal must not appear in the input vector.
 
     a static assertion on column names, deliberately: by the time it is a tensor
     the question is unanswerable, and the failure mode is a number that looks
     like a triumph.
+
+    `supervision_set` is the cohort's declared set of all supervision/evaluation
+    columns. when provided it replaces the module-level SUPERVISION_ONLY constant,
+    so the guard is not tied to seed-cohort column names. when absent the constant
+    is used as a backward-compat fallback.
     """
     cols = set(feature_columns)
+    guard_set = supervision_set if supervision_set is not None else SUPERVISION_ONLY
     if supervision in cols:
         raise CircularSupervision(
             f"{supervision!r} is both an input feature and the supervision signal. "
             "the score this produces measures whether a vector can find itself.")
-    if leaked := cols & SUPERVISION_ONLY:
+    if leaked := cols & guard_set:
         raise CircularSupervision(
             f"{sorted(leaked)} are supervision/evaluation columns and must not be input "
             f"features. declared inputs: {sorted(cols)}")
@@ -1119,6 +1130,7 @@ def join_funnel(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
     axis = _jdeclared(ctx, "confounder_axis")
     features = _jdeclared(ctx, "feature_columns")
     supervision = _jdeclared(ctx, "supervision")
+    supervision_set = _jdeclared(ctx, "supervision_set")
     if axis is None:
         return _jmissing("join_funnel", "confounder_axis",
                          "the axis a drop must not concentrate on is the axis "
@@ -1172,8 +1184,9 @@ def join_funnel(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
         # way to stop a notebook. inside the chain that would land as `error`,
         # which says the step broke - and this step did not break, the cohort
         # failed a check. the distinction is the whole of the status vocabulary.
+        sup_set = frozenset(supervision_set) if supervision_set is not None else None
         try:
-            assert_no_circular_supervision(features, str(supervision))
+            assert_no_circular_supervision(features, str(supervision), sup_set)
         except CircularSupervision as e:
             return _jrec("join_funnel", "fail", str(e),
                          "refused - the score this table would produce measures "
@@ -1190,7 +1203,8 @@ def join_funnel(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                   "stages": funnel.as_dicts(), "drop_distribution": dist,
                   "funnel_contribution": {k: list(v) for k, v in contribution.items()},
                   "circular_supervision_checked": bool(
-                      features is not None and supervision is not None)},
+                      features is not None and supervision is not None),
+                  "supervision_set_declared": supervision_set is not None},
                  method=rec.method,
                  criterion="every stage states both ends, and every drop a reason",
                  ), {"funnel": funnel.as_dicts(),
@@ -1235,5 +1249,6 @@ JOIN_STEPS: list[Step] = [
          params_space=("standardise_assays", "group_by", "eps", "ddof")),
     Step(id="join_funnel", fn=join_funnel,
          requires=frozenset({"standardised"}),
-         params_space=("confounder_axis", "feature_columns", "supervision")),
+         params_space=("confounder_axis", "feature_columns", "supervision",
+                       "supervision_set")),
 ]

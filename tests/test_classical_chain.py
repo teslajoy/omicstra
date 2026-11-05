@@ -58,7 +58,7 @@ def _write_synthetic_parquets(niches_dir: Path) -> None:
                     "archetype": pid % 3,
                     "compartment": "tumor" if j % 2 == 0 else "stroma",
                     "virchow2_niche": rng.normal(size=HE_DIM).astype(np.float32).tolist(),
-                    "virchow2_cell_tokens": rng.normal(size=7 * 1280).astype(np.float32).tolist(),
+                    "virchow2_cell_tokens": rng.normal(size=7 * HE_DIM).astype(np.float32).tolist(),
                     "novae_niche": rng.normal(size=ST_DIM).astype(np.float32).tolist(),
                     "gpath2vec_niche": np.zeros(0, dtype=np.float32).tolist(),
                     "mc_weights_niche": rng.dirichlet(np.ones(5)).astype(np.float32).tolist(),
@@ -79,7 +79,7 @@ def _write_synthetic_parquets(niches_dir: Path) -> None:
                 "archetype": pid % 3,
                 "compartment": "tumor",
                 "virchow2_niche": rng.normal(size=HE_DIM).astype(np.float32).tolist(),
-                "virchow2_cell_tokens": rng.normal(size=7 * 1280).astype(np.float32).tolist(),
+                "virchow2_cell_tokens": rng.normal(size=7 * HE_DIM).astype(np.float32).tolist(),
                 "novae_niche": rng.normal(size=ST_DIM).astype(np.float32).tolist(),
                 "gpath2vec_niche": np.zeros(0, dtype=np.float32).tolist(),
                 "mc_weights_niche": rng.dirichlet(np.ones(5)).astype(np.float32).tolist(),
@@ -111,10 +111,27 @@ def classical_env(tmp_path):
     ref_run_dir.mkdir(parents=True)
     _write_reference_split(ref_run_dir / "split.json")
 
+    proj = tmp_path / "project"
+    proj.mkdir()
+    (proj / "project.json").write_text(json.dumps({
+        "encoders": [
+            {"name": "virchow2", "dim": HE_DIM, "role": "morphology"},
+        ],
+        "k_neighbors": 6,
+        "supervision": "mc_weights_niche",
+        "join_inputs": {
+            "subject": {"labels": ["archetype"]},
+        },
+    }))
+    (proj / "cohort.json").write_text(json.dumps({
+        "subject_id_column": "patient_id",
+    }))
+
     return {
         "niches_dir": str(niches),
         "ref_split": ref_run_dir / "split.json",
         "runs_root": tmp_path / "runs",
+        "project_dir": str(proj),
         "tmp_path": tmp_path,
     }
 
@@ -136,7 +153,8 @@ class TestClassicalChainExecution:
 
         records = _train_classical_chain(
             run_cfg, classical_env["niches_dir"],
-            classical_env["ref_split"], run_dir)
+            classical_env["ref_split"], run_dir,
+            project_dir=classical_env["project_dir"])
 
         assert (run_dir / "embeddings_test.parquet").is_file()
         assert (run_dir / "metrics_h1_raw.json").is_file()
@@ -161,7 +179,8 @@ class TestClassicalChainExecution:
 
         _train_classical_chain(
             run_cfg, classical_env["niches_dir"],
-            classical_env["ref_split"], run_dir)
+            classical_env["ref_split"], run_dir,
+            project_dir=classical_env["project_dir"])
 
         metrics = json.loads((run_dir / "metrics_h1_raw.json").read_text())
         assert "shared_dim_used" in metrics
@@ -181,7 +200,8 @@ class TestClassicalChainExecution:
 
         _train_classical_chain(
             run_cfg, classical_env["niches_dir"],
-            classical_env["ref_split"], run_dir)
+            classical_env["ref_split"], run_dir,
+            project_dir=classical_env["project_dir"])
 
         ref = json.loads(classical_env["ref_split"].read_text())
         copied = json.loads((run_dir / "split.json").read_text())
@@ -199,7 +219,8 @@ class TestClassicalChainExecution:
 
         _train_classical_chain(
             run_cfg, classical_env["niches_dir"],
-            classical_env["ref_split"], run_dir)
+            classical_env["ref_split"], run_dir,
+            project_dir=classical_env["project_dir"])
 
         emb_df = pd.read_parquet(run_dir / "embeddings_test.parquet")
         z_he = np.stack(emb_df["z_he"].values)
@@ -219,7 +240,8 @@ class TestClassicalChainExecution:
 
         _train_classical_chain(
             run_cfg, classical_env["niches_dir"],
-            classical_env["ref_split"], run_dir)
+            classical_env["ref_split"], run_dir,
+            project_dir=classical_env["project_dir"])
 
         cfg = json.loads((run_dir / "run_config.json").read_text())
         assert cfg["method"] == "cca"
@@ -248,7 +270,8 @@ class TestCCAReg:
         with _patch.dict(BASELINES, {"cca": spy}):
             _train_classical_chain(
                 run_cfg, classical_env["niches_dir"],
-                classical_env["ref_split"], run_dir)
+                classical_env["ref_split"], run_dir,
+                project_dir=classical_env["project_dir"])
 
         spy.assert_called_once()
         assert spy.call_args.kwargs.get("reg") == 1e-3
@@ -272,7 +295,8 @@ class TestUpstreamFailure:
 
         records = _train_classical_chain(
             run_cfg, str(empty_dir),
-            classical_env["ref_split"], run_dir)
+            classical_env["ref_split"], run_dir,
+            project_dir=classical_env["project_dir"])
 
         assert records["load_data"]["status"] == "fail"
         for step in ("apply_reference_split", "fit_project", "evaluate_and_save"):

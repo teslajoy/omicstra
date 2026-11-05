@@ -167,6 +167,13 @@ def validate(raw: dict, project_id: str | None = None) -> AnalysisRequest:
         else:
             problems.append(f"no cohort.json at {cohort_path}")
 
+        # check analytical binding fields - same contract as the pipeline uses
+        if cfg.project_dir:
+            from omicstra.adapters.evaluation import missing_declarations
+            for f_name, reason in missing_declarations(cfg.project_dir).items():
+                missing.append(
+                    f"{f_name} is not declared in project.json: {reason}")
+
     if problems:
         raise ValidationError(problems)
 

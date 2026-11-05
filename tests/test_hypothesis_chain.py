@@ -228,7 +228,7 @@ def test_every_h3_number_the_pack_routes_is_in_the_pin():
     rows, _ = _cited("h3_per_pathway_cca_v3")
     task = json.loads(PACK.read_text())["tasks"]["pathway_transfer"]
     assert "per_pathway_cca.parquet" in task["source"]
-    g = gate_h3_pathway(rows, _st_features())
+    g = gate_h3_pathway(rows, _st_features(), view="z_he")
     for cand in task["candidates"]:
         assert g["runs"][cand["id"]]["n_significant"] == cand["value"], cand["id"]
     z = g["runs"]["R4_v3"]["z"]
@@ -241,7 +241,7 @@ def test_the_pins_declare_what_they_do_not_cover():
     assert m2["h2c_missing_from_grid"] == sorted(set(GRID) - set(ci["h2c"])) == ["B2_v3", "B3_v3", "B4_v3"]
     rows, m3 = _cited("h3_per_pathway_cca_v3")
     assert m3["missing_from_grid"] == ["B4_v3"]
-    g = gate_h3_pathway(rows, _st_features())
+    g = gate_h3_pathway(rows, _st_features(), view="z_he")
     assert g["runs"]["B3_v3"]["n_significant"] == 4 and "B3_v3" in m3["pack_does_not_list"]
 
 
@@ -265,7 +265,7 @@ def test_h2c_g3_reports_that_no_run_suppresses_patient_below_biology():
 
 def test_h3_gate_is_cross_patient_and_excludes_the_untestable_pathway():
     rows, _ = _cited("h3_per_pathway_cca_v3")
-    g = gate_h3_pathway(rows, _st_features())
+    g = gate_h3_pathway(rows, _st_features(), view="z_he")
     g2 = next(x for x in g["guards"] if x["guard"] == "G2_held_out_honesty")
     assert g2["status"] == "pass"
     assert all(r["excluded_untestable"] == ["TGF-beta_Signaling"] for r in g["runs"].values())
@@ -275,7 +275,7 @@ def test_h3_g6_derives_circularity_from_st_features_not_the_artifact_flag():
     """the script hardcodes R1-R4. B1-B3 and R5 also carry gpath2vec, so their
     z_st and z_mean rows are marked clean and are circular. the headline view is not."""
     rows, _ = _cited("h3_per_pathway_cca_v3")
-    g6 = next(x for x in gate_h3_pathway(rows, _st_features())["guards"]
+    g6 = next(x for x in gate_h3_pathway(rows, _st_features(), view="z_he")["guards"]
               if x["guard"] == "G6_circular_supervision")
     assert g6["status"] == "flag_disagreement"
     flagged = {(d["run"], d["view"]) for d in g6["disagreements"]}

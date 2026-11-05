@@ -15,7 +15,9 @@ import json
 
 import pytest
 
-from omicstra.adapters.evaluation import REQUIRED, DeclarationMissing, declared
+from omicstra.adapters.evaluation import (
+    REQUIRED, DeclarationMissing, declared, missing_declarations,
+)
 
 
 def _project(tmp_path, **over):
@@ -82,9 +84,38 @@ def test_the_reader_does_not_fall_back_to_projectconfigs_defaults(tmp_path):
 
     p = _project(tmp_path, h2_label=None)
     cfg = ProjectConfig.from_dir(p)
-    assert cfg.h2_label == "mc_megacluster", "the default under test moved"
+    assert cfg.h2_label is None, "ProjectConfig must not silently default h2_label"
     with pytest.raises(DeclarationMissing, match="h2_label"):
         declared(p)
+
+
+# ------------------------------------------------ missing_declarations --------
+def test_missing_declarations_empty_for_complete_project(tmp_path):
+    assert missing_declarations(_project(tmp_path)) == {}
+
+
+@pytest.mark.parametrize("field", sorted(REQUIRED))
+def test_missing_declarations_names_absent_field(tmp_path, field):
+    result = missing_declarations(_project(tmp_path, **{field: None}))
+    assert field in result
+    assert result[field]  # reason is non-empty
+
+
+def test_missing_declarations_names_multiple_at_once(tmp_path):
+    result = missing_declarations(_project(tmp_path, h2_label=None, supervision=None))
+    assert "h2_label" in result and "supervision" in result
+    assert len(result) == 2
+
+
+def test_missing_declarations_no_project_json(tmp_path):
+    result = missing_declarations(tmp_path / "nothing_here")
+    assert "project.json" in result
+
+
+def test_missing_declarations_does_not_raise(tmp_path):
+    """the soft variant: returns a dict, never raises."""
+    result = missing_declarations(_project(tmp_path, h2_label=None))
+    assert isinstance(result, dict)
 
 
 # -------------------------------------------------------- the compute arm ----

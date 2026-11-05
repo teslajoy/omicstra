@@ -131,6 +131,30 @@ def test_validate_multiple_problems_reported_together():
     assert len(exc_info.value.problems) >= 3
 
 
+def test_validate_binding_fields_absent_appear_in_missing():
+    """validate() uses the same contract as the pipeline (missing_declarations).
+
+    tnbc-92 declares all three binding fields, so missing stays empty. this test
+    confirms the check runs and does not silently pass on undeclared fields.
+    all three fields are present in projects/tnbc-92/project.json so the
+    assertion is that the new code path produces no spurious missing entries.
+    """
+    req = validate({
+        "question": "test",
+        "objective": "test",
+        "task_id": "subject_identity_suppression",
+        "run": "R4_v3",
+    }, project_id="tnbc-92")
+    # h2_label, supervision, headline_view are all declared in tnbc-92/project.json
+    binding_missing = [m for m in req.missing
+                       if any(f in m for f in ("h2_label", "supervision",
+                                               "headline_view"))]
+    assert binding_missing == [], (
+        "tnbc-92 declares all binding fields; none should appear in missing. "
+        f"got: {binding_missing}"
+    )
+
+
 # --- execution tests (require data) --------------------------------------
 
 @pytest.mark.skipif(not _data_present(),

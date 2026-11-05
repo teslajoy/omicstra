@@ -45,9 +45,12 @@ class ProjectConfig(BaseModel):
     # the niche-cluster table the join reads; gpath2vec_sha256 locks it
     pathway_cluster_embeddings: str = ""
 
-    h2_label: str = "mc_megacluster"       # audit-correct niche-level label
-    supervision: str = "mc_weights_niche"  # supervision-only, never in st_features
-    headline_view: str = "z_he"            # the confounder-clean view
+    # these three must be declared in project.json - no silent seed-cohort defaults.
+    # a second cohort inheriting "mc_megacluster", "mc_weights_niche" or "z_he"
+    # would be scored against labels it does not have. absent means refuse.
+    h2_label: str | None = None       # audit-correct niche-level label
+    supervision: str | None = None    # supervision-only, never in st_features
+    headline_view: str | None = None  # the confounder-clean view
     hypothesis_metric: str = "auc"         # not R@1 (at floor at this scale)
 
     contrastive_runs: list[str] = []
