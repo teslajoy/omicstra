@@ -56,7 +56,13 @@
   "runs_dir": "../../runs/tnbc-92_v3",
   "pathway_scores": {
     "path": "../../data/embeddings/biological_signals/niche_aucell_5targets.parquet",
-    "columns": ["TGF-beta_Signaling", "Immune_System", "ECM_Organization", "Cell_Cycle", "Programmed_Cell_Death"],
+    "columns": [
+      "TGF-beta_Signaling",
+      "Immune_System",
+      "ECM_Organization",
+      "Cell_Cycle",
+      "Programmed_Cell_Death"
+    ],
     "pathway_ids": {
       "TGF-beta_Signaling": "R-HSA-170834",
       "Immune_System": "R-HSA-168256",
@@ -211,5 +217,27 @@
         "spatial_archetype"
       ]
     }
-  }
+  },
+  "pathway_targets": [
+    {
+      "name": "TGF-beta_Signaling",
+      "reactome_id": "R-HSA-170834"
+    },
+    {
+      "name": "Immune_System",
+      "reactome_id": "R-HSA-168256"
+    },
+    {
+      "name": "ECM_Organization",
+      "reactome_id": "R-HSA-1474244"
+    },
+    {
+      "name": "Cell_Cycle",
+      "reactome_id": "R-HSA-1640170"
+    },
+    {
+      "name": "Programmed_Cell_Death",
+      "reactome_id": "R-HSA-5357801"
+    }
+  ]
 }

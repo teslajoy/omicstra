@@ -74,6 +74,29 @@ class EncodeState(TypedDict, total=False):
     report: dict
 
 
+def _resolve_encoder(state: dict) -> str:
+    """resolve the encoder from state or declared primary encoder.
+
+    never defaults to virchow2: an explicit 'encoder' in state wins, then
+    the cohort's declared primary/morphology encoder. refuses if neither exists.
+    """
+    enc = state.get("encoder")
+    if enc:
+        return enc
+    import json as _json
+    from omicstra.settings import settings
+    root = settings.project_root(state.get("project_id"))
+    raw = _json.loads((root / "project.json").read_text())
+    for e in raw.get("encoders", []):
+        if e.get("role") in ("primary", "morphology"):
+            return e["name"]
+    raise ValueError(
+        f"no encoder passed and no encoder with role 'primary' or 'morphology' "
+        f"declared in {root / 'project.json'}. add an encoder entry with the "
+        f"appropriate role, or pass encoder= explicitly."
+    )
+
+
 def _as_dicts(reqs: list[GateRequest]) -> list[dict]:
     """GateRequest -> plain dicts. the tracer serialises node state, so what
     travels has to be JSON rather than a dataclass whose repr looks like data."""
@@ -90,7 +113,7 @@ def gates(state: EncodeState) -> dict:
     no judgement here - this is the protocol's answer, lifted into state so the
     branch below and the interrupt payload read the same thing.
     """
-    cohort, encoder = state.get("cohort", {}), state.get("encoder", "virchow2")
+    cohort, encoder = state.get("cohort", {}), _resolve_encoder(state)
     # the run's own answers go IN, so a gate answered earlier on this run comes
     # back closed. re-entering the graph to re-dispatch missing shards would
     # otherwise reopen every gate and stop at the interrupt again, and a run
@@ -214,7 +237,8 @@ def encode(state: EncodeState) -> dict:
     unreachable, and a compute path that trusts its own routing is one edit away
     from spending GPU hours on an unanswered values call.
     """
-    reqs = preflight(state.get("cohort", {}), state.get("encoder", "virchow2"),
+    encoder = _resolve_encoder(state)
+    reqs = preflight(state.get("cohort", {}), encoder,
                      unit_counts=state.get("unit_counts"),
                      min_scope=state.get("min_scope"),
                      answers=state.get("answers"))
@@ -268,11 +292,11 @@ def encode(state: EncodeState) -> dict:
                                   "slide and a coordinates table"}}
 
     geom = HeGeometry.from_platform(plat, pname)
-    out = root / "data" / "embeddings" / f"{state.get('encoder', 'virchow2')}_niche"
+    out = root / "data" / "embeddings" / f"{encoder}_niche"
 
     if not state.get("compute"):
         return {"report": {"status": "ready", "platform": pname,
-                           "encoder": state.get("encoder", "virchow2"),
+                           "encoder": encoder,
                            "geometry": {"scale": geom.scale, "tile_px": geom.tile_px,
                                         "out_px": geom.out_px, "k": geom.k},
                            "n_shards": len(triples),
@@ -285,12 +309,11 @@ def encode(state: EncodeState) -> dict:
     from omicstra.graphs.submit import dispatch
     from omicstra.protocols.encode import he_shard_body, he_shards
 
-    shards = he_shards(triples, out, geom, state.get("encoder", "virchow2"),
-                       state.get("device"))
+    shards = he_shards(triples, out, geom, encoder, state.get("device"))
     return dispatch(state, shards, out, he_shard_body, fn_name="encode_he",
                     cohort_run=lambda pending: encode_he_cohort(
                         [(s.id, s.params["image"], s.params["coords"]) for s in pending],
-                        out, geom, encoder=state.get("encoder", "virchow2"),
+                        out, geom, encoder=encoder,
                         device=state.get("device")),
                     report_extra={"platform": pname, "skipped": skipped,
                                   "geometry": {"scale": geom.scale, "tile_px": geom.tile_px,

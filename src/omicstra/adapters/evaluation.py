@@ -454,13 +454,6 @@ def pathway_scores(project_dir: str | Path,
     return {col: aligned[col].values.astype(np.float64) for col in cols}
 
 
-NAMED_PATHWAY_TARGETS = {
-    "TGF-beta_Signaling":    "R-HSA-170834",
-    "Immune_System":         "R-HSA-168256",
-    "ECM_Organization":      "R-HSA-1474244",
-    "Cell_Cycle":            "R-HSA-1640170",
-    "Programmed_Cell_Death": "R-HSA-5357801",
-}
 
 
 def _reactome_descendants(reactome_dir: Path):
@@ -494,8 +487,9 @@ def pathway_cosines(
 ) -> dict[str, Any] | None:
     """gpath2vec pathway cosine profiles for multivariate CCA (H3 variant 2).
 
-    reads `project.json#pathway_node_embeddings` (gpath2vec pkl) and
-    `knowledge/reactome/ReactomePathwaysRelation.txt`. builds the 5 named
+    reads `project.json#pathway_node_embeddings` (gpath2vec pkl),
+    `project.json#pathway_targets` (list of {name, reactome_id}), and
+    `knowledge/reactome/ReactomePathwaysRelation.txt`. builds the declared
     pathway sets, computes niche cosine tables, aligns with filtered_frame.
 
     returns {"cosines": {name: (N, set_size) ndarray}, "axes": DataFrame}
@@ -511,6 +505,15 @@ def pathway_cosines(
     emb_rel = raw.get("pathway_node_embeddings")
     if not emb_rel:
         return None
+
+    pathway_targets_raw = raw.get("pathway_targets")
+    if not pathway_targets_raw:
+        raise ValueError(
+            f"pathway_targets not declared in {d / 'project.json'}. "
+            "add a list of {{name, reactome_id}} entries under 'pathway_targets'."
+        )
+    pathway_targets = {entry["name"]: entry["reactome_id"]
+                       for entry in pathway_targets_raw}
 
     from omicstra.contracts.project import ProjectConfig
     cfg = ProjectConfig.from_dir(d)
@@ -533,7 +536,7 @@ def pathway_cosines(
 
     axes_rows = []
     members: dict[str, tuple[list[str], np.ndarray]] = {}
-    for name, pid in NAMED_PATHWAY_TARGETS.items():
+    for name, pid in pathway_targets.items():
         all_desc = descendants_of(pid)
         ids: list[str] = []
         if pid in embedded:

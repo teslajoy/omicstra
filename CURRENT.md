@@ -11,53 +11,103 @@ is not worked on, discussed, or measured until the task card is closed.
 
 ## the task
 
-**linkml schema v0.1.1: biomedical entities for cross-modal spatial biology.**
+**analytical bindings: encoder selection and pathway targets from declarations.**
 
-parent goal: a cohort's data has a declared schema, not an implicit one baked
-into column names. Representation + DerivationRecord carry the meaning that
-was hidden in naming conventions. circularity is a lineage traversal, not a
-string comparison on view names.
+parent goal: a cohort with a different primary encoder or a different set of
+pathway targets requires a declaration entry, not a code change.
 
-previous task card (WS 1 capability matrix, done 2026-11-06) preserved at
-`design/_scratch/CURRENT_ws1.md`.
+previous task card (WS 3 source normalization, 2026-11-09) preserved at
+`design/_scratch/CURRENT_ws3.md`.
 
-this is completion_roadmap WS 2.
+this is completion_roadmap WS 4 (remaining).
 
-### what was built
+### what was done in checkpoint 1 (partial WS 4)
 
-`src/omicstra/schema/omicstra.yaml` — version 0.1.1.
+- `contracts/project.py`: h2_label, supervision, headline_view are `None` —
+  refused if absent, no silent defaults.
+- `protocols/evaluate.py`: circularity checks read declared headline_view
+  (not hardcoded `z_he`). gate_h3_pathway resolves clean view from declaration.
+- `adapters/evaluation.py`: REQUIRED + `declared()` pattern — refuses with
+  every missing field named.
+- `question.validate()`: same REQUIRED contract as the evaluation pipeline.
 
-key entities: Participant, Biospecimen, TissueSection, Assay, CoordinateFrame,
-SpatialUnit, DerivationRecord, Representation, Annotation, AnnotationProvenance,
-DataFile. container: CohortPack (tree_root).
+### what remains
 
-fixes applied from linkml-lint + gen-pydantic review of 0.1.0 draft:
-- B1: block-scalar all descriptions (parses cleanly)
-- B2: CohortPack tree_root for FK integrity
-- B3: typed FK ranges
-- G2: supervision_annotation_ids on DerivationRecord
-- G3-lite: UnitLevel enum + unit_level required on Representation
-- enforcement: minimum_value, pattern, rules block for aligned -> run_id
+two items. both verified in code 2026-11-09:
+
+**item 1: `graphs/encode.py` encoder defaults.**
+5 places with `.get("encoder", "virchow2")`. when the state carries no encoder,
+the graph silently uses virchow2. should read from the cohort's declared primary
+encoder instead (project.json#encoders[role=primary|morphology].name).
+
+files to update:
+- `src/omicstra/graphs/encode.py` — replace `.get("encoder", "virchow2")` with
+  `_resolve_encoder(state, project_dir)` that reads the declared primary encoder
+  and refuses when none is declared with role primary or morphology.
+
+**item 2: `NAMED_PATHWAY_TARGETS` in `adapters/evaluation.py`.**
+5 Reactome pathway IDs hardcoded at line 457. a cohort using different pathways
+requires a code change. should come from `project.json#pathway_targets`.
+
+files to update:
+- `src/omicstra/adapters/evaluation.py` — `pathway_cosines()` reads
+  `project.json#pathway_targets` (list of {name, reactome_id}). absent =
+  refused with field named. `NAMED_PATHWAY_TARGETS` becomes the seed cohort's
+  declared value, not a package constant.
+- `projects/tnbc-92/project.json` — add `pathway_targets` list (5 entries,
+  same IDs as current constant).
 
 ### acceptance criteria
 
-- [x] valid seed-cohort example: `tests/fixtures/schema/tnbc92_minimal.yaml`
-- [x] valid alternate-cohort example: `tests/fixtures/schema/alternate_cohort_minimal.yaml`
-  (UNI2 1536d, donor_id, visium, k=4 — no code changes)
-- [x] 36/36 structural tests pass with PyYAML only (no linkml install)
-- [ ] `linkml-lint` passes (requires `pip install linkml>=1.8`)
-- [ ] 10 must-reject probes pass: `python -m pytest tests/test_schema_validation.py`
-- [ ] invalid examples rejected with every problem named
+- [ ] `graphs/encode.py` selects encoder from declaration, not `.get(..., "virchow2")`.
+  an alternate cohort with uni2 as primary encoder uses uni2 without code changes.
+- [ ] `pathway_cosines()` reads pathway targets from `project.json#pathway_targets`.
+  missing declaration refused with field named.
+- [ ] seed cohort: same 5 pathways as today (IDs identical).
+- [ ] alternate fixture (no pathway_targets declared) is refused, not silently empty.
+- [ ] tests: `tests/test_analytical_bindings.py`. no paid calls.
 
 ### stopping condition
 
-`linkml-lint` clean + `test_schema_validation.py` all pass + branch merged.
+both encoder selection and pathway targets are declaration-driven. tests pass
+locally before any commit. branch merged.
 
 ### not in scope
 
-source mapping changes (WS 3, done in checkpoint 1), code path changes,
-second cohort evidence pack (WS 10), evidence schema (omicstra_evidence.yaml,
-deferred to 0.2.0).
+question.execute() -> discover() wiring (WS 5 remainder), pathway artifact
+persistence (WS 6), evidence schema deferred to 0.2.0.
+
+---
+
+## checkpoint 3 summary (closed 2026-11-09)
+
+**branch**: `checkpoint-3-source-normalization` (pending merge)
+
+one workstream delivered:
+
+- **WS 3 source normalization (remaining)**: `SourceMapping` dataclass +
+  `load_from_yaml()` in `adapters/source_mapping.py`. `source_mapping.yaml`
+  per cohort replaces the `{encoder_name}_niche` naming convention in
+  `AlignmentContract.from_project_dir()`. seed cohort yaml declares same names
+  convention would derive; alternate fixture (uni2_embeddings, uni2_tile_tokens,
+  slide_id) proves non-conventional naming works without code changes.
+  convention fallback kept for existing tests. 12 new tests, 1346 total pass.
+
+---
+
+## checkpoint 2 summary (closed 2026-11-09)
+
+**branch**: `checkpoint-2-linkml-schema` (be7d0fd)
+
+one workstream delivered:
+
+- **WS 2 linkml schema**: `src/omicstra/schema/omicstra.yaml` v0.1.1.
+  36/36 structural tests (PyYAML only) + 13/13 linkml probe tests. two cohort
+  fixtures: `tnbc92_minimal.yaml` (original_st, virchow2 1280d) and
+  `alternate_cohort_minimal.yaml` (visium, uni2 1536d, donor_id). CohortPack
+  tree_root, typed FK ranges, supervision_annotation_ids on DerivationRecord,
+  UnitLevel enum, enforcement (minimum_value, pattern, rules). CI green on
+  3.11 / 3.12 / 3.14.
 
 ---
 
@@ -94,3 +144,4 @@ five workstreams delivered:
 - CITATION.cff date-released (still 2026-10-02)
 - question.execute() -> discover() wiring (WS 5 remainder)
 - omicstra_evidence.yaml (evidence/routing schema layer, WS 2 deferred)
+- linkml schema 0.2.0 entities: Cohort, Split, PlatformDescriptor (deferred from 0.1.1)
