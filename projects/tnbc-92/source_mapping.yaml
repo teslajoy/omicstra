@@ -1,0 +1,6 @@
+# source column bindings for tnbc-92 (virchow2 1280d, original ST platform)
+# read by AlignmentContract.from_project_dir() to map schema roles to actual
+# column names in the niche-join parquets.
+he_niche_column: virchow2_niche
+he_tokens_column: virchow2_cell_tokens
+sample_column: subarray

@@ -1,0 +1,6 @@
+# source mapping for the alternate-cohort fixture (uni2 1536d, slide_id grouping)
+# column names differ from the {encoder_name}_niche convention to prove
+# the mapping overrides convention when present.
+he_niche_column: uni2_embeddings
+he_tokens_column: uni2_tile_tokens
+sample_column: slide_id

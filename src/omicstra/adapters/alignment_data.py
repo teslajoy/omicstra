@@ -101,8 +101,17 @@ class AlignmentContract:
                 + "\n  ".join(problems))
 
         he_name = he_enc["name"]
-        he_niche_col = f"{he_name}_niche"
-        he_tokens_col = f"{he_name}_cell_tokens"
+        mapping_path = d / "source_mapping.yaml"
+        if mapping_path.exists():
+            from omicstra.adapters.source_mapping import SourceMapping
+            sm = SourceMapping.load_from_yaml(mapping_path)
+            he_niche_col = sm.he_niche_column
+            he_tokens_col = sm.he_tokens_column
+            default_sample_col = sm.sample_column
+        else:
+            he_niche_col = f"{he_name}_niche"
+            he_tokens_col = f"{he_name}_cell_tokens"
+            default_sample_col = "subarray"
 
         strat = None
         join_inputs = raw.get("join_inputs", {})
@@ -126,6 +135,7 @@ class AlignmentContract:
             subject_column=subject,
             stratification_column=strat,
             unit_label_columns=tuple(unit_labels),
+            sample_column=default_sample_col,
         )
 
     @classmethod
