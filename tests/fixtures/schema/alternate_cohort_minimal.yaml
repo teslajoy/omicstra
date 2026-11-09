@@ -1,0 +1,103 @@
+# alternate cohort: different encoder, subject column, platform, k
+# encoder: UNI2 1536d (not Virchow2 1280d)
+# subject column: donor_id (not patient_id)
+# platform: visium (not original_st)
+# k_neighbors: 4 (not 6) -> unit_level is still niche
+# this instance must pass CohortPack validation without any code changes
+# it exercises the schema's cohort-agnosticism claim
+
+participants:
+  - participant_id: D001
+    cohort: hest-breast
+  - participant_id: D002
+    cohort: hest-breast
+
+biospecimens:
+  - specimen_id: SPEC001
+    participant_id: D001
+    tissue_type: breast
+    disease: IDC
+  - specimen_id: SPEC002
+    participant_id: D002
+    tissue_type: breast
+    disease: IDC
+
+tissue_sections:
+  - section_id: SECT001
+    specimen_id: SPEC001
+    section_index: 0
+    thickness_um: 10.0
+    z_offset_um: 0.0
+
+assays:
+  - assay_id: A_VIS_SECT001
+    section_id: SECT001
+    platform: visium
+    modality: molecular
+  - assay_id: A_HE_SECT001
+    section_id: SECT001
+    platform: visium
+    modality: morphology
+
+coordinate_frames:
+  - frame_id: F_VIS_SECT001
+    assay_id: A_VIS_SECT001
+    unit_label: pixels
+    scale_to_microns: 0.4985
+    pitch_um: 100.0
+
+representations:
+  - repr_id: uni2_niche_v1
+    modality: morphology
+    unit_level: niche
+    encoder: uni2
+    dim: 1536
+    derivation:
+      encoder_name: uni2
+      encoder_version: "1.0"
+      input_repr_ids: []
+      supervision_annotation_ids: []
+  - repr_id: novae_niche_v1
+    modality: molecular
+    unit_level: niche
+    encoder: novae
+    dim: 64
+    derivation:
+      encoder_name: novae
+      encoder_version: "0.1.1"
+      input_repr_ids: []
+      supervision_annotation_ids: []
+  - repr_id: z_he_R1_hest
+    modality: aligned
+    unit_level: niche
+    encoder: uni2
+    dim: 512
+    run_id: R1_hest
+    derivation:
+      encoder_name: uni2
+      run_id: R1_hest
+      input_repr_ids:
+        - uni2_niche_v1
+      supervision_annotation_ids:
+        - pathologist_subtype
+
+annotations:
+  - annotation_id: pathologist_subtype
+    label_type: discrete
+    subject_level: false
+    values_path: data/canonical/pathologist_subtype.parquet
+    classes:
+      - luminal
+      - her2
+      - tnbc
+    coverage_fraction: 0.91
+    provenance:
+      source: pathologist
+      method: H&E review
+
+data_files:
+  - path: data/embeddings/uni2_niche/SECT001.npy
+    format: npy
+    sha256: b4c2f3e5a6d7e8f9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f3a4
+    n_rows: 4992
+    n_cols: 1536

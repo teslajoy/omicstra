@@ -11,55 +11,53 @@ is not worked on, discussed, or measured until the task card is closed.
 
 ## the task
 
-**capability matrix: supported questions × required data × workflow × limitations.**
+**linkml schema v0.1.1: biomedical entities for cross-modal spatial biology.**
 
-parent goal: a researcher picks up omicstra and knows immediately what it can
-and cannot answer, what data it needs, and what it refuses. the matrix is the
-single source of truth for external claims (conference talks, the README's
-"what it cannot do yet" section, the evidence pack's routing decisions).
+parent goal: a cohort's data has a declared schema, not an implicit one baked
+into column names. Representation + DerivationRecord carry the meaning that
+was hidden in naming conventions. circularity is a lineage traversal, not a
+string comparison on view names.
 
-previous task card (checkpoint-1 schema + normalization, 5 workstreams done
-2026-11-04) preserved at `design/_scratch/CURRENT_checkpoint1.md`.
+previous task card (WS 1 capability matrix, done 2026-11-06) preserved at
+`design/_scratch/CURRENT_ws1.md`.
 
-this is completion_roadmap WS 1.
+this is completion_roadmap WS 2.
 
-### what to build
+### what was built
 
-a document at `docs/capability_matrix.md` with one row per supported question
-type, columns:
+`src/omicstra/schema/omicstra.yaml` — version 0.1.1.
 
-| question type | task family (routing_contract.json id) | required data | required declarations | method | output | limitations | proposal requirement |
+key entities: Participant, Biospecimen, TissueSection, Assay, CoordinateFrame,
+SpatialUnit, DerivationRecord, Representation, Annotation, AnnotationProvenance,
+DataFile. container: CohortPack (tree_root).
 
-populated from:
+fixes applied from linkml-lint + gen-pydantic review of 0.1.0 draft:
+- B1: block-scalar all descriptions (parses cleanly)
+- B2: CohortPack tree_root for FK integrity
+- B3: typed FK ranges
+- G2: supervision_annotation_ids on DerivationRecord
+- G3-lite: UnitLevel enum + unit_level required on Representation
+- enforcement: minimum_value, pattern, rules block for aligned -> run_id
 
-1. `src/omicstra/configs/routing_contract.json` - 7 task families, their
-   required steps and accepted params
-2. `projects/tnbc-92/project.json` + `cohort.json` - what a cohort must declare
-3. `design/completion_roadmap.md` - 11 workstreams, known gaps
-4. `docs/open_items.md` - 39+ items with status
-5. `docs/papers/Sanati_2025_proposal.pdf` or the proposal text - H1/H2/H3
-   original requirements
-6. `projects/tnbc-92/proposal_deviations.md` - what changed from the proposal
+### acceptance criteria
 
-### acceptance
-
-- one row per task_family in `routing_contract.json` (7 rows minimum)
-- every row has: required data format, required declarations, the graph nodes
-  it invokes, the output it returns, its limitations
-- proposal requirements traced: H1/H2/H3 mapped to task families, deviations
-  noted where present
-- "not supported" rows: at least cross-modal retrieval on a second cohort
-  (WS 10), de-novo labeling (WS 7), SLURM (not built)
-- the README "what it cannot do yet" section updated to reference the matrix
+- [x] valid seed-cohort example: `tests/fixtures/schema/tnbc92_minimal.yaml`
+- [x] valid alternate-cohort example: `tests/fixtures/schema/alternate_cohort_minimal.yaml`
+  (UNI2 1536d, donor_id, visium, k=4 — no code changes)
+- [x] 36/36 structural tests pass with PyYAML only (no linkml install)
+- [ ] `linkml-lint` passes (requires `pip install linkml>=1.8`)
+- [ ] 10 must-reject probes pass: `python -m pytest tests/test_schema_validation.py`
+- [ ] invalid examples rejected with every problem named
 
 ### stopping condition
 
-`docs/capability_matrix.md` written and committed. README updated. no code
-changes required or in scope.
+`linkml-lint` clean + `test_schema_validation.py` all pass + branch merged.
 
 ### not in scope
 
-LinkML schema (WS 2), code changes, new adapters, test runs, any paid calls.
+source mapping changes (WS 3, done in checkpoint 1), code path changes,
+second cohort evidence pack (WS 10), evidence schema (omicstra_evidence.yaml,
+deferred to 0.2.0).
 
 ---
 
@@ -69,6 +67,9 @@ LinkML schema (WS 2), code changes, new adapters, test runs, any paid calls.
 
 five workstreams delivered:
 
+- **WS 1 capability matrix**: `docs/capability_matrix.md` — 7 task-family rows,
+  not-supported table, H1/H2/H3 map, P-items noted. README updated. committed
+  to main 2026-11-06 (554bb44).
 - **WS 3 source normalization**: `adapters/alignment_data.py` AlignmentContract
   + `from_project_dir()`; `protocols/join.py` supervision_set declaration-driven.
   hardcoded column names and dimensions replaced by declared roles.
@@ -82,15 +83,6 @@ five workstreams delivered:
 - **40/40 alignment tests + 19/19 contract tests + 82/82 join tests** pass.
   no paid calls.
 
-stopping condition met: declaration -> source mapping -> loaded arrays with
-correct shapes on both tnbc-92 and alternate fixture.
-
-not delivered in checkpoint 1 (tracked in completion_roadmap):
-- full LinkML schema (WS 2)
-- question.execute() entering through discover() (WS 5 remainder)
-- pathway artifact persistence (WS 6)
-- second cohort evidence pack (WS 10)
-
 ---
 
 ## parking lot
@@ -100,5 +92,5 @@ not delivered in checkpoint 1 (tracked in completion_roadmap):
 - gpath2vec fix/v3.0.1 (verified, not merged)
 - .zenodo.json description (still describes v1.1 features)
 - CITATION.cff date-released (still 2026-10-02)
-- LinkML schema (WS 2)
 - question.execute() -> discover() wiring (WS 5 remainder)
+- omicstra_evidence.yaml (evidence/routing schema layer, WS 2 deferred)

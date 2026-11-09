@@ -1,0 +1,608 @@
+id: https://omicstra.org/schema/v0.1
+name: omicstra
+title: Omicstra Research Entity Schema
+description: >-
+  entities for cross-modal spatial biology: participants, specimens,
+  assays, spatial units, representations and derivation lineage.
+  large matrices live in anndata/parquet; this schema describes and
+  references them. Representation + DerivationRecord are the entities
+  no existing standard (HTAN, FHIR, GEO, PROV) covers at this level
+  of specificity: modality, unit level, supervision lineage, encoder
+  dimension.
+
+version: 0.1.1
+status: development
+license: MIT
+see_also:
+  - "https://github.com/teslajoy/omicstra"
+
+prefixes:
+  linkml: "https://w3id.org/linkml/"
+  omicstra: "https://omicstra.org/schema/"
+
+default_prefix: omicstra
+default_range: string
+
+imports:
+  - linkml:types
+
+# version history
+#
+#  0.1.0  2026-11-06  draft: core entities, structural layout. did not parse
+#                     (B1); no tree_root (B2); FKs as bare strings (B3);
+#                     8 of 10 enforcement probes accepted when they should
+#                     have been rejected.
+#  0.1.1  2026-11-06  fixes B1-B3. adds G2 (supervision lineage), G3-lite
+#                     (unit_level). enforcement: minimum_value on dim and
+#                     scale_to_microns; pattern on sha256 and path; rules
+#                     block for aligned -> run_id + inputs.
+#  0.2.0  planned     Cohort entity (aligns with cohort.json). Split entity
+#                     (aligns with runs/{id}/split.json). PlatformDescriptor
+#                     class (aligns with platform.json). Aggregation class
+#                     for niche geometry. Affine transform on CoordinateFrame.
+#  0.3.0  planned     analytical role bindings per task (WS 4).
+#  1.0.0  planned     second cohort evidence pack produced end-to-end.
+
+# ---- enumerations ----
+
+enums:
+
+  Modality:
+    description: >-
+      what a Representation encodes. the aligned modality is any
+      representation projected into the shared latent space by an
+      alignment run; it must carry run_id and non-empty input_repr_ids.
+    permissible_values:
+      morphology:
+        description: >-
+          from H&E or other staining image. example: Virchow2 1280d
+          niche embedding.
+      molecular:
+        description: >-
+          from gene expression counts. examples: Novae GNN 64d, PCA on HVGs.
+      pathway:
+        description: >-
+          pathway-level enrichment or graph embedding. examples: gpath2vec
+          512d, AUCell scores per Reactome pathway.
+      aligned:
+        description: >-
+          projected into the shared space by an alignment run. derivation
+          must include run_id and at least one input_repr_id. a Representation
+          with modality=aligned and empty derivation is a schema error.
+
+  UnitLevel:
+    description: >-
+      what one row in a Representation's matrix represents. a Representation
+      does not carry this implicitly; it must be declared. niche is the
+      primary unit in omicstra (centre spot + k neighbours aggregated).
+    permissible_values:
+      spot:
+        description: one array spot or pixel (pre-aggregation).
+      cell:
+        description: >-
+          one segmented cell (Xenium, CosMX, MERSCOPE). not applicable
+          to original ST (spots contain roughly 200 cells).
+      tile:
+        description: one image tile, typically aligned to a spot centroid.
+      niche:
+        description: >-
+          aggregated neighbourhood: centre spot plus k neighbours.
+          the primary delivered unit for the tnbc-92 seed cohort (k=6).
+      subject:
+        description: pseudobulk or summary over all units in one participant.
+
+  AssayPlatform:
+    description: >-
+      measurement platform. determines spot geometry and whether Novae
+      zero-shot embedding is in-distribution. original_st is NOT in Novae's
+      training distribution; embedding quality must be validated in EDA.
+    permissible_values:
+      original_st:
+        description: >-
+          Spatial Transcriptomics AB / Stahl 2016. 100um spots, 150um
+          center-to-center pitch, roughly 200 cells per spot, 6.2x6.4mm
+          array. this is a platform declaration, not a geometry instance;
+          measured pitch (161.6px at 20x) goes in CoordinateFrame.
+      visium:
+        description: 10x Genomics Visium. 55um spots.
+      visium_hd:
+        description: 10x Genomics Visium HD. 2um or 8um bins.
+      xenium:
+        description: 10x Genomics Xenium in situ. subcellular resolution.
+      merscope:
+        description: Vizgen MERSCOPE. image-based, subcellular.
+      cosmx:
+        description: NanoString CosMX. image-based, subcellular.
+
+  AnnotationSource:
+    permissible_values:
+      pathologist:
+        description: drawn or labeled by a human pathologist.
+      algorithm:
+        description: >-
+          computed from expression or imaging (for example NMF megaclusters,
+          spatial archetype assignment, Bareche subtyping).
+      self_supervised:
+        description: >-
+          derived from the same measurement being analyzed (for example niche
+          type from spatial graph). subject to circularity; record
+          derived_from_repr_ids in the Annotation.
+
+  AnnotationLabelType:
+    permissible_values:
+      discrete:
+        description: "one label per unit (string or integer). example: mc_megacluster."
+      continuous:
+        description: "one scalar per unit (float). example: TLS score."
+      weights:
+        description: >-
+          one probability vector per unit summing to 1. example: mc_weights
+          (14-class NMF weights used as soft supervision). the supervision
+          column must never appear in the feature set.
+
+  FileFormat:
+    permissible_values:
+      h5ad:
+        description: AnnData HDF5. canonical counts format.
+      parquet:
+        description: Apache Parquet. canonical coordinates and niche-join format.
+      npy:
+        description: NumPy binary. embedding arrays.
+      json:
+        description: JSON. config, provenance, evidence pack.
+      csv:
+        description: CSV. tabular metadata.
+      tsv:
+        description: TSV. tabular metadata (tab-separated).
+      tiff:
+        description: TIFF. whole-slide image.
+
+# ---- classes ----
+
+classes:
+
+  CohortPack:
+    tree_root: true
+    description: >-
+      container for all schema-described entities in one cohort instance.
+      linkml-validate checks referential integrity against this root.
+      a valid pack must have at least one Participant.
+    attributes:
+      participants:
+        range: Participant
+        multivalued: true
+        inlined_as_list: true
+      biospecimens:
+        range: Biospecimen
+        multivalued: true
+        inlined_as_list: true
+      tissue_sections:
+        range: TissueSection
+        multivalued: true
+        inlined_as_list: true
+      assays:
+        range: Assay
+        multivalued: true
+        inlined_as_list: true
+      coordinate_frames:
+        range: CoordinateFrame
+        multivalued: true
+        inlined_as_list: true
+      spatial_units:
+        range: SpatialUnit
+        multivalued: true
+        inlined_as_list: true
+      representations:
+        range: Representation
+        multivalued: true
+        inlined_as_list: true
+      annotations:
+        range: Annotation
+        multivalued: true
+        inlined_as_list: true
+      data_files:
+        range: DataFile
+        multivalued: true
+        inlined_as_list: true
+
+  Participant:
+    description: >-
+      one research subject. maps to a row in the clinical table.
+      HTAN field name: HTAN_PARTICIPANT_ID.
+    attributes:
+      participant_id:
+        identifier: true
+        required: true
+        range: string
+        description: "stable subject identifier. never inferred from filename."
+      cohort:
+        required: true
+        range: string
+        description: >-
+          cohort this participant belongs to. routing is per-cohort; a
+          participant's data never inherits another cohort's evidence pack.
+
+  ClinicalObservation:
+    description: >-
+      one measured or recorded clinical fact for one participant.
+      not all analyses require clinical data; this entity is optional.
+    attributes:
+      observation_id:
+        identifier: true
+        required: true
+        range: string
+        description: "{participant_id}__{observation_type}__{timepoint} is a reasonable convention."
+      participant_id:
+        required: true
+        range: Participant
+        inlined: false
+        description: "subject this observation belongs to."
+      observation_type:
+        required: true
+        range: string
+        description: "controlled term or free text. examples: ER_status, pCR, age_at_diagnosis."
+      value_str:
+        range: string
+      value_num:
+        range: float
+      timepoint:
+        range: string
+        description: "pre, post, baseline, month_N or similar."
+
+  Biospecimen:
+    description: >-
+      a physical specimen taken from a participant.
+      HTAN equivalent: Biospecimen level 1.
+    attributes:
+      specimen_id:
+        identifier: true
+        required: true
+        range: string
+      participant_id:
+        required: true
+        range: Participant
+        inlined: false
+      tissue_type:
+        range: string
+        description: "anatomical site or tissue class. example: breast_invasive_carcinoma."
+      disease:
+        range: string
+
+  TissueSection:
+    description: >-
+      one physical section cut from a biospecimen. the tnbc-92 seed cohort
+      has 3 sections per patient (consecutive 16um cuts from one frozen
+      block), each treated as a separate subarray. near-duplicate in z,
+      not independent samples.
+    attributes:
+      section_id:
+        identifier: true
+        required: true
+        range: string
+        description: "matches subarray name in canonical files and niche parquets."
+      specimen_id:
+        required: true
+        range: Biospecimen
+        inlined: false
+      section_index:
+        range: integer
+        description: "0-based cut order within the block."
+      thickness_um:
+        range: float
+        description: "physical section thickness in micrometers."
+      z_offset_um:
+        range: float
+        description: >-
+          distance from block origin in micrometers. for tnbc-92: 0, 16, 32
+          per section_index.
+
+  Assay:
+    description: >-
+      one measurement modality applied to one section. a TissueSection may
+      have multiple assays (H&E imaging plus ST on the same 16um section,
+      as in tnbc-92, with no serial-section registration error).
+    attributes:
+      assay_id:
+        identifier: true
+        required: true
+        range: string
+      section_id:
+        required: true
+        range: TissueSection
+        inlined: false
+      platform:
+        required: true
+        range: AssayPlatform
+      modality:
+        required: true
+        range: Modality
+        description: "primary modality this assay measures."
+
+  CoordinateFrame:
+    description: >-
+      defines the spatial coordinate space for one assay. scale_to_microns
+      converts native units (image pixels or array indices) to micrometers.
+      for original ST: pitch = 150um; measured pixel pitch = 161.6px;
+      scale_to_microns = 150 / 161.6 = 0.928. this value is a GAT input
+      (each edge enters as distance times scale divided by 20), not just a
+      display label; it directly affects Novae embeddings. absent or zero
+      means refuse.
+    attributes:
+      frame_id:
+        identifier: true
+        required: true
+        range: string
+      assay_id:
+        required: true
+        range: Assay
+        inlined: false
+      unit_label:
+        required: true
+        range: string
+        description: >-
+          human-readable unit name: pixels, array_index, um. informational
+          only; scale_to_microns is what computations use.
+      scale_to_microns:
+        required: true
+        range: float
+        minimum_value: 0.0001
+        description: >-
+          multiply by this factor to convert one native unit to one micrometer.
+          must be strictly positive. zero is refused (minimum_value: 0.0001).
+      pitch_um:
+        range: float
+        description: >-
+          center-to-center nearest-neighbor distance in micrometers. 150um for
+          original ST. describes niche geometry; not derived from scale_to_microns.
+      rotation_deg:
+        range: float
+        description: >-
+          array rotation from image x-axis in degrees. original ST is rotated
+          roughly 45 degrees and roughly 11 percent anisotropic. rotation_deg
+          alone cannot express that anisotropy; a full affine transform is
+          deferred to 0.2.0.
+
+  SpatialUnit:
+    description: >-
+      one addressable location in the tissue: a spot (original ST), a cell
+      (Xenium/CosMX), or an image tile (H&E). the smallest entity that
+      carries both a position and a measurement. large arrays of vectors live
+      in parquet/npy; this entity describes and references them.
+    attributes:
+      unit_id:
+        identifier: true
+        required: true
+        range: string
+        description: "stable identifier. spot_id in parquets. must be unique per assay."
+      assay_id:
+        required: true
+        range: Assay
+        inlined: false
+      participant_id:
+        required: true
+        range: Participant
+        inlined: false
+        description: >-
+          denormalized from assay -> section -> specimen -> participant for query
+          speed. must agree with the participant implied by the assay chain.
+      x_native:
+        required: true
+        range: float
+        description: "position in coordinate frame native units."
+      y_native:
+        required: true
+        range: float
+        description: "position in coordinate frame native units."
+      coordinate_frame_id:
+        required: true
+        range: CoordinateFrame
+        inlined: false
+
+  DerivationRecord:
+    description: >-
+      how a Representation was produced. the derivation chain (inputs to
+      inputs of inputs) is what circularity checks traverse, not view names.
+      supervision_annotation_ids records which annotations were used to
+      supervise training; this is the edge the circularity check needs to
+      catch annotation-supervised representations being tested against
+      those same annotations.
+    attributes:
+      encoder_name:
+        required: true
+        range: string
+        description: >-
+          canonical encoder identifier. must match encoders[].name in
+          project.json and the encoder slot on the parent Representation.
+          example: virchow2, novae, gpath2vec, pca_hvg.
+      encoder_version:
+        range: string
+        description: "checkpoint tag, git sha, or model card version."
+      run_id:
+        range: string
+        description: >-
+          alignment or training run that produced this Representation.
+          required when modality is aligned. absent for base encoders
+          (Virchow2, Novae) that are not alignment outputs.
+      params_hash:
+        range: string
+        description: "sha256 of the config used to produce this representation."
+      input_repr_ids:
+        range: string
+        multivalued: true
+        description: >-
+          repr_ids of the representations this one was derived from.
+          empty list means base encoder (no upstream representation).
+          example: an aligned z_he view carries the repr_id of the
+          virchow2_niche representation it was projected from.
+      supervision_annotation_ids:
+        range: string
+        multivalued: true
+        description: >-
+          annotation_ids whose label or weight vectors were used as
+          supervision signal during training. this is the edge that
+          prevents testing a view against an annotation it was trained on.
+          example: a contrastive run trained on mc_weights carries
+          mc_weights_niche here.
+
+  Representation:
+    description: >-
+      one embedding of spatial units into a vector space. the entity no
+      existing standard (HTAN, FHIR, GEO) covers at this specificity:
+      modality, unit level, encoder dimension, derivation lineage. a column
+      named virchow2_niche is an informal label; a Representation declares
+      the actual meaning. the lineage is what allows analytical code to
+      resolve circularity without inspecting view names.
+    rules:
+      - preconditions:
+          slot_conditions:
+            modality:
+              equals_string: aligned
+        postconditions:
+          slot_conditions:
+            run_id:
+              required: true
+        description: "aligned representations must carry a run_id."
+    attributes:
+      repr_id:
+        identifier: true
+        required: true
+        range: string
+        description: >-
+          stable identifier scoped to a cohort and run. examples:
+          virchow2_niche_v3, novae_niche_v3, z_he_R4_v3.
+      modality:
+        required: true
+        range: Modality
+      unit_level:
+        required: true
+        range: UnitLevel
+        description: >-
+          what one row in this representation's matrix represents. for tnbc-92
+          all delivered representations are at niche level (k=6 aggregation).
+      encoder:
+        required: true
+        range: string
+        description: >-
+          encoder name. must match encoder_name in derivation. cross-object
+          check is a load-time validation; linkml does not reach into the
+          derivation record from here.
+      dim:
+        required: true
+        range: integer
+        minimum_value: 1
+        description: >-
+          embedding dimensionality. must match the actual array width.
+          validated at load time against the file. dim <= 0 is a schema error.
+      units_path:
+        range: string
+        description: >-
+          path to the file holding per-unit vectors (npy or parquet), relative
+          to the project root. absent for representations that live inline in
+          niche-join parquets.
+      derivation:
+        required: true
+        range: DerivationRecord
+        inlined: true
+        description: >-
+          how this representation was produced. required for all representations.
+          base encoders carry derivation with empty input_repr_ids and empty
+          supervision_annotation_ids.
+      run_id:
+        range: string
+        description: >-
+          shortcut to derivation.run_id for rule validation. must match
+          derivation.run_id when both are present.
+
+  Annotation:
+    description: >-
+      a label or score assigned to spatial units or participants. the same
+      annotation plays different roles in different tasks: mc_weights is
+      supervision in alignment training, evaluation target in H2-A, and must
+      be excluded from the feature set everywhere (circular supervision rule).
+      the role is an analytical binding (WS 4), not a property here.
+    attributes:
+      annotation_id:
+        identifier: true
+        required: true
+        range: string
+        description: >-
+          stable identifier. examples: mc_megacluster, mc_weights_niche,
+          tls_score, time_subtype.
+      label_type:
+        required: true
+        range: AnnotationLabelType
+      subject_level:
+        range: boolean
+        description: >-
+          true if one label per participant, not per spatial unit. subject-level
+          labels must be shuffled at the participant level in permutation tests,
+          not at the unit level.
+      values_path:
+        range: string
+        description: "path to the annotation values file (parquet or tsv), relative to project root."
+      classes:
+        range: string
+        multivalued: true
+        description: >-
+          the label set for discrete annotations. required for label_granularity
+          guard (G1), which counts classes and computes NMI against subject_id.
+      coverage_fraction:
+        range: float
+        description: >-
+          fraction of spatial units with a non-null label. a check that
+          measures nothing must not read as a pass.
+      derived_from_repr_ids:
+        range: string
+        multivalued: true
+        description: >-
+          repr_ids used to compute this annotation (for self_supervised source).
+          the circularity guard checks this against the representation under test.
+      provenance:
+        required: true
+        range: AnnotationProvenance
+        inlined: true
+
+  AnnotationProvenance:
+    description: "how an annotation was produced and what it means."
+    attributes:
+      source:
+        required: true
+        range: AnnotationSource
+      method:
+        range: string
+        description: >-
+          algorithm or process name. example: NMF k=14 on per-spot pseudobulk
+          expression (mc_weights), Bareche 2018 subtyping (TIME).
+      reference:
+        range: string
+        description: "doi or citation for the method."
+
+  DataFile:
+    description: >-
+      a physical file on disk. the schema describes and references large
+      matrices; it does not embed them. sha256 is what makes a provenance
+      chain verifiable.
+    attributes:
+      path:
+        identifier: true
+        required: true
+        range: string
+        pattern: "^(?!/)"
+        description: >-
+          path relative to the project root. must not start with /. absolute
+          paths break portability across machines and are a schema error.
+      format:
+        required: true
+        range: FileFormat
+      sha256:
+        range: string
+        pattern: "^[0-9a-f]{64}$"
+        description: >-
+          lowercase hex SHA-256 digest (64 characters). required for any file
+          the evidence pack cites. a short or malformed digest is a schema error.
+      n_rows:
+        range: integer
+        minimum_value: 0
+      n_cols:
+        range: integer
+        minimum_value: 0

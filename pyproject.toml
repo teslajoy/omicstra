@@ -105,7 +105,7 @@ durable = ["temporalio>=1.32"]
 #
 # cp314 wheel, so 3.14 needs no source build - the same bar every other
 # dependency here had to clear.
-dev = ["pytest", "ruff", "build", "statsmodels>=0.14"]
+dev = ["pytest", "ruff", "build", "statsmodels>=0.14", "linkml>=1.8"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
