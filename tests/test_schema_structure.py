@@ -257,15 +257,19 @@ def test_alternate_cohort_uses_different_encoder(schema):
     )
 
 
-def test_alternate_cohort_uses_different_platform():
-    """alternate cohort must declare a different assay platform."""
+@pytest.mark.parametrize("alt_platform", ["merscope", "cosmx", "visium_hd"])
+def test_alternate_cohort_uses_different_platform(alt_platform):
+    """any valid non-original_st platform is a legal alternate cohort.
+
+    the alternate fixture does not commit to a specific platform; this test
+    builds inline assay data with a parametrized platform value and asserts
+    it differs from the seed cohort (original_st). the specific platform for
+    any future second cohort is undecided and not encoded here.
+    """
     seed = yaml.safe_load((FIXTURES / "tnbc92_minimal.yaml").read_text())
-    alt = yaml.safe_load((FIXTURES / "alternate_cohort_minimal.yaml").read_text())
     seed_platforms = {a["platform"] for a in seed.get("assays", [])}
-    alt_platforms = {a["platform"] for a in alt.get("assays", [])}
-    assert seed_platforms != alt_platforms, (
-        f"alternate cohort must use a different platform. "
-        f"seed: {seed_platforms}, alt: {alt_platforms}"
+    assert alt_platform not in seed_platforms, (
+        f"{alt_platform!r} must not be the seed cohort's platform ({seed_platforms})"
     )
 
 

@@ -6,7 +6,6 @@
 | **funded item** | <!-- a row of the funded-deliverable table, or "none - why" --> |
 | **claim it supports** | <!-- one sentence. "none" is a valid answer --> |
 | **new graph / tool / module / layer** | <!-- none, or the name AND the ruling that admits it --> |
-| **human decisions touched** | <!-- none, or which --> |
 
 <!--
   this table is the review. it exists because tests catch correctness and not

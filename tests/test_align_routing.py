@@ -113,13 +113,15 @@ class TestRunAlignDefaultRoute:
 # Test 2: LangGraph graph entry point
 # ---------------------------------------------------------------------------
 class TestGraphRouting:
-    def test_graph_align_node_uses_package(self, tmp_path):
+    def test_graph_align_node_uses_package(self, tmp_path, monkeypatch):
         """the align node in graphs/align.py calls run_align, which defaults
         to use_package=True. verify compute propagates through the graph."""
         from langgraph.checkpoint.memory import InMemorySaver
 
         from omicstra.graphs.align import build_align_graph
 
+        import omicstra.settings as _s
+        monkeypatch.setattr(_s.settings, "project_dir", None)
         cfg, nj, runs_root = _make_fixture(tmp_path)
         fake_grid = AlignGrid(
             runs_root=str(runs_root),

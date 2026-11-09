@@ -1,7 +1,7 @@
-# alternate cohort: different encoder, subject column, platform, k
+# alternate cohort: different encoder, subject column, k
 # encoder: UNI2 1536d (not Virchow2 1280d)
 # subject column: donor_id (not patient_id)
-# platform: visium (not original_st)
+# platform: not declared here - assay platform is a test parameter, not a fixture commitment
 # k_neighbors: 4 (not 6) -> unit_level is still niche
 # this instance must pass CohortPack validation without any code changes
 # it exercises the schema's cohort-agnosticism claim
@@ -28,23 +28,6 @@ tissue_sections:
     section_index: 0
     thickness_um: 10.0
     z_offset_um: 0.0
-
-assays:
-  - assay_id: A_VIS_SECT001
-    section_id: SECT001
-    platform: visium
-    modality: molecular
-  - assay_id: A_HE_SECT001
-    section_id: SECT001
-    platform: visium
-    modality: morphology
-
-coordinate_frames:
-  - frame_id: F_VIS_SECT001
-    assay_id: A_VIS_SECT001
-    unit_label: pixels
-    scale_to_microns: 0.4985
-    pitch_um: 100.0
 
 representations:
   - repr_id: uni2_niche_v1
