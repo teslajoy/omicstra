@@ -164,7 +164,7 @@ def test_datafile_absolute_path_is_rejected():
           - participant_id: P001
             cohort: test
         data_files:
-          - path: /Users/x/data/embeddings.parquet
+          - path: /absolute/path/embeddings.parquet
             format: parquet
     """)
     errors = _validate(yaml)
