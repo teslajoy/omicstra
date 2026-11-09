@@ -20,6 +20,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_FILE = ROOT / "src" / "omicstra" / "schema" / "omicstra.yaml"
+FIXTURES = ROOT / "tests" / "fixtures" / "schema"
 
 
 @pytest.fixture(scope="module")
@@ -220,3 +221,62 @@ def test_file_format_has_tsv(enums):
 def test_assay_platform_has_visium_hd(enums):
     values = enums["AssayPlatform"]["permissible_values"]
     assert "visium_hd" in values, "AssayPlatform must include visium_hd"
+
+
+# ---- cohort fixture files (WS 2 acceptance) ---------------------------------
+
+@pytest.mark.parametrize("fixture", ["tnbc92_minimal.yaml", "alternate_cohort_minimal.yaml"])
+def test_fixture_file_is_valid_yaml(fixture):
+    """both cohort examples must at least parse as valid YAML."""
+    path = FIXTURES / fixture
+    assert path.is_file(), f"fixture not found: {path}"
+    doc = yaml.safe_load(path.read_text())
+    assert isinstance(doc, dict), f"{fixture} must be a YAML mapping"
+
+
+@pytest.mark.parametrize("fixture", ["tnbc92_minimal.yaml", "alternate_cohort_minimal.yaml"])
+def test_fixture_has_participants(fixture):
+    """every cohort pack must have at least one participant."""
+    doc = yaml.safe_load((FIXTURES / fixture).read_text())
+    assert doc.get("participants"), f"{fixture} must declare at least one participant"
+
+
+def test_alternate_cohort_uses_different_encoder(schema):
+    """alternate cohort must use a different encoder than the seed cohort.
+
+    this is the core claim: the schema is cohort-agnostic. if both fixtures
+    declare the same encoder and dim the alternate fixture proves nothing.
+    """
+    seed = yaml.safe_load((FIXTURES / "tnbc92_minimal.yaml").read_text())
+    alt = yaml.safe_load((FIXTURES / "alternate_cohort_minimal.yaml").read_text())
+    seed_encoders = {r["encoder"] for r in seed.get("representations", [])}
+    alt_encoders = {r["encoder"] for r in alt.get("representations", [])}
+    assert seed_encoders != alt_encoders, (
+        f"alternate cohort must use a different encoder. "
+        f"seed: {seed_encoders}, alt: {alt_encoders}"
+    )
+
+
+def test_alternate_cohort_uses_different_platform():
+    """alternate cohort must declare a different assay platform."""
+    seed = yaml.safe_load((FIXTURES / "tnbc92_minimal.yaml").read_text())
+    alt = yaml.safe_load((FIXTURES / "alternate_cohort_minimal.yaml").read_text())
+    seed_platforms = {a["platform"] for a in seed.get("assays", [])}
+    alt_platforms = {a["platform"] for a in alt.get("assays", [])}
+    assert seed_platforms != alt_platforms, (
+        f"alternate cohort must use a different platform. "
+        f"seed: {seed_platforms}, alt: {alt_platforms}"
+    )
+
+
+def test_alternate_cohort_aligned_repr_carries_supervision():
+    """aligned representation must carry supervision_annotation_ids in derivation."""
+    alt = yaml.safe_load((FIXTURES / "alternate_cohort_minimal.yaml").read_text())
+    aligned = [r for r in alt.get("representations", []) if r.get("modality") == "aligned"]
+    assert aligned, "alternate cohort fixture must have at least one aligned representation"
+    for r in aligned:
+        sup = r.get("derivation", {}).get("supervision_annotation_ids", [])
+        assert sup, (
+            f"aligned repr {r['repr_id']} must carry supervision_annotation_ids "
+            "(G2: needed for circularity traversal)"
+        )

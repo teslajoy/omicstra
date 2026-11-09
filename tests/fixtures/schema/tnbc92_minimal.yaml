@@ -1,0 +1,116 @@
+# seed cohort: tnbc-92
+# platform: original ST (Stahl 2016), 100um spots, 150um pitch
+# encoder: Virchow2 1280d, niche level (k=6)
+# subject column: patient_id
+# this instance must pass CohortPack validation
+
+participants:
+  - participant_id: P001
+    cohort: tnbc-92
+  - participant_id: P002
+    cohort: tnbc-92
+
+biospecimens:
+  - specimen_id: BIO001
+    participant_id: P001
+    tissue_type: breast_invasive_carcinoma
+    disease: TNBC
+  - specimen_id: BIO002
+    participant_id: P002
+    tissue_type: breast_invasive_carcinoma
+    disease: TNBC
+
+tissue_sections:
+  - section_id: SA001
+    specimen_id: BIO001
+    section_index: 0
+    thickness_um: 16.0
+    z_offset_um: 0.0
+  - section_id: SA002
+    specimen_id: BIO001
+    section_index: 1
+    thickness_um: 16.0
+    z_offset_um: 16.0
+
+assays:
+  - assay_id: A_ST_SA001
+    section_id: SA001
+    platform: original_st
+    modality: molecular
+  - assay_id: A_HE_SA001
+    section_id: SA001
+    platform: original_st
+    modality: morphology
+
+coordinate_frames:
+  - frame_id: F_ST_SA001
+    assay_id: A_ST_SA001
+    unit_label: pixels
+    scale_to_microns: 0.928
+    pitch_um: 150.0
+    rotation_deg: 45.0
+
+representations:
+  - repr_id: virchow2_niche_v3
+    modality: morphology
+    unit_level: niche
+    encoder: virchow2
+    dim: 1280
+    derivation:
+      encoder_name: virchow2
+      encoder_version: v2.0
+      input_repr_ids: []
+      supervision_annotation_ids: []
+  - repr_id: novae_niche_v3
+    modality: molecular
+    unit_level: niche
+    encoder: novae
+    dim: 64
+    derivation:
+      encoder_name: novae
+      encoder_version: "0.1.1"
+      input_repr_ids: []
+      supervision_annotation_ids: []
+  - repr_id: z_he_R4_v3
+    modality: aligned
+    unit_level: niche
+    encoder: virchow2
+    dim: 512
+    run_id: R4_v3
+    derivation:
+      encoder_name: virchow2
+      run_id: R4_v3
+      input_repr_ids:
+        - virchow2_niche_v3
+      supervision_annotation_ids:
+        - mc_weights_niche
+
+annotations:
+  - annotation_id: mc_megacluster
+    label_type: discrete
+    subject_level: false
+    values_path: data/embeddings/niches_v3/mc_megacluster.parquet
+    classes:
+      - mc1
+      - mc2
+      - mc3
+      - mc4
+      - mc5
+    coverage_fraction: 0.97
+    provenance:
+      source: algorithm
+      method: NMF k=14 on per-spot pseudobulk expression
+  - annotation_id: mc_weights_niche
+    label_type: weights
+    subject_level: false
+    values_path: data/embeddings/niches_v3/mc_weights_niche.parquet
+    provenance:
+      source: algorithm
+      method: NMF k=14 on per-spot pseudobulk expression
+
+data_files:
+  - path: data/embeddings/virchow2_niche/SA001.npy
+    format: npy
+    sha256: a3f1e2d4b5c6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2
+    n_rows: 1934
+    n_cols: 1280

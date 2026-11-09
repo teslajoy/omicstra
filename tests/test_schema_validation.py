@@ -24,14 +24,15 @@ linkml_validate = pytest.importorskip(
 
 def _validate(instance_yaml: str) -> list:
     """return a list of ValidationResult. empty = valid."""
+    import yaml as _yaml
     from linkml.validator import validate
     from linkml.validator.report import Severity
 
+    instance = _yaml.safe_load(instance_yaml)
     result = validate(
-        instance=instance_yaml,
-        source=str(SCHEMA_PATH),
+        instance=instance,
+        schema=str(SCHEMA_PATH),
         target_class="CohortPack",
-        input_format="yaml",
     )
     return [r for r in result.results if r.severity == Severity.ERROR]
 
