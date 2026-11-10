@@ -291,15 +291,61 @@ class ExecutionResult:
 
 
 def execute(request: AnalysisRequest) -> ExecutionResult:
-    """invoke the existing evaluation graph on a validated request."""
+    """invoke the evaluation graph on a validated request.
+
+    routes through discover() first: a cohort that has not run this task
+    returns a compute plan instead of calling the evaluate graph.
+    """
     import uuid
 
-    from omicstra.graph import _load_cohort
+    from omicstra.graph import _load_cohort, discover
     from omicstra.graphs.evaluate import build_evaluate_graph
+    from omicstra.labels import Route
 
-    cohort = _load_cohort(request.project_id)
     run_id = f"question-{uuid.uuid4().hex[:12]}"
 
+    disc = discover({"project_id": request.project_id, "task_id": request.task_id})
+    route = disc.get("route")
+
+    if route == Route.REFUSE:
+        return ExecutionResult(
+            request=request,
+            report={
+                "status": "refused",
+                "route_reason": disc.get("route_reason", "task not in contract"),
+            },
+            records=[],
+            run_id=run_id,
+        )
+
+    if route == Route.COMPUTE:
+        plan = [
+            {"tool": "he_encode",
+             "params": {"project_id": request.project_id},
+             "description": "encode H&E tiles"},
+            {"tool": "st_encode",
+             "params": {"project_id": request.project_id},
+             "description": "encode ST spots"},
+            {"tool": "align_run",
+             "params": {"project_id": request.project_id},
+             "description": "run alignment grid"},
+            {"tool": "evaluate_run",
+             "params": {"project_id": request.project_id, "run": request.run},
+             "description": "evaluate H1/H2/H3"},
+        ]
+        return ExecutionResult(
+            request=request,
+            report={
+                "status": "compute_required",
+                "route_reason": disc.get("route_reason", "no evidence for task"),
+                "plan": plan,
+            },
+            records=[],
+            run_id=run_id,
+        )
+
+    # Route.ASK — evidence exists, run the evaluate graph
+    cohort = disc.get("cohort") or _load_cohort(request.project_id)
     graph = build_evaluate_graph()
     out = graph.invoke({
         "project_id": request.project_id,

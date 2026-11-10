@@ -11,71 +11,87 @@ is not worked on, discussed, or measured until the task card is closed.
 
 ## the task
 
-**analytical bindings: encoder selection and pathway targets from declarations.**
+**pathway artifact persistence: scores reach disk, not just graph state.**
 
-parent goal: a cohort with a different primary encoder or a different set of
-pathway targets requires a declaration entry, not a code change.
+parent goal: pathway scores computed by the pathway_assay bridge currently
+live only in graph state. a second run cannot reuse them, notebooks cannot
+load them, and the evidence pack cannot cite them. this card persists them.
 
-previous task card (WS 3 source normalization, 2026-11-09) preserved at
-`design/_scratch/CURRENT_ws3.md`.
+previous task card (WS 5 execute wiring, 2026-11-10) preserved at
+`design/_scratch/CURRENT_ws5.md`.
 
-this is completion_roadmap WS 4 (remaining).
-
-### what was done in checkpoint 1 (partial WS 4)
-
-- `contracts/project.py`: h2_label, supervision, headline_view are `None` —
-  refused if absent, no silent defaults.
-- `protocols/evaluate.py`: circularity checks read declared headline_view
-  (not hardcoded `z_he`). gate_h3_pathway resolves clean view from declaration.
-- `adapters/evaluation.py`: REQUIRED + `declared()` pattern — refuses with
-  every missing field named.
-- `question.validate()`: same REQUIRED contract as the evaluation pipeline.
+this is completion_roadmap WS 6.
 
 ### what remains
 
-two items. both verified in code 2026-11-09:
+**item: persist pathway scores from graph state to disk.**
 
-**item 1: `graphs/encode.py` encoder defaults.**
-5 places with `.get("encoder", "virchow2")`. when the state carries no encoder,
-the graph silently uses virchow2. should read from the cohort's declared primary
-encoder instead (project.json#encoders[role=primary|morphology].name).
+the pathway_assay node computes AUCell scores and gpath2vec cosines and puts
+them in state["pathway_scores"]. nothing writes them to a file afterward.
 
-files to update:
-- `src/omicstra/graphs/encode.py` — replace `.get("encoder", "virchow2")` with
-  `_resolve_encoder(state, project_dir)` that reads the declared primary encoder
-  and refuses when none is declared with role primary or morphology.
-
-**item 2: `NAMED_PATHWAY_TARGETS` in `adapters/evaluation.py`.**
-5 Reactome pathway IDs hardcoded at line 457. a cohort using different pathways
-requires a code change. should come from `project.json#pathway_targets`.
-
-files to update:
-- `src/omicstra/adapters/evaluation.py` — `pathway_cosines()` reads
-  `project.json#pathway_targets` (list of {name, reactome_id}). absent =
-  refused with field named. `NAMED_PATHWAY_TARGETS` becomes the seed cohort's
-  declared value, not a package constant.
-- `projects/tnbc-92/project.json` — add `pathway_targets` list (5 entries,
-  same IDs as current constant).
+files to investigate:
+- `src/omicstra/graphs/align.py` — the pathway_assay node
+- `src/omicstra/graph.py` — where graph state is written at end of run
+- `projects/tnbc-92/project.json` — where the output path should be declared
 
 ### acceptance criteria
 
-- [ ] `graphs/encode.py` selects encoder from declaration, not `.get(..., "virchow2")`.
-  an alternate cohort with uni2 as primary encoder uses uni2 without code changes.
-- [ ] `pathway_cosines()` reads pathway targets from `project.json#pathway_targets`.
-  missing declaration refused with field named.
-- [ ] seed cohort: same 5 pathways as today (IDs identical).
-- [ ] alternate fixture (no pathway_targets declared) is refused, not silently empty.
-- [ ] tests: `tests/test_analytical_bindings.py`. no paid calls.
+- [ ] pathway scores written to `data/embeddings/pathway_scores/{run_id}.parquet`
+  (or the path declared in project.json) after the pathway_assay node.
+- [ ] the written file is cited in the evidence pack / run record.
+- [ ] a second invoke with the same run reuses the file, not recomputes.
+- [ ] tests: scores absent → computed and written; scores present → reused.
 
 ### stopping condition
 
-both encoder selection and pathway targets are declaration-driven. tests pass
-locally before any commit. branch merged.
+pathway_cosines() in adapters/evaluation.py can load the persisted file.
+tests pass locally.
 
 ### not in scope
 
-question.execute() -> discover() wiring (WS 5 remainder), pathway artifact
-persistence (WS 6), evidence schema deferred to 0.2.0.
+second-cohort evidence (WS 10), downstream consumption by align (not this card).
+
+---
+
+## checkpoint 5 summary (closed 2026-11-10)
+
+**branch**: main (pending push)
+
+two items delivered:
+
+- **WS 5 execute wiring**: `question.execute()` now calls `discover()` before
+  `build_evaluate_graph()`. `Route.COMPUTE` returns a 4-step compute plan
+  (`he_encode → st_encode → align_run → evaluate_run`). `Route.REFUSE` returns
+  refused status. `Route.ASK` proceeds as before, taking `cohort` from the
+  discover result. 5 new tests in `test_ws5_question_execute.py`.
+
+- **TF-IDF question router**: `src/omicstra/question_router.py` — `Router`
+  protocol (runtime-checkable) + `TFIDFRouter` (bigram TF-IDF, fit on
+  FAMILY_BLOCKS vocabulary). 91.67% top-1 on 24 held-out + near-miss questions
+  at threshold=0.15, 100% OOS refusal rate. 0 silent misroutes above threshold.
+  labeled eval set at `tests/fixtures/router_questions.json` (pre-registered bar
+  ≥90% top-1, ≥75% OOS refusal). swap rule: if bar missed, add
+  `omicstra[router-embed]` with `EmbeddingRouter` behind same seam.
+  7 new tests in `test_question_router.py`. 1369 total pass.
+
+---
+
+## checkpoint 4 summary (closed 2026-11-09)
+
+**branch**: main (7b42664)
+
+one workstream delivered:
+
+- **WS 4 analytical bindings (remaining)**: `graphs/encode.py` —
+  `_resolve_encoder(state)` helper replaces 6× `.get("encoder", "virchow2")`.
+  reads declared primary/morphology encoder from `project.json#encoders`.
+  refuses with `ValueError` when no primary encoder declared. `adapters/evaluation.py`
+  — `pathway_cosines()` reads `project.json#pathway_targets` (list of
+  `{name, reactome_id}`). `NAMED_PATHWAY_TARGETS` constant removed. `projects/tnbc-92/
+  project.json` — 5 pathway targets added (TGF-beta R-HSA-170834, Immune_System
+  R-HSA-168256, ECM_Organization R-HSA-1474244, Cell_Cycle R-HSA-1640170,
+  Programmed_Cell_Death R-HSA-5357801). 9 new tests in `test_analytical_bindings.py`.
+  1355 total pass.
 
 ---
 
