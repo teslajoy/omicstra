@@ -1,0 +1,59 @@
+{
+  "bar": {
+    "top1_accuracy_min": 0.90,
+    "out_of_scope_refusal_min": 0.75,
+    "note": "pre-registered 2026-11-10 before running. if B misses bar, add sentence-transformers as omicstra[router-embed] and plug EmbeddingRouter behind same seam."
+  },
+  "held_out": [
+    {"question": "Given a tissue image region, how accurately can I find its gene expression counterpart?", "task_id": "cross_modal_retrieval"},
+    {"question": "What rank does the true partner spot achieve when queried by H&E niche similarity?", "task_id": "cross_modal_retrieval"},
+    {"question": "How often does the correct expression profile rank in the top 5 when queried by morphology?", "task_id": "cross_modal_retrieval"},
+
+    {"question": "Are pairwise distances between niches consistent across the two embedding modalities?", "task_id": "structural_agreement"},
+    {"question": "Does alignment preserve the relative arrangement of samples in embedding space?", "task_id": "structural_agreement"},
+    {"question": "To what extent do the two representation spaces share the same low-dimensional geometry?", "task_id": "structural_agreement"},
+
+    {"question": "Do high-mc12 B-cell follicle niches form a distinct cluster in the aligned space?", "task_id": "tissue_state_grouping"},
+    {"question": "What normalized mutual information do tissue microenvironment clusters achieve?", "task_id": "tissue_state_grouping"},
+    {"question": "Does unsupervised clustering of aligned embeddings recover annotated niche subtypes?", "task_id": "tissue_state_grouping"},
+
+    {"question": "Is there residual patient-level clustering in the aligned embedding space?", "task_id": "subject_identity_suppression"},
+    {"question": "Does a probe trained on patient IDs achieve high accuracy from aligned vectors?", "task_id": "subject_identity_suppression"},
+    {"question": "How much inter-patient mixing occurs in the shared representation?", "task_id": "subject_identity_suppression"},
+
+    {"question": "How much ECM organization pathway variance is explained by the aligned embeddings?", "task_id": "pathway_transfer"},
+    {"question": "Is programmed cell death activity recoverable via correlation from the shared space?", "task_id": "pathway_transfer"},
+    {"question": "What fraction of Reactome pathway score variance can be predicted from aligned niches?", "task_id": "pathway_transfer"},
+
+    {"question": "Does the alignment score above chance AUC for each of the 395 Reactome hierarchy nodes?", "task_id": "pathway_discrimination"},
+    {"question": "Can the model tell apart collagen biology from interferon signaling at the DAG level?", "task_id": "pathway_discrimination"},
+    {"question": "What proportion of DAG pathway pairs are distinguishable above a given AUC threshold?", "task_id": "pathway_discrimination"},
+
+    {"question": "Does a ridge regression trained on ST embeddings predict staining intensity?", "task_id": "morphology_decode"},
+    {"question": "What proportion of nuclear texture variance is explained by transcriptomic niche features?", "task_id": "morphology_decode"},
+    {"question": "Can cell density be recovered from spatial gene expression embeddings via linear decoding?", "task_id": "morphology_decode"}
+  ],
+  "near_miss": [
+    {
+      "question": "Does alignment preserve biological signal better than spatial nearest-neighbor matching?",
+      "task_id": "structural_agreement",
+      "note": "has nearest-neighbor (cross_modal_retrieval vocab) but is about structure preservation not paired lookup"
+    },
+    {
+      "question": "Are Reactome pathway scores correlated across the two modality spaces?",
+      "task_id": "pathway_transfer",
+      "note": "has correlated across spaces (structural_agreement vocab) but is about pathway content not geometry"
+    },
+    {
+      "question": "Can we identify TNBC molecular subtypes from the aligned representation?",
+      "task_id": "tissue_state_grouping",
+      "note": "has molecular (pathway_transfer vocab) but is about grouping by state not pathway activity"
+    }
+  ],
+  "out_of_scope": [
+    {"question": "What learning rate should I use to train the alignment MLP?", "task_id": null},
+    {"question": "How do I register the H&E image to the spot array coordinates?", "task_id": null},
+    {"question": "What is the tumor purity for patient P001?", "task_id": null},
+    {"question": "Should I filter spots with fewer than 100 detected genes?", "task_id": null}
+  ]
+}
