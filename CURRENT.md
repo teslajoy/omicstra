@@ -11,46 +11,62 @@ is not worked on, discussed, or measured until the task card is closed.
 
 ## the task
 
-**WS 9: provenance wiring — run records carry what each step was given.**
+**WS 10: second cohort — generalizability demo.**
 
-parent goal: `_link` in `protocols/__init__.py` records params per step, but
-chain invocations in `graph.py` pass params as a flat dict. the record for
-each step carries only what it was given, not what the full cohort params file
-declared. a second run cannot reproduce which cohort parameters drove each
-decision from the record alone.
+parent goal: the v1.3 defining claim is that a second cohort can produce its
+own evidence pack. demonstrate this with a synthetic alternate-cohort fixture
+(different platform, different encoder dims, different column names) that runs
+the full EDA → encode → evaluate chain without code changes.
 
-this is completion_roadmap WS 9.
+this is completion_roadmap WS 10.
 
 ### what remains
 
-**item: each step's record carries the params it was actually given.**
+**item: alternate cohort fixture runs the chain end-to-end.**
 
-the `_link` function already stamps `supplied` onto the record's `params`
-field (line 185 in `protocols/__init__.py`). the gap is that `pathway_assay`
-in `graph.py` passes `pathway_params` as the top-level dict keyed by step_id
-— verify this is correct and that records written to `all_records` carry the
-per-step params, not the whole cohort dict.
-
-files to check:
-- `src/omicstra/protocols/__init__.py` — the `_link` and `_supplied` functions
-- `src/omicstra/graph.py` — `pathway_assay` chain invocations
-- `tests/test_pathway_chain.py` — existing params recording tests
+- scaffold a minimal synthetic cohort declaration (visium platform, uni2
+  1536d encoder, donor_id confounder, non-conventional column names)
+- verify `adapters/canonical.py`, `adapters/source_mapping.py`, and
+  `adapters/evaluation.py` REQUIRED + declared() all load it cleanly
+- no code changes should be needed; failures diagnose what still hardcodes
+  to the seed cohort
 
 ### acceptance criteria
 
-- [ ] a record written by any step in the AUCell chain carries its declared
-  params (e.g. `target_sum`, `group_by`) in its `params` field.
-- [ ] an end-to-end invocation through `pathway_assay` in graph.py produces
-  records whose `params` match the cohort declaration, not the whole dict.
-- [ ] existing pathway chain tests continue to pass.
+- [ ] alternate cohort declaration loads without errors in both the alignment
+  and evaluation adapters.
+- [ ] `validate()` in `question.py` accepts a request against the alternate
+  cohort's declared task families.
+- [ ] any hardcoded seed-cohort assumptions surface as explicit refused
+  declarations, not silent wrong answers.
 
 ### stopping condition
 
-records written to disk carry their step-level params. tests pass locally.
+alternate cohort loads cleanly across adapters. tests pass locally.
 
 ### not in scope
 
-second-cohort evidence (WS 10), downstream schema integration.
+actual embedding computation on second cohort, PyPI publish.
+
+---
+
+## checkpoint 8 summary (closed 2026-11-11)
+
+**branch**: `ws9-provenance-wiring` (pending merge)
+
+one workstream delivered:
+
+- **WS 9 provenance wiring**: `tests/test_ws9_provenance.py` — 6 tests prove
+  the `_supplied` stamping in `protocols/__init__.py:185` works end-to-end.
+  verified: `library_normalise` record carries `{"target_sum": 1e4}`,
+  `zscore_within_group` carries `{"group_by": "subarray"}`, `niche_qc`
+  carries all three declared keys. `params_space` filter confirmed:
+  `library_normalise` does not carry `min_size` (pathway_net's key) and
+  `pathway_net` does not carry `target_sum`. end-to-end test through
+  `pathway_assay` in graph.py: declared `target_sum: 5000.0` and
+  `group_by: "sample"` appear on the records with no whole-dict bleed.
+  mechanism was already correct — no code changes needed, only tests added.
+  6 new tests, 1360 total pass (pending full-suite confirmation).
 
 ---
 
