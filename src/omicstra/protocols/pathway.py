@@ -526,6 +526,39 @@ def zscore_within_group(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                 ), {"aucell_z": (names, out.tolist(), nids)}
 
 
+def save_scores(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
+    """write aucell_z scores to the path in ctx['_output_path'].
+
+    side effect only — nothing added to ctx. the step is not_applicable when
+    _output_path is absent, so the chain still runs in notebooks and tests
+    that do not declare an output path.
+    """
+    out_path = ctx.get("_output_path")
+    if not out_path:
+        return _rec("save_scores", "not_applicable",
+                    "no _output_path in context",
+                    "set _output_path in ctx to persist scores",
+                    {}), {}
+
+    import numpy as np
+    import pandas as pd
+    from pathlib import Path
+
+    names, arr, nids = ctx["aucell_z"]
+    p = Path(out_path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    df = pd.DataFrame(np.asarray(arr, dtype="float64"),
+                      index=nids, columns=names)
+    df.index.name = "niche_id"
+    df.to_parquet(p)
+    return _rec("save_scores", "pass",
+                f"wrote {df.shape[0]} niches × {df.shape[1]} pathways",
+                "per-sample parquet at _output_path",
+                {"path": str(p), "n_niches": df.shape[0],
+                 "n_pathways": df.shape[1]},
+                method="parquet, niche_id index, pathway name columns"), {}
+
+
 AUCELL_STEPS: list[Step] = [
     Step(id="niche_sum", fn=niche_sum, produces=frozenset({"summed"}),
          requires=frozenset({"qc_niches"})),
@@ -539,4 +572,8 @@ AUCELL_STEPS: list[Step] = [
     Step(id="zscore_within_group", fn=zscore_within_group,
          produces=frozenset({"aucell_z"}), requires=frozenset({"aucell"}),
          params_space=("group_by",)),
+    Step(id="save_scores", fn=save_scores, produces=frozenset(),
+         requires=frozenset({"aucell_z"}),
+         applicable_when=lambda ctx: bool(ctx.get("_output_path")),
+         why_not_applicable="no _output_path in context — scores stay in memory"),
 ]

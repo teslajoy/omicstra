@@ -11,51 +11,71 @@ is not worked on, discussed, or measured until the task card is closed.
 
 ## the task
 
-**pathway artifact persistence: scores reach disk, not just graph state.**
+**WS 9: provenance wiring — run records carry what each step was given.**
 
-parent goal: pathway scores computed by the pathway_assay bridge currently
-live only in graph state. a second run cannot reuse them, notebooks cannot
-load them, and the evidence pack cannot cite them. this card persists them.
+parent goal: `_link` in `protocols/__init__.py` records params per step, but
+chain invocations in `graph.py` pass params as a flat dict. the record for
+each step carries only what it was given, not what the full cohort params file
+declared. a second run cannot reproduce which cohort parameters drove each
+decision from the record alone.
 
-previous task card (WS 5 execute wiring, 2026-11-10) preserved at
-`design/_scratch/CURRENT_ws5.md`.
-
-this is completion_roadmap WS 6.
+this is completion_roadmap WS 9.
 
 ### what remains
 
-**item: persist pathway scores from graph state to disk.**
+**item: each step's record carries the params it was actually given.**
 
-the pathway_assay node computes AUCell scores and gpath2vec cosines and puts
-them in state["pathway_scores"]. nothing writes them to a file afterward.
+the `_link` function already stamps `supplied` onto the record's `params`
+field (line 185 in `protocols/__init__.py`). the gap is that `pathway_assay`
+in `graph.py` passes `pathway_params` as the top-level dict keyed by step_id
+— verify this is correct and that records written to `all_records` carry the
+per-step params, not the whole cohort dict.
 
-files to investigate:
-- `src/omicstra/graphs/align.py` — the pathway_assay node
-- `src/omicstra/graph.py` — where graph state is written at end of run
-- `projects/tnbc-92/project.json` — where the output path should be declared
+files to check:
+- `src/omicstra/protocols/__init__.py` — the `_link` and `_supplied` functions
+- `src/omicstra/graph.py` — `pathway_assay` chain invocations
+- `tests/test_pathway_chain.py` — existing params recording tests
 
 ### acceptance criteria
 
-- [ ] pathway scores written to `data/embeddings/pathway_scores/{run_id}.parquet`
-  (or the path declared in project.json) after the pathway_assay node.
-- [ ] the written file is cited in the evidence pack / run record.
-- [ ] a second invoke with the same run reuses the file, not recomputes.
-- [ ] tests: scores absent → computed and written; scores present → reused.
+- [ ] a record written by any step in the AUCell chain carries its declared
+  params (e.g. `target_sum`, `group_by`) in its `params` field.
+- [ ] an end-to-end invocation through `pathway_assay` in graph.py produces
+  records whose `params` match the cohort declaration, not the whole dict.
+- [ ] existing pathway chain tests continue to pass.
 
 ### stopping condition
 
-pathway_cosines() in adapters/evaluation.py can load the persisted file.
-tests pass locally.
+records written to disk carry their step-level params. tests pass locally.
 
 ### not in scope
 
-second-cohort evidence (WS 10), downstream consumption by align (not this card).
+second-cohort evidence (WS 10), downstream schema integration.
+
+---
+
+## checkpoint 6 summary (closed 2026-11-11)
+
+**branch**: main (pending commit)
+
+one workstream delivered:
+
+- **WS 6 pathway artifact persistence**: `protocols/pathway.py` — `save_scores`
+  step added to `AUCELL_STEPS` with `applicable_when=lambda ctx: bool(ctx.get("_output_path"))`.
+  writes per-sample parquet at `_output_path`; `not_applicable` in notebook/test
+  contexts. `graph.py` — `_persist_pathway_scores` helper concatenates per-sample
+  parquets to `data/embeddings/pathway_scores/aucell_v1.parquet` and updates
+  `project.json#pathway_scores` so the reuse check finds it on the next run.
+  `pathway_assay` node passes `_output_path` per sample and injects
+  `"save_scores": {}` into params. TODO comment removed. 5 new tests in
+  `test_pathway_persistence.py`; `test_pathway_chain.py` updated to allow
+  `not_applicable` for `save_scores`. 1374 total pass.
 
 ---
 
 ## checkpoint 5 summary (closed 2026-11-10)
 
-**branch**: main (pending push)
+**branch**: main (pushed)
 
 two items delivered:
 

@@ -308,7 +308,9 @@ def _au(params=None, G=300, n=30):
 
 def test_the_aucell_chain_runs_and_funnels():
     r = _au()
-    assert all(v["status"] == "pass" for v in r.values()), \
+    # save_scores is not_applicable without _output_path — that is by design
+    allowed = {"pass", "not_applicable"}
+    assert all(v["status"] in allowed for v in r.values()), \
         {k: v["status"] for k, v in r.items()}
     o = r["pathway_net"]["observed"]
     assert (o["n_in"], o["n_out"]) == (4, 3), "the 2-gene set is below min_size"

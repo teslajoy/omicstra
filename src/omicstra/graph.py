@@ -361,6 +361,44 @@ def _task_needs_pathway(state: OmicstraState) -> bool:
     return any(state.get(flag) for flag in _FLAG_TO_SLOT)
 
 
+def _persist_pathway_scores(root, scores_dir, samples_run: list[str],
+                             cfg) -> None:
+    """concatenate per-sample parquets and update project.json#pathway_scores.
+
+    each per-sample file was written by the save_scores step in AUCELL_STEPS.
+    if any sample file is missing (e.g. save_scores got no aucell_z), it is
+    silently skipped rather than raising — the combined file contains only
+    the samples whose chain completed.
+    """
+    import json
+    import pandas as pd
+    from pathlib import Path
+
+    frames = []
+    for sid in samples_run:
+        safe_sid = sid.replace("/", "__").replace(":", "__")
+        p = scores_dir / f"{safe_sid}.parquet"
+        if p.is_file():
+            frames.append(pd.read_parquet(p))
+
+    if not frames:
+        return
+
+    combined = pd.concat(frames)
+    combined.index.name = "niche_id"
+    out = scores_dir / "aucell_v1.parquet"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    combined.to_parquet(out)
+
+    proj_path = root / "project.json"
+    proj = json.loads(proj_path.read_text())
+    proj["pathway_scores"] = {
+        "path": str(out.relative_to(root)),
+        "columns": list(combined.columns),
+    }
+    proj_path.write_text(json.dumps(proj, indent=2))
+
+
 def pathway_assay(state: OmicstraState) -> dict:
     """ensure assay-level pathway artifacts exist for downstream evaluation.
 
@@ -484,6 +522,8 @@ def pathway_assay(state: OmicstraState) -> dict:
                                      "decision": "provide the file or remove the "
                                                   "declaration"}]}
 
+    pathway_scores_dir = root / "data" / "embeddings" / "pathway_scores"
+
     all_records: list[dict] = []
     samples_run = []
     samples_skipped = []
@@ -502,9 +542,17 @@ def pathway_assay(state: OmicstraState) -> dict:
         if pathway_sets is not None:
             ctx["pathway_sets"] = pathway_sets
 
+        safe_sid = sid.replace("/", "__").replace(":", "__")
+        out_path = str(pathway_scores_dir / f"{safe_sid}.parquet")
+
+        # inject save_scores: {} so the protocol's param-presence check
+        # allows the step to run; it reads _output_path from ctx, not params
+        params_with_save = {**pathway_params, "save_scores": {}}
+
         for unit_name, steps in chains:
             chain = build_protocol(steps, unit_name)
-            recs = chain.invoke({**ctx, "params": pathway_params})
+            recs = chain.invoke({**ctx, "params": params_with_save,
+                                 "_output_path": out_path})
             for step_id, rec in recs.items():
                 rec["sample"] = sid
                 rec["unit"] = unit_name
@@ -512,9 +560,9 @@ def pathway_assay(state: OmicstraState) -> dict:
 
         samples_run.append(sid)
 
-    # TODO: persist computed scores to disk as a pathway_scores artifact.
-    # currently the results exist only as records in graph state. downstream
-    # consumption (align reading these as analytical input) depends on this.
+    if samples_run:
+        _persist_pathway_scores(root, pathway_scores_dir, samples_run, cfg)
+
     status = "computed" if samples_run else "refused"
     why = (f"{len(samples_run)} sample(s) processed" if samples_run
            else "no sample carried both counts and niche data")
