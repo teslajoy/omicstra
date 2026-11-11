@@ -54,6 +54,32 @@ second-cohort evidence (WS 10), downstream schema integration.
 
 ---
 
+## checkpoint 7 summary (closed 2026-11-11)
+
+**branch**: `ws7-8-graph-completion` (pending merge)
+
+two workstreams delivered:
+
+- **WS 7 analytical completeness**: `tests/test_ws7_8_integration.py` —
+  `test_execute_returns_execution_result` proves the full chain:
+  `execute()` → `discover()` → `Route.ASK` (tnbc-92 has routing evidence for
+  `cross_modal_retrieval`) → `build_evaluate_graph(compute=True)` → `measure`
+  → `ExecutionResult`. `test_execute_route_is_ask_not_compute` asserts
+  discover fires the ask arm, not compute. `test_execute_no_plan_on_ask_route`
+  confirms no spurious plan in the report.
+
+- **WS 8 results + delivery**: `test_evaluate_graph_interrupt_and_resume` drives
+  the pack arm (`compute=False`) through `InMemorySaver` — `gates()` finds 3
+  open gates (hypothesis_scope, artifact_pinning, guard_failure), `ask()` pauses
+  returning `{"__interrupt__": [...]}`, then `Command(resume={...})` resumes to
+  `evaluate` with status in {"evaluated", "halted", "refused", "not_run"}.
+  `test_evaluate_graph_halt_on_no_answer` proves `Command(resume=False)` halts
+  cleanly. `test_provenance_has_required_keys`, `test_summary_has_required_keys`,
+  `test_findings_is_dict` prove the delivery bundle shape. 8 new tests,
+  1354 total pass.
+
+---
+
 ## checkpoint 6 summary (closed 2026-11-11)
 
 **branch**: main (pending commit)
