@@ -11,42 +11,56 @@ is not worked on, discussed, or measured until the task card is closed.
 
 ## the task
 
-**WS 10: second cohort — generalizability demo.**
+**WS 11: packaging + release.**
 
-parent goal: the v1.3 defining claim is that a second cohort can produce its
-own evidence pack. demonstrate this with a synthetic alternate-cohort fixture
-(different platform, different encoder dims, different column names) that runs
-the full EDA → encode → evaluate chain without code changes.
+parent goal: clean install from wheel, CI green, MCP integration smoke test,
+publish v1.3.0 to PyPI.
 
-this is completion_roadmap WS 10.
+this is completion_roadmap WS 11.
 
 ### what remains
 
-**item: alternate cohort fixture runs the chain end-to-end.**
+**item: verify the wheel installs cleanly and the MCP server starts.**
 
-- scaffold a minimal synthetic cohort declaration (visium platform, uni2
-  1536d encoder, donor_id confounder, non-conventional column names)
-- verify `adapters/canonical.py`, `adapters/source_mapping.py`, and
-  `adapters/evaluation.py` REQUIRED + declared() all load it cleanly
-- no code changes should be needed; failures diagnose what still hardcodes
-  to the seed cohort
+- `pip install dist/omicstra-*.whl` in a clean venv; confirm all 22 tools
+  and 4 resources are reachable via `omicstra serve --help` and
+  `omicstra --version`
+- run the full test suite against the installed wheel (not src layout)
+- if any test imports `src/omicstra` directly rather than the installed
+  package, that is a scope gap to fix
+- PyPI publish is the user's action; this task ends at a green wheel
 
 ### acceptance criteria
 
-- [ ] alternate cohort declaration loads without errors in both the alignment
-  and evaluation adapters.
-- [ ] `validate()` in `question.py` accepts a request against the alternate
-  cohort's declared task families.
-- [ ] any hardcoded seed-cohort assumptions surface as explicit refused
-  declarations, not silent wrong answers.
+- [ ] wheel builds without errors (`python -m build`)
+- [ ] `pip install dist/omicstra-*.whl` in a fresh venv installs cleanly
+- [ ] `omicstra --version` returns v1.3.0
+- [ ] full test suite passes against the installed wheel
 
 ### stopping condition
 
-alternate cohort loads cleanly across adapters. tests pass locally.
+wheel builds and installs cleanly. tests pass against it.
 
 ### not in scope
 
-actual embedding computation on second cohort, PyPI publish.
+actual PyPI upload (user action), second-cohort embedding computation.
+
+---
+
+## checkpoint 9 summary (closed 2026-11-12)
+
+**branch**: `ws10-second-cohort` (pending merge)
+
+one workstream delivered:
+
+- **WS 10 second cohort generalizability**: `tests/test_ws10_second_cohort.py` —
+  7 tests prove all three acceptance criteria against a synthetic visium cohort
+  (uni2 1536d, leiden_cluster label, slide_id sample column, z_he_visium view).
+  key finding: no code changes needed — adapters already generalize via
+  declarations. `canonical.list_samples()`, `SourceMapping.from_project_dir()`,
+  `evaluation.declared()`, `ProjectConfig.load()`, and `question.validate()` all
+  load the alternate cohort cleanly. missing h2_label and he_tokens_column both
+  produce explicit named refusals (criterion 3). 1367 total pass (1 skipped).
 
 ---
 
