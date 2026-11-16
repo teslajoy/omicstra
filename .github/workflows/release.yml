@@ -165,6 +165,7 @@ jobs:
       # publish therefore uploads exactly what this leg built and verified.
       - uses: actions/upload-artifact@v4
         if: matrix.python-version == '3.12'
+        continue-on-error: true
         with: { name: dist, path: dist/ }
 
   verify-encode:
