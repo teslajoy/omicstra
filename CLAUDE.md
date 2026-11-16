@@ -203,24 +203,28 @@ root and needs no `../..`.
 
 ## where the work is
 
-**tagged: v1.3.0 on main (af19798).** not yet published to PyPI (latest there:
-1.2.0). `design/v1_3_scope.md` build steps A-E all done. the v1.3 defining
-claim - second cohort produces its own evidence pack - did NOT ship.
+**v1.4.0 in development on main (41b014f).** v1.3.0 tagged; not yet on PyPI
+(latest there: 1.2.0 — `twine upload dist/*` after rebuilding wheel is the
+publish action). `design/v1_4_scope.md` is the live plan. two build items
+remain: `align_run` through the package (#33) and the second cohort evidence
+pack (#34).
 
-**read `design/completion_roadmap.md` before starting anything.** it holds the
-11 workstreams, approved for checkpoint 1 (WS 1-3, schema + normalization).
-`CURRENT.md` is the one task in flight. `design/graph.md` is the companion:
-which file owns which step.
+**read `design/completion_roadmap.md` before starting anything.** all 11
+workstreams are closed. `CURRENT.md` has no task in flight — next work comes
+from the parking lot. `design/graph.md` is the route: which file owns which step.
 
-**three-layer architecture status** (verified 2026-11-02): biomedical schema
-(LinkML) not implemented. source normalization and analytical bindings partial -
-existing adapters and declarations work but are hardcoded to the seed cohort.
-the shared schema and consistent integration are the completion_roadmap's
-subject.
+**three-layer architecture status** (verified 2026-11-16): WS 1-11 all shipped.
+biomedical schema: `design/schema_standards.md` written; LinkML entities not
+yet implemented. source normalization: `AlignmentContract.from_project_dir()`,
+`SourceMapping` done; analytical code no longer sees hardcoded column names.
+analytical bindings: declared roles in encode.py, evaluate.py; circularity fix
+done; h2_label/supervision/headline_view default-free. two remaining gaps:
+`align_run` executes through scripts, not the package (#33); second cohort
+evidence pack not produced (#34).
 
 the scope docs are the historical record, one per release, each written before
 the work and corrected after it. `design/v1_1_scope.md`, `design/v1_2_scope.md`,
-`design/v1_3_scope.md`.
+`design/v1_3_scope.md`, `design/v1_4_scope.md`.
 
 ## rules that span releases
 

@@ -1,5 +1,17 @@
 # changelog
 
+## v1.4.0 (unreleased)
+
+defining claim: a second cohort goes from files to its own evidence pack and
+report without changes to `src/`.
+
+- wheel install fix: `_package_repo_root()` falls back to `cwd()` when not in
+  a source checkout — 62 test failures in wheel venv eliminated
+- completion_roadmap WS 1-11 all shipped: schema standards, source mapping,
+  declared roles, question-to-execution, pathway persistence, graph completion,
+  provenance wiring, alternate-cohort generalizability test
+- remaining: `align_run` through package (#33), second cohort evidence pack (#34)
+
 ## v1.3.0 (2026-11-02)
 
 - H2-C biology scoring ported to measures/, verified against historical artifacts
