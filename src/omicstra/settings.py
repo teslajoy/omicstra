@@ -25,15 +25,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _package_repo_root() -> Path:
-    """repo root derived from the package, not the working directory.
+    """repo root derived from the package when running from a source checkout;
+    cwd() when installed as a wheel.
 
-    package data (the contract) must be findable no matter where the process
-    was launched - resolving it against cwd breaks the moment the server runs
-    from a project directory. this is the ONE place __file__ is consulted;
-    every cohort path still comes through injected settings.
+    in a src-layout editable install parents[2] is the repo root (the dir that
+    contains pyproject.toml). in a wheel install parents[2] is some path inside
+    site-packages and contains no pyproject.toml, so we fall back to cwd().
 
+    package contract JSONs are found via _package_configs() (which uses __file__
+    correctly in both cases), so this function is only needed for cohort paths
+    (projects/, data/, runs/). override with OMICSTRA_REPO_ROOT when the process
+    is not launched from the checkout root.
     """
-    return Path(__file__).resolve().parents[2]
+    candidate = Path(__file__).resolve().parents[2]
+    if (candidate / "pyproject.toml").is_file():
+        return candidate
+    return Path.cwd()
 
 
 def _package_configs() -> Path:

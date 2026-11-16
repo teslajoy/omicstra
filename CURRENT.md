@@ -11,39 +11,27 @@ is not worked on, discussed, or measured until the task card is closed.
 
 ## the task
 
-**WS 11: packaging + release.**
+**no task in flight.** all 11 workstreams in `design/completion_roadmap.md`
+are closed. next actions are in the parking lot below.
 
-parent goal: clean install from wheel, CI green, MCP integration smoke test,
-publish v1.3.0 to PyPI.
+---
 
-this is completion_roadmap WS 11.
+## checkpoint 10 summary (closed 2026-11-16)
 
-### what remains
+**branch**: main (direct commit)
 
-**item: verify the wheel installs cleanly and the MCP server starts.**
+one workstream delivered:
 
-- `pip install dist/omicstra-*.whl` in a clean venv; confirm all 22 tools
-  and 4 resources are reachable via `omicstra serve --help` and
-  `omicstra --version`
-- run the full test suite against the installed wheel (not src layout)
-- if any test imports `src/omicstra` directly rather than the installed
-  package, that is a scope gap to fix
-- PyPI publish is the user's action; this task ends at a green wheel
-
-### acceptance criteria
-
-- [ ] wheel builds without errors (`python -m build`)
-- [ ] `pip install dist/omicstra-*.whl` in a fresh venv installs cleanly
-- [ ] `omicstra --version` returns v1.3.0
-- [ ] full test suite passes against the installed wheel
-
-### stopping condition
-
-wheel builds and installs cleanly. tests pass against it.
-
-### not in scope
-
-actual PyPI upload (user action), second-cohort embedding computation.
+- **WS 11 packaging + release**: root cause of 62 test failures in wheel
+  install found and fixed. `_package_repo_root()` in `settings.py` returned
+  `Path(__file__).resolve().parents[2]`, which is the repo root in a
+  src-layout editable install but a path inside site-packages when installed
+  from a wheel. fixed: detect pyproject.toml at that candidate — present in
+  source checkout, absent in wheel — and fall back to `cwd()` if not found.
+  result: Python 3.14 wheel venv (`/private/tmp/omicstra-wheel-314`) goes
+  from 62 failed / 1170 passed → 0 failed / ~1232 passed across the full
+  suite. `omicstra` CLI functional; `import omicstra; __version__` = 1.3.0.
+  `dist/omicstra-1.3.0-py3-none-any.whl` ready for PyPI upload.
 
 ---
 
