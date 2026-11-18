@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FM Clustering — TNBC-92</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#1a1f2e;--bg2:#1e2538;--bg3:#232a40;--border:#2e3650;
+  --text:#f0f0f0;--muted:#8a9bbf;--accent:#5DCAA5;--accent2:#BA7517;
+  --font-mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:15px;line-height:1.7;min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+nav{border-bottom:1px solid var(--border);padding:16px 0;position:sticky;top:0;background:rgba(26,31,46,.94);backdrop-filter:blur(8px);z-index:100}
+.nav-inner{max-width:860px;margin:0 auto;padding:0 24px;display:flex;align-items:center;gap:24px}
+.nav-logo{font-family:var(--font-mono);font-size:15px;font-weight:600}
+.nav-logo .omic{color:#fff}.nav-logo .cstra{color:var(--accent)}
+.nav-links{display:flex;gap:20px;font-size:13px}
+.nav-links a{color:var(--muted)}
+.nav-links a:hover{color:var(--text)}
+main{max-width:860px;margin:0 auto;padding:0 24px}
+.hero{padding:64px 0 48px;border-bottom:1px solid var(--border)}
+.tag{font-family:var(--font-mono);font-size:11px;color:var(--accent);letter-spacing:.08em;text-transform:uppercase;margin-bottom:16px}
+h1{font-size:28px;font-weight:700;line-height:1.25;margin-bottom:12px}
+.sub{color:var(--muted);font-size:14px;max-width:600px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px;padding:40px 0}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:24px;display:flex;flex-direction:column;gap:12px;transition:border-color .15s}
+.card:hover{border-color:var(--accent)}
+.card-tag{font-family:var(--font-mono);font-size:10px;color:var(--accent2);letter-spacing:.06em;text-transform:uppercase}
+.card h2{font-size:16px;font-weight:600}
+.card p{font-size:13px;color:var(--muted);flex:1}
+.card a.btn{display:inline-block;margin-top:4px;padding:8px 16px;background:var(--accent);color:#0d1117;border-radius:5px;font-size:13px;font-weight:600;text-decoration:none;width:fit-content}
+.card a.btn:hover{opacity:.88}
+.card a.btn.secondary{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+.meta{padding:0 0 48px;border-top:1px solid var(--border);padding-top:32px;display:flex;flex-wrap:wrap;gap:32px}
+.meta-block dt{font-family:var(--font-mono);font-size:11px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
+.meta-block dd{font-size:13px;color:var(--text)}
+footer{border-top:1px solid var(--border);padding:24px 0;text-align:center;font-size:12px;color:var(--muted);margin-top:16px}
+</style>
+</head>
+<body>
+<nav>
+  <div class="nav-inner">
+    <span class="nav-logo"><span class="omic">omic</span><span class="cstra">stra</span></span>
+    <div class="nav-links">
+      <a href="/omicstra/">home</a>
+      <a href="/omicstra/reports/internal/tnbc-92/">tnbc-92</a>
+    </div>
+  </div>
+</nav>
+<main>
+  <div class="hero">
+    <div class="tag">internal · tnbc-92 · fm clustering</div>
+    <h1>De-novo FM Embedding Clustering</h1>
+    <p class="sub">Independent Leiden clustering of Virchow2 (H&amp;E 1280d), Novae (ST 64d), and gpath2vec (pathways 512d) embedding spaces. Clusters annotated against mc_megacluster and pathologist compartment from Wang 2024.</p>
+  </div>
+  <div class="cards">
+    <div class="card">
+      <div class="card-tag">interactive demo</div>
+      <h2>FM Clustering Explorer</h2>
+      <p>UMAP panels for each embedding space, immune niche breakdown, clinical correlates, pathway dendrograms, cluster×mc heatmaps, and glossary of all TNBC subtypes (BL1/BL2, M, MSL, IM, LAR, MES).</p>
+      <a class="btn" href="denovo_clusters.html">open explorer →</a>
+    </div>
+    <div class="card">
+      <div class="card-tag">aggregated results</div>
+      <h2>Alignment Results Report</h2>
+      <p>Cross-modal retrieval AUC/ROC curves (binormal approximation), H1/H2/H3 routing table, baseline comparisons, and literature context (spEMO, HESCAPE, STORM).</p>
+      <a class="btn" href="results.html">open report →</a>
+    </div>
+    <div class="card">
+      <div class="card-tag">notebook</div>
+      <h2>Clustering Notebook</h2>
+      <p>Source analysis: scanpy Leiden clustering at resolution 0.5, ARI cross-modal comparison, NMI vs patient_id, and annotation tables. Seed 42, deterministic.</p>
+      <a class="btn secondary" href="denovo_embedding_clustering.ipynb">download .ipynb</a>
+    </div>
+  </div>
+  <dl class="meta">
+    <div class="meta-block"><dt>cohort</dt><dd>TNBC-92 (Wang et al. 2024, Nature Comms)</dd></div>
+    <div class="meta-block"><dt>platform</dt><dd>original ST · 100 µm spots · 1,934 spots/array</dd></div>
+    <div class="meta-block"><dt>embeddings</dt><dd>Virchow2 1280d · Novae 64d · gpath2vec 512d</dd></div>
+    <div class="meta-block"><dt>reference</dt><dd>mc_megacluster (NMF 14 states) · pathologist compartment</dd></div>
+    <div class="meta-block"><dt>package</dt><dd>omicstra v1.4.0</dd></div>
+  </dl>
+</main>
+<footer>OHSU Knight Cancer Institute · omicstra · internal</footer>
+</body>
+</html>

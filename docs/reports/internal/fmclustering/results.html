@@ -1,0 +1,583 @@
+<title>omicstra TNBC-92</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.27.0/plotly.min.js"></script>
+<style>
+/* ── layout: narrow single-column article, wide header stats ── */
+:root {
+  --bg: #0d1117; --surface: #161b22; --surface2: #1c2128;
+  --border: #30363d; --border2: #21262d;
+  --fg: #e6edf3; --fg-2: #c9d1d9; --fg-muted: #8b949e;
+  --accent: #58a6ff; --green: #3fb950; --orange: #f0883e;
+  --red: #f85149; --purple: #d2a8ff; --yellow: #e3b341;
+  --r4: #58a6ff; --tie: #e3b341; --refuse: #f85149;
+  --recommend: #3fb950; --escalate: #d2a8ff;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f6f8fa; --surface: #ffffff; --surface2: #f0f3f6;
+    --border: #d0d7de; --border2: #e8ebee;
+    --fg: #1f2328; --fg-2: #3d4249; --fg-muted: #57606a;
+    --accent: #0969da; --green: #1a7f37; --orange: #bc4c00;
+    --red: #cf222e; --purple: #6639ba; --yellow: #9a6700;
+    --r4: #0969da; --tie: #9a6700; --refuse: #cf222e;
+    --recommend: #1a7f37; --escalate: #6639ba;
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --bg: #f6f8fa; --surface: #ffffff; --surface2: #f0f3f6;
+  --border: #d0d7de; --border2: #e8ebee;
+  --fg: #1f2328; --fg-2: #3d4249; --fg-muted: #57606a;
+  --accent: #0969da; --green: #1a7f37; --orange: #bc4c00;
+  --red: #cf222e; --purple: #6639ba; --yellow: #9a6700;
+  --r4: #0969da; --tie: #9a6700; --refuse: #cf222e;
+  --recommend: #1a7f37; --escalate: #6639ba;
+  color-scheme: light;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 14px; line-height: 1.65; margin: 0;
+  padding-left: max(16px, env(safe-area-inset-left,0px));
+  padding-right: max(16px, env(safe-area-inset-right,0px));
+  padding-block: 0;
+}
+.wrap { max-width: 860px; margin: 0 auto; }
+
+/* header */
+.site-header {
+  border-bottom: 1px solid var(--border);
+  padding-block: 20px 14px;
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 10px; justify-content: space-between;
+}
+.logo { font-family: 'IBM Plex Mono', monospace; font-weight: 500; font-size: 15px; color: var(--fg); letter-spacing: .04em; }
+.logo span { color: var(--accent); }
+.cohort-tag { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--fg-muted);
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 2px 8px; }
+
+/* stat strip */
+.stats {
+  display: flex; flex-wrap: wrap; gap: 0;
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  margin-block: 20px;
+}
+.stat { flex: 1 1 120px; padding: 14px 18px; border-right: 1px solid var(--border2); }
+.stat:last-child { border-right: none; }
+.stat-val { font-family: 'IBM Plex Mono', monospace; font-size: 20px; font-weight: 500; color: var(--fg); font-variant-numeric: tabular-nums; }
+.stat-lbl { font-size: 11px; color: var(--fg-muted); margin-top: 2px; }
+
+/* section */
+.section { padding-block: 28px; border-top: 1px solid var(--border); }
+.section:first-of-type { border-top: none; }
+.eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 500;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--fg-muted); margin-bottom: 8px; }
+h2 { font-size: 17px; font-weight: 600; margin: 0 0 14px; text-wrap: balance; }
+h3 { font-size: 13px; font-weight: 600; margin: 0 0 8px; color: var(--fg-2); }
+p { margin: 0 0 10px; color: var(--fg-2); max-width: 68ch; }
+p:last-child { margin-bottom: 0; }
+
+/* hypothesis cards */
+.hyp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+.hyp-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px; display: flex; flex-direction: column; gap: 10px;
+}
+.hyp-label { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 500;
+  letter-spacing: .08em; color: var(--fg-muted); }
+.hyp-title { font-size: 13px; font-weight: 600; }
+.verdict { display: inline-flex; align-items: center; gap: 5px; font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px; font-weight: 500; padding: 3px 9px; border-radius: 20px; width: fit-content; }
+.v-supported { background: color-mix(in srgb, var(--green) 15%, transparent); color: var(--green); border: 1px solid color-mix(in srgb, var(--green) 30%, transparent); }
+.v-partial { background: color-mix(in srgb, var(--yellow) 15%, transparent); color: var(--yellow); border: 1px solid color-mix(in srgb, var(--yellow) 30%, transparent); }
+.hyp-row { display: flex; flex-direction: column; gap: 4px; }
+.hyp-row-lbl { font-size: 10px; color: var(--fg-muted); font-family: 'IBM Plex Mono', monospace; }
+.hyp-row-val { font-size: 12px; color: var(--fg-2); }
+.big-num { font-family: 'IBM Plex Mono', monospace; font-size: 22px; font-weight: 500;
+  color: var(--accent); font-variant-numeric: tabular-nums; }
+
+/* R4 highlight */
+.r4-band {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
+  border-radius: 10px; padding: 20px; margin-top: 20px;
+}
+.r4-name { font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 500; color: var(--accent); margin-bottom: 4px; }
+.r4-desc { font-size: 13px; color: var(--fg-2); margin-bottom: 14px; max-width: 70ch; }
+.r4-stats { display: flex; flex-wrap: wrap; gap: 10px; }
+.r4-stat { background: var(--surface2); border: 1px solid var(--border2); border-radius: 6px;
+  padding: 8px 12px; }
+.r4-stat-val { font-family: 'IBM Plex Mono', monospace; font-size: 16px; font-weight: 500;
+  color: var(--accent); font-variant-numeric: tabular-nums; }
+.r4-stat-lbl { font-size: 10px; color: var(--fg-muted); margin-top: 1px; }
+
+/* chart container */
+#auc-chart { width: 100%; height: 300px; }
+
+/* routing table */
+.rt-wrap { overflow-x: auto; }
+table.routing {
+  border-collapse: collapse; width: 100%; font-size: 12px; min-width: 580px;
+}
+table.routing th {
+  font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 500;
+  letter-spacing: .06em; text-transform: uppercase; color: var(--fg-muted);
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 7px 10px; text-align: left;
+}
+table.routing td {
+  border: 1px solid var(--border2); padding: 8px 10px;
+  vertical-align: top; color: var(--fg-2); line-height: 1.5;
+}
+table.routing tr:hover td { background: var(--surface2); }
+.oc { font-family: 'IBM Plex Mono', monospace; font-size: 10px; font-weight: 500;
+  padding: 2px 7px; border-radius: 3px; white-space: nowrap; }
+.oc-rec  { background: color-mix(in srgb, var(--recommend) 18%, transparent); color: var(--recommend); }
+.oc-tie  { background: color-mix(in srgb, var(--tie) 18%, transparent); color: var(--tie); }
+.oc-ref  { background: color-mix(in srgb, var(--refuse) 18%, transparent); color: var(--refuse); }
+.oc-esc  { background: color-mix(in srgb, var(--escalate) 18%, transparent); color: var(--escalate); }
+.method-pill { font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 3px;
+  padding: 1px 6px; color: var(--fg); }
+
+/* finding cards */
+.finding-list { display: flex; flex-direction: column; gap: 10px; }
+.finding {
+  display: grid; grid-template-columns: 32px 1fr; gap: 12px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px;
+  align-items: start;
+}
+.finding-num { font-family: 'IBM Plex Mono', monospace; font-size: 18px; font-weight: 500;
+  color: var(--border); font-variant-numeric: tabular-nums; line-height: 1.3; }
+.finding-body { }
+.finding-head { font-size: 13px; font-weight: 600; margin-bottom: 6px; display:flex; flex-wrap:wrap; align-items:baseline; gap:8px; }
+.hyp-tag { font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:500; padding:2px 7px; border-radius:3px; white-space:nowrap; }
+.ht-h1 { background:color-mix(in srgb,var(--accent) 15%,transparent); color:var(--accent); }
+.ht-h2 { background:color-mix(in srgb,var(--green) 15%,transparent); color:var(--green); }
+.ht-h3 { background:color-mix(in srgb,var(--purple) 15%,transparent); color:var(--purple); }
+.finding-txt { font-size: 12px; color: var(--fg-muted); line-height: 1.6; }
+
+/* footer */
+footer {
+  border-top: 1px solid var(--border); padding-block: 16px 24px;
+  font-size: 11px; color: var(--fg-muted); display: flex; flex-wrap: wrap; gap: 8px 20px;
+}
+footer a { color: var(--accent); text-decoration: none; }
+footer a:hover { text-decoration: underline; }
+
+@media (max-width: 540px) {
+  .hyp-grid { grid-template-columns: 1fr; }
+  .r4-stats { flex-direction: column; }
+}
+.lit-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:14px;margin-top:12px}
+.lit-head{font-family:'IBM Plex Mono','Fira Mono',monospace;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-muted);margin-bottom:10px}
+.lit-row{font-size:12px;line-height:1.6;color:var(--fg-muted);padding:8px 0;border-top:1px solid var(--border)}
+.lit-tag{font-family:'IBM Plex Mono','Fira Mono',monospace;font-size:11px;font-weight:600;color:var(--accent);margin-right:6px}
+</style>
+
+<div class="wrap">
+
+<header class="site-header">
+  <span class="logo">omicstra<span>.</span>report</span>
+  <div style="display:flex;gap:6px;flex-wrap:wrap">
+    <span class="cohort-tag">TNBC-92</span>
+    <span class="cohort-tag">Wang et al. 2024</span>
+    <span class="cohort-tag">v3 · seed 42</span>
+  </div>
+</header>
+
+<!-- stat strip -->
+<div class="stats">
+  <div class="stat"><div class="stat-val">92</div><div class="stat-lbl">patients</div></div>
+  <div class="stat"><div class="stat-val">208,786</div><div class="stat-lbl">niches (k=6, ~1,200 cells)</div></div>
+  <div class="stat"><div class="stat-val">35,594</div><div class="stat-lbl">held-out test niches</div></div>
+  <div class="stat"><div class="stat-val">10</div><div class="stat-lbl">methods evaluated</div></div>
+  <div class="stat"><div class="stat-val">3</div><div class="stat-lbl">hypotheses</div></div>
+</div>
+
+<!-- hypotheses -->
+<div class="section">
+  <div class="eyebrow">Findings by hypothesis</div>
+  <h2>Three questions, three verdicts</h2>
+  <p>Each hypothesis was pre-registered in the ResearchHub proposal. Numbers below are from held-out patients only (14 patients, 38 subarrays, patient-stratified 85/15 split).</p>
+
+  <div class="hyp-grid">
+
+    <div class="hyp-card">
+      <div>
+        <div class="hyp-label">H1</div>
+        <div class="hyp-title">Cross-modal retrieval</div>
+      </div>
+      <div class="verdict v-supported">Supported</div>
+      <div class="hyp-row">
+        <div class="hyp-row-lbl">question</div>
+        <div class="hyp-row-val">Can H&amp;E embeddings retrieve matched ST niches better than unaligned baselines?</div>
+      </div>
+      <div class="hyp-row">
+        <div class="hyp-row-lbl">best method</div>
+        <div class="hyp-row-val"><span class="method-pill">R4 cross-attention</span></div>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div><div class="big-num">0.859</div><div style="font-size:10px;color:var(--fg-muted)">AUC (vs 0.440 unaligned)</div></div>
+        <div><div class="big-num">0.141</div><div style="font-size:10px;color:var(--fg-muted)">FOSCTTM (0.5 = chance)</div></div>
+      </div>
+      <div style="font-size:11px;color:var(--fg-muted);border-left:2px solid var(--accent);padding-left:8px">
+        Best in lymphoid nodule (0.067). Worst in tumor (0.161) - the label pools four distinct molecular states into one.
+      </div>
+    </div>
+
+    <div class="hyp-card">
+      <div>
+        <div class="hyp-label">H2</div>
+        <div class="hyp-title">Structural coherence</div>
+      </div>
+      <div class="verdict v-partial">Partial</div>
+      <div class="hyp-row">
+        <div class="hyp-row-lbl">question</div>
+        <div class="hyp-row-val">Does the aligned space organize tissue into the same cell states as the NMF reference?</div>
+      </div>
+      <div class="hyp-row">
+        <div class="hyp-row-lbl">tissue states (H2-A)</div>
+        <div class="hyp-row-val">TIE - bootstrap intervals overlap 8/9 methods. 5× lift over raw ST holds.</div>
+      </div>
+      <div class="hyp-row">
+        <div class="hyp-row-lbl">TLS from morphology (H2-B.2)</div>
+        <div class="hyp-row-val"><span class="method-pill">B1 CCA untrained</span> - median r 0.70 across 286 splits</div>
+      </div>
+      <div style="font-size:11px;color:var(--fg-muted);border-left:2px solid var(--yellow);padding-left:8px">
+        Construct-validity correction: H2-A re-evaluated on mc_megacluster (spot-level) rather than archetype (patient-level, NMI 0.89 vs patient ID). CCA is contraindicated - NMI 0.071, below the raw H&amp;E floor of 0.137.
+      </div>
+    </div>
+
+    <div class="hyp-card">
+      <div>
+        <div class="hyp-label">H3</div>
+        <div class="hyp-title">Pathway interpretability</div>
+      </div>
+      <div class="verdict v-supported">Supported (with qualifier)</div>
+      <div class="hyp-row">
+        <div class="hyp-row-lbl">question</div>
+        <div class="hyp-row-val">Does pathway signal in the shared space transfer to held-out patients?</div>
+      </div>
+      <div class="hyp-row">
+        <div class="hyp-row-lbl">cross-patient transfer</div>
+        <div class="hyp-row-val"><span class="method-pill">R4</span> 4/4 pathways BH-FDR &lt; 0.05, z_A 11.2–25.4</div>
+      </div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap">
+        <div><div class="big-num">4/4</div><div style="font-size:10px;color:var(--fg-muted)">R4 pathways pass (Immune, ECM, Cell cycle, PCD)</div></div>
+        <div><div class="big-num">0–2/4</div><div style="font-size:10px;color:var(--fg-muted)">late-fusion contrastive runs (doesn't transfer)</div></div>
+      </div>
+      <div style="font-size:11px;color:var(--fg-muted);border-left:2px solid var(--green);padding-left:8px">
+        Within-cohort CCA is universally positive and non-discriminating. Cross-patient sub-split is the test that separates methods.
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- R4 highlight -->
+<div class="section">
+  <div class="eyebrow">Recommended fusion method</div>
+  <h2>R4 · Cross-attention alignment</h2>
+  <p>R4 is the only run that keeps tile-level H&amp;E detail. All other methods mean-pool the seven tile vectors before projection. R4 lets the ST representation attend over individual tile tokens - the morphological context decides which tiles matter.</p>
+
+  <div class="r4-band">
+    <div class="r4-name">R4 · InfoNCE cross-attention</div>
+    <div class="r4-desc">ST queries attend over 7 H&amp;E tile tokens (center spot + 6 spatial neighbours). The molecular representation selects the most relevant morphological patches at each niche before projection to 512d shared space. Only the H&amp;E side enters at prediction time.</div>
+    <div class="r4-stats">
+      <div class="r4-stat"><div class="r4-stat-val">0.859</div><div class="r4-stat-lbl">AUC - retrieval (H1)</div></div>
+      <div class="r4-stat"><div class="r4-stat-val">0.631</div><div class="r4-stat-lbl">CKA - structural alignment</div></div>
+      <div class="r4-stat"><div class="r4-stat-val">4/4</div><div class="r4-stat-lbl">pathways cross-patient (H3)</div></div>
+      <div class="r4-stat"><div class="r4-stat-val">TIE</div><div class="r4-stat-lbl">tissue-state clustering (H2-A)</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- AUC chart -->
+<div class="section">
+  <div class="eyebrow">Method comparison</div>
+  <h2>AUC across all 10 evaluated methods (H1)</h2>
+  <p>Patient-stratified held-out test set. 95% CI from 1,000 bootstrap resamples. R4 exceeds the proposal's 0.65–0.75 target range. B4 random-init at chance (0.496) confirms contrastive training - not architecture - drives the H1 result.</p>
+  <div id="auc-chart"></div>
+</div>
+
+<!-- ROC curves -->
+<div class="section">
+  <div class="eyebrow">What the AUC measures</div>
+  <h2>ROC curves - ground truth is spatial co-registration</h2>
+  <p>The retrieval task is a binary classification problem. Each niche is a <b>matched pair</b>: an H&amp;E tile region centred on the same 100 µm spot as its ST observation, from the same physical 16 µm tissue section. <b>Positive pair</b>: same spatial coordinate. <b>Negative pair</b>: drawn from a different subarray of a held-out patient. The classifier is the cosine similarity between the two embeddings in the shared 512d space. AUC = 1.0 is perfect separation; AUC = 0.5 is random. <b>B3 (AUC 0.44) is sub-chance</b> - raw modality spaces are anti-correlated before alignment; a matched pair looks <i>less</i> similar than a mismatched one in the raw space.</p>
+  <div id="roc-chart" style="height:380px;margin-bottom:8px"></div>
+  <p style="font-size:11px;color:var(--fg-muted);line-height:1.5">Curves are binormal approximations from measured AUC scalars (d' = &#8730;2 &middot; &#934;<sup>-1</sup>(AUC)). Actual per-pair score distributions are in <code>runs/tnbc-92_v3/eval/H1/</code>. Five key methods shown; R2/R5/R6 sit between R1 and B2.</p>
+  <div class="lit-box">
+    <div class="lit-head">prior art - same evaluation protocol discovered independently in 2025-2026</div>
+    <div class="lit-row"><span class="lit-tag">spEMO</span> Liu et al. 2026, <i>Nature Biomedical Engineering</i>. Introduces "multi-modal alignment" as a benchmark task: how well do pathology FMs retrieve complementary ST information? Identical to this evaluation frame. Finds late-fusion surpasses single-modality on spatial domain identification and disease prediction.</div>
+    <div class="lit-row"><span class="lit-tag">HESCAPE</span> Gindra et al. 2025, <i>ICCV Workshop</i>. Large-scale cross-modal contrastive pretraining benchmark across 6 gene panels, 54 donors. Finds ST encoder is the primary determinant of alignment quality - consistent with our Novae platform-mismatch result (H&amp;E ARI vs mc 0.093 &gt; ST 0.033). Also finds contrastive pretraining improves retrieval but degrades direct expression prediction - the same H1/H2 trade-off we observe.</div>
+    <div class="lit-row"><span class="lit-tag">STORM</span> Xiang et al. 2026, <i>arXiv</i>. Hierarchical FM trained on 1.2M spatially resolved profiles + matched H&amp;E across 18 organs. Platform-agnostic (Visium/Xenium/CosMX). Tests immunotherapy response prediction (23 cohorts, 7,245 patients). Shares the shared-space-from-multiple-modalities design but is a foundation model retrain, not an alignment-and-route protocol.</div>
+    <div class="lit-row" style="color:var(--fg-muted);font-size:11px">What omicstra adds: (1) evaluation on a tissue/platform not in any training set (original ST 100 µm spots); (2) cross-attention tile-level fusion vs pooled late fusion; (3) patient-held-out cross-subarray evaluation; (4) H3 pathway CCA as an interpretability gate; (5) evidence-based routing that declines when evidence is absent.</div>
+  </div>
+</div>
+
+<!-- routing table -->
+<div class="section">
+  <div class="eyebrow">Decision record</div>
+  <h2>Routing table - 7 task families, 5 outcome types</h2>
+  <p>Each row is one scientific question. The outcome is derived from the evidence, not from thresholds set after looking at the data.</p>
+  <div class="rt-wrap">
+    <table class="routing">
+      <thead>
+        <tr>
+          <th>hypothesis</th>
+          <th>question</th>
+          <th>outcome</th>
+          <th>method</th>
+          <th>key evidence</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>H1</td>
+          <td>Cross-modal niche retrieval</td>
+          <td><span class="oc oc-rec">RECOMMEND</span></td>
+          <td><span class="method-pill">R4</span></td>
+          <td>AUC 0.859; FOSCTTM 0.141 vs 0.556 unaligned</td>
+        </tr>
+        <tr>
+          <td>H1</td>
+          <td>Representation structure (CKA)</td>
+          <td><span class="oc oc-rec">RECOMMEND</span></td>
+          <td><span class="method-pill">R4</span></td>
+          <td>CKA 0.631; both axes name same leader</td>
+        </tr>
+        <tr>
+          <td>H2-A</td>
+          <td>TME tissue-state clustering coherence</td>
+          <td><span class="oc oc-tie">TIE</span></td>
+          <td>—</td>
+          <td>Bootstrap CIs overlap 8/9 adjudicated methods; 5× lift over raw ST holds</td>
+        </tr>
+        <tr>
+          <td>H2-B.2</td>
+          <td>TLS gene score from morphology alone</td>
+          <td><span class="oc oc-rec">RECOMMEND</span></td>
+          <td><span class="method-pill">B1 (untrained)</span></td>
+          <td>Median r 0.70 across 286 leave-3-out splits; 9/10 trained methods worse</td>
+        </tr>
+        <tr>
+          <td>H2-C</td>
+          <td>Biology &gt; patient identity in aligned space</td>
+          <td><span class="oc oc-tie">TIE</span> <span class="oc oc-ref" style="margin-left:4px">CCA REFUSED</span></td>
+          <td>—</td>
+          <td>CCA NMI 0.071 &lt; raw H&amp;E floor 0.137 - contraindicated</td>
+        </tr>
+        <tr>
+          <td>H3</td>
+          <td>Pathway signal transfers cross-patient</td>
+          <td><span class="oc oc-rec">RECOMMEND</span></td>
+          <td><span class="method-pill">R4</span></td>
+          <td>4/4 pathways BH-FDR &lt; 0.05 cross-patient, z_A 11.2-25.4. R1/R6 fail H3 despite winning H2.</td>
+        </tr>
+        <tr>
+          <td>H3-DAG</td>
+          <td>Which specific pathway node drives a niche (395 DAG nodes)</td>
+          <td><span class="oc oc-esc">ESCALATE</span></td>
+          <td><span class="method-pill">R4</span> leads</td>
+          <td>R4 wins coverage (317/395 nodes). B2 Procrustes leads specificity axis. Attribution question cannot be resolved by one metric - escalates to domain expert.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- key findings -->
+<div class="section">
+  <div class="eyebrow">Key findings</div>
+  <h2>Five results that reframe the question</h2>
+
+  <div class="finding-list">
+    <div class="finding">
+      <div class="finding-num">01</div>
+      <div class="finding-body">
+        <div class="finding-head">The untrained representation wins the TLS task <span class="hyp-tag ht-h2">H2-B.2 · structural coherence</span></div>
+        <div class="finding-txt">Frozen Virchow2 features + CCA (no alignment training) predicts the 30-gene TLS score at median r&nbsp;0.70 across all 286 leave-three-patients-out splits. Nine of ten trained alignment methods perform worse. The signal was already in the foundation model - alignment rearranged the space, it didn't add information. This is why untrained controls belong in the evaluation contract, not in someone's good intentions.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="finding-num">02</div>
+      <div class="finding-body">
+        <div class="finding-head">TLS is two signals that route to different methods <span class="hyp-tag ht-h2">H2-B · structural coherence</span></div>
+        <div class="finding-txt">The categorical pathologist label (238 annotated niches, 23/92 patients) routes to late-fusion contrastive. The continuous 30-gene score (every niche with counts) routes to morphology-preserving methods including untrained projection. Same biological structure, two operationalizations, two different recommended methods. "Which method is best for TLS?" is underspecified until you say which measurement you mean.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="finding-num">03</div>
+      <div class="finding-body">
+        <div class="finding-head">Annotation quality is the dominant term in several results <span class="hyp-tag ht-h1">H1 · retrieval</span> <span class="hyp-tag ht-h2">H2 · coherence</span></div>
+        <div class="finding-txt">Retrieval is best in lymphoid nodule (FOSCTTM 0.067) and worst in tumor (0.161). The tumor label pools invasive nests, in situ disease, and the tumor-immune interface - four distinct molecular states - into one class with no single biology to align to. The vocabulary, not the method, determines the ceiling. Median spot-label purity is 59%; only 14.8% of spots are &gt;95% one category.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="finding-num">04</div>
+      <div class="finding-body">
+        <div class="finding-head">No single method wins all objectives - routing is the deliverable <span class="hyp-tag ht-h1">H1</span> <span class="hyp-tag ht-h2">H2</span> <span class="hyp-tag ht-h3">H3</span></div>
+        <div class="finding-txt">R4 cross-attention wins H1 retrieval and H3 cross-patient pathway transfer. R1/R6 late-fusion win H2 tissue-state clustering. CCA is contraindicated for biology/patient separation. The trade-off is the finding, not a failure. A system that routes by question and declines when the evidence contraindicates a method is what justified building the evaluation infrastructure in the first place.</div>
+      </div>
+    </div>
+    <div class="finding">
+      <div class="finding-num">05</div>
+      <div class="finding-body">
+        <div class="finding-head">Alignment is geometric, not informational <span class="hyp-tag ht-h2">H2-A · coherence</span> <span class="hyp-tag ht-h3">H3 · interpretability</span></div>
+        <div class="finding-txt">ARI rises ~50% over raw H&amp;E under the best-performing runs. The linear probe moves 1.2 points against a majority-class floor of 0.216. Alignment rearranged the space so that ordinary clustering could recover what was already encoded - it did not add new decodable information. The smaller claim is the true one, and it has a cleaner implication: the next lever is a finer biological vocabulary, not a better model.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span>TNBC-92 · Wang et al. 2024, Nature Communications 15:10232</span>
+  <span>14 held-out patients · 35,594 test niches · seed 42</span>
+  <a href="https://www.researchhub.com/proposal/5614/a-multi-agent-mcp-server-for-cross-modal-biomedical-embedding-alignment-evaluated-on-tumor-microenvironment-characterization" target="_blank">proposal</a>
+  <a href="https://claude.ai/artifact/E9F7jZiu8kazqxLWZqzpvn" target="_blank">FM clustering demo</a>
+</footer>
+
+</div><!-- /wrap -->
+
+<script>
+(function(){
+  var methods=['R4','R1','R5','R6','R2','B2','R3','B4','B1','B3'];
+  var auc=[0.859,0.761,0.761,0.737,0.725,0.706,0.674,0.496,0.544,0.440];
+  var ci_lo=[0.843,0.742,0.741,0.717,0.705,0.683,0.650,0.473,0.519,0.414];
+  var ci_hi=[0.875,0.780,0.781,0.757,0.745,0.729,0.698,0.519,0.569,0.466];
+  var cats=['contrastive','contrastive','contrastive','contrastive','contrastive','classical','contrastive','baseline','classical','baseline'];
+
+  var isDark=!document.documentElement.dataset.theme
+    ? window.matchMedia('(prefers-color-scheme:dark)').matches
+    : document.documentElement.dataset.theme==='dark';
+  var bg=isDark?'#0d1117':'#f6f8fa';
+  var surface=isDark?'#161b22':'#ffffff';
+  var fg=isDark?'#e6edf3':'#1f2328';
+  var muted=isDark?'#8b949e':'#57606a';
+  var border=isDark?'#30363d':'#d0d7de';
+
+  var colors=methods.map(function(m){
+    if(m==='R4') return '#58a6ff';
+    if(cats[methods.indexOf(m)]==='contrastive') return '#3fb950';
+    if(cats[methods.indexOf(m)]==='classical') return '#e3b341';
+    return '#8b949e';
+  });
+
+  var trace={
+    type:'bar', x:methods, y:auc,
+    marker:{color:colors,line:{width:0}},
+    error_y:{type:'data',symmetric:false,
+      array:ci_hi.map(function(v,i){return+(v-auc[i]).toFixed(3);}),
+      arrayminus:auc.map(function(v,i){return+(v-ci_lo[i]).toFixed(3);}),
+      color:muted,thickness:1.5,width:4},
+    hovertemplate:'<b>%{x}</b><br>AUC: %{y:.3f}<extra></extra>',
+    text:auc.map(function(v){return v.toFixed(3);}),
+    textposition:'outside',
+    textfont:{size:10,color:fg},
+    cliponaxis:false,
+  };
+
+  var layout={
+    paper_bgcolor:bg, plot_bgcolor:surface,
+    font:{color:fg,family:"'IBM Plex Mono','Fira Mono',monospace",size:11},
+    margin:{l:40,r:20,t:20,b:36},
+    xaxis:{tickfont:{size:11},gridcolor:border,linecolor:border},
+    yaxis:{range:[0,1.0],tickformat:'.2f',gridcolor:border,linecolor:border,tickfont:{size:10}},
+    shapes:[
+      {type:'line',x0:-0.5,x1:9.5,y0:0.5,y1:0.5,line:{color:'#58a6ff',dash:'dot',width:1.5}},
+      {type:'line',x0:-0.5,x1:9.5,y0:0.440,y1:0.440,line:{color:'#8b949e',dash:'dash',width:1}},
+    ],
+    annotations:[
+      {x:9.5,y:0.5,text:'chance',xanchor:'right',yanchor:'bottom',font:{size:9,color:'#58a6ff'},showarrow:false},
+      {x:9.5,y:0.440,text:'B3 unaligned',xanchor:'right',yanchor:'top',font:{size:9,color:'#8b949e'},showarrow:false},
+    ],
+    showlegend:false,
+    bargap:0.3,
+  };
+
+  Plotly.newPlot('auc-chart',[trace],layout,{displayModeBar:false,responsive:true});
+})();
+
+// --- ROC curves (binormal approximation from measured AUC) ---
+(function(){
+  function erf(x){
+    var t=1/(1+0.3275911*Math.abs(x));
+    var y=1-(0.254829592*t-0.284496736*t*t+1.421413741*t*t*t-1.453152027*t*t*t*t+1.061405429*Math.pow(t,5))*Math.exp(-x*x);
+    return x>=0?y:-y;
+  }
+  function normCdf(x){return 0.5*(1+erf(x/Math.sqrt(2)));}
+  // Acklam rational approx for normInv — stable across full [0,1]
+  function normInv(p){
+    p=Math.max(1e-10,Math.min(1-1e-10,p));
+    var a=[-3.969683028665376e1,2.209460984245205e2,-2.759285104469687e2,1.383577518672690e2,-3.066479806614716e1,2.506628277459239];
+    var b=[-5.447609879822406e1,1.615858368580409e2,-1.556989798598866e2,6.680131188771972e1,-1.328068155288572e1];
+    var c=[-7.784894002430293e-3,-3.223964580411365e-1,-2.400758277161838,2.549732539343734e0,4.374664141464968,2.938163982698783];
+    var d=[7.784695709041462e-3,3.224671290700398e-1,2.445134137142996,3.754408661907416];
+    var plo=0.02425,phi=1-plo;
+    var q,r;
+    if(p<plo){q=Math.sqrt(-2*Math.log(p));return(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);}
+    if(p<=phi){q=p-0.5;r=q*q;return(((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);}
+    q=Math.sqrt(-2*Math.log(1-p));return-(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);
+  }
+  function rocCurve(auc){
+    var dPrime=Math.sqrt(2)*normInv(auc);
+    var n=200; var fpr=[],tpr=[];
+    for(var i=0;i<=n;i++){
+      var f=i/n;
+      fpr.push(f);
+      tpr.push(f===0?0:f===1?1:normCdf(normInv(f)+dPrime));
+    }
+    return{x:fpr,y:tpr};
+  }
+
+  var isDark=!document.documentElement.dataset.theme
+    ?window.matchMedia('(prefers-color-scheme:dark)').matches
+    :document.documentElement.dataset.theme==='dark';
+  var bg=isDark?'#0d1117':'#f6f8fa';
+  var surface=isDark?'#161b22':'#ffffff';
+  var fg=isDark?'#e6edf3':'#1f2328';
+  var muted=isDark?'#8b949e':'#57606a';
+  var border=isDark?'#30363d':'#d0d7de';
+
+  var curves=[
+    {id:'R4',  auc:0.8591, color:'#58a6ff', dash:'solid', width:3},
+    {id:'R1',  auc:0.761,  color:'#3fb950', dash:'solid', width:1.5},
+    {id:'B2 (classical Procrustes)', auc:0.7064, color:'#e3b341', dash:'solid', width:1.5},
+    {id:'B1 (H&E untrained)', auc:0.5439, color:'#f78166', dash:'dot', width:1.5},
+    {id:'B3 (unaligned raw)', auc:0.4405, color:'#8b949e', dash:'dash', width:1.5},
+  ];
+
+  var traces=curves.map(function(c){
+    var r=rocCurve(c.auc);
+    return{x:r.x,y:r.y,mode:'lines',name:c.id+' AUC '+c.auc.toFixed(3),
+      line:{color:c.color,dash:c.dash,width:c.width},
+      hovertemplate:'<b>'+c.id+'</b><br>FPR: %{x:.3f}<br>TPR: %{y:.3f}<extra></extra>'};
+  });
+
+  // chance diagonal
+  traces.push({x:[0,1],y:[0,1],mode:'lines',name:'chance (AUC 0.500)',
+    line:{color:muted,dash:'dot',width:1},showlegend:true,
+    hoverinfo:'skip'});
+
+  var layout={
+    paper_bgcolor:bg,plot_bgcolor:surface,
+    font:{color:fg,family:"'IBM Plex Mono','Fira Mono',monospace",size:10},
+    margin:{l:46,r:20,t:16,b:46},
+    xaxis:{title:'false positive rate',range:[0,1],tickformat:'.1f',gridcolor:border,linecolor:border,tickfont:{size:10}},
+    yaxis:{title:'true positive rate',range:[0,1],tickformat:'.1f',gridcolor:border,linecolor:border,tickfont:{size:10}},
+    legend:{x:0.62,y:0.08,bgcolor:'rgba(0,0,0,0)',font:{size:10}},
+    annotations:[
+      {x:0.5,y:0.5,text:'B3 sub-chance: raw spaces anti-correlated',
+       ax:120,ay:-30,arrowhead:2,arrowsize:0.8,arrowwidth:1,
+       arrowcolor:muted,font:{size:9,color:muted},showarrow:true}
+    ]
+  };
+
+  Plotly.newPlot('roc-chart',traces,layout,{displayModeBar:false,responsive:true});
+})();
+</script>
