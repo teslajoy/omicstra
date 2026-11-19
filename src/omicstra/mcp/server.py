@@ -938,7 +938,9 @@ def align_run(project_id: str | None = None, compute: bool = False,
     "ran and failed does to the claim - demote to diagnostic, or halt. A cohort "
     "with no curated evidence pack is refused: the pack records which metric "
     "answers which task family, and generating that would invent the judgement "
-    "it exists to attribute."))
+    "it exists to attribute.\n\n"
+    "USE THIS ONLY to audit published numbers. For computing new results or "
+    "generating a notebook from a hypothesis question, use ask() instead."))
 def evaluate_run(project_id: str | None = None,
                  hypotheses: list[str] | None = None,
                  run_id: str | None = None) -> dict:
@@ -1235,18 +1237,21 @@ def unit_notebook(unit: str, project_id: str | None = None,
 
 
 @srv.tool(title="Ask", annotations=ToolAnnotations(readOnlyHint=False), description=(
-    "Execute a biological analysis from structured parameters the client model "
-    "has already interpreted. The client (Claude Desktop, Claude Code, or any "
-    "MCP client) reads the question, decides the task_id and run from "
-    "list_task_families, and passes them here. This tool calls no model - it "
-    "validates the request against project declarations, invokes the existing "
-    "evaluation graph and LCEL chain, generates a notebook, and returns "
-    "computed results with linked provenance.\n\n"
-    "Call list_task_families first to see what this cohort can answer, then "
-    "choose the task_id and run. Pass the researcher's original question in "
-    "`question` for provenance.\n\n"
-    "Use evaluate_measure directly when you already know every parameter and "
-    "do not need interpretation provenance or notebook generation."))
+    "THE ENTRY POINT for a researcher question about H1 / H2 / H3. Use this "
+    "when the user asks any hypothesis question - 'does alignment improve "
+    "retrieval?', 'which method preserves tumor subtypes?', 'are pathways "
+    "encoded in the shared space?' - and wants a result and a notebook.\n\n"
+    "This tool COMPUTES: it invokes the evaluation graph and LCEL chain on "
+    "the cohort's arrays, generates a rerunnable notebook, and returns "
+    "computed results with provenance. It is the only tool that produces a "
+    "notebook from a hypothesis question.\n\n"
+    "DO NOT use evaluate_run for this - evaluate_run reads a curated evidence "
+    "pack and audits whether its numbers hold up; it does not compute new "
+    "results and cannot generate a notebook. Use evaluate_run only when the "
+    "user asks 'do the published numbers still check out'.\n\n"
+    "Call list_task_families first to pick the task_id, then route() to see "
+    "which run the evidence recommends. Pass that run here. Pass the "
+    "researcher's original question in `question` for provenance."))
 def ask(question: str, task_id: str, run: str,
         objective: str = "",
         paired_view: str | None = None,
