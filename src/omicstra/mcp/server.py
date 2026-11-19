@@ -18,7 +18,7 @@ import os
 from pathlib import Path
 
 from mcp.server import MCPServer
-from mcp.types import LATEST_PROTOCOL_VERSION
+from mcp.types import LATEST_PROTOCOL_VERSION, ToolAnnotations
 
 from omicstra.contracts.project import ProjectConfig
 from omicstra.eda import load_contract, load_summary, run_gate
@@ -29,7 +29,7 @@ srv = MCPServer("omicstra")
 
 
 # --- tools: model-invoked, do work ----------------------------------------
-@srv.tool(description=(
+@srv.tool(title="EDA Gate", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "Run the EDA admissibility gate for a cohort. Returns a verdict "
     "(proceed | proceed_with_caution | stop), per-check results, blocking "
     "violations, cautions, and advisories for checks the contract expects but "
@@ -75,7 +75,7 @@ def check_eda_gate(project_id: str | None = None) -> dict:
     }
 
 
-@srv.tool(description=(
+@srv.tool(title="Encoder Fit", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "Whether this cohort's data is the kind of data its declared encoders were "
     "built on. For each encoder: the unit it was trained for, the unit each of "
     "this cohort's platforms supplies, and how far apart they are - a footprint "
@@ -99,7 +99,7 @@ def describe_encoder_fit(project_id: str | None = None) -> dict:
     return encoder_fit(cfg, decl.get("platforms", {}), decl.get("samples"))
 
 
-@srv.tool(description=(
+@srv.tool(title="Data Structure", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "Describe a cohort's data structure: platform, encoders and their "
     "dimensions, atomic unit, split protocol, and the supervision/label roles "
     "that must never enter a feature vector."))
@@ -131,7 +131,7 @@ def describe_data_structure(project_id: str | None = None) -> dict:
 
 
 # --- routing: which method can answer which biological question -----------
-@srv.tool(description=(
+@srv.tool(title="Task Families", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "List the biological question types this cohort's evaluation can route. Call "
     "this FIRST when asked what the system can answer, or before routing, to pick "
     "the task_id. Each family states the level of biological abstraction it lives "
@@ -144,7 +144,7 @@ def list_task_families(project_id: str | None = None) -> dict:
     return _list(project_id=project_id)
 
 
-@srv.tool(description=(
+@srv.tool(title="Route Question", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "Route one biological question to the method this cohort's evidence supports, "
     "and say why. You choose the task_id from list_task_families; everything after "
     "that is resolved by rule from recorded measurements - no judgement of yours "
@@ -181,7 +181,7 @@ def route(task_id: str, question: str = "", proposed_method: str | None = None,
     return d
 
 
-@srv.tool(description=(
+@srv.tool(title="Decision Record", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "Summarise the decision ledger for this cohort: how many routing decisions "
     "were taken, how they resolved, and what each rested on. Use when asked what "
     "the system has decided, how reproducible it is, or how much was rule-resolved "
@@ -193,7 +193,7 @@ def decision_record(project_id: str | None = None) -> dict:
     return _rec(project_id=project_id)
 
 
-@srv.tool(description=(
+@srv.tool(title="Evidence Plot", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "Show the evidence behind a routing decision as a chart. Use when the user "
     "asks to see the evidence, the numbers, the intervals, or why a task tied or "
     "escalated. Renders the candidates for one task_id with their confidence "
@@ -219,7 +219,7 @@ def plot_evidence(task_id: str, project_id: str | None = None) -> list:
 
 
 # --- compute-lite: run a real EDA step on cached data ---------------------
-@srv.tool(description=(
+@srv.tool(title="EDA Step", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "Run a real exploratory-data-analysis step on this cohort's actual measurements "
     "and return the scientific finding: the method used, the scope it ran on, what "
     "was observed, the criterion it was judged against, the result, and the decision "
@@ -281,7 +281,7 @@ def run_eda_step(step: str, n_perm: int = 199) -> dict:
 
 
 # --- a picture of the caveat ----------------------------------------------
-@srv.tool(description=(
+@srv.tool(title="Spatial Autocorrelation", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "Plot Moran's I spatial autocorrelation for this cohort's marker genes, comparing "
     "the single subarray the recorded EDA measured against the median across every "
     "sample in the cohort. Use this when asked how well a spatial-signal result "
@@ -559,7 +559,7 @@ def _device_here(project_id: str | None) -> str | None:
         return None
 
 
-@srv.tool(description=(
+@srv.tool(title="Compute Gates", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "Report the preflight gates on the compute path for one encoder: which are "
     "resolved from this cohort's declarations, which are still open, and what "
     "accepting each one forecloses. A cohort that declares every answer runs "
@@ -599,7 +599,7 @@ def check_compute_gates(encoder: str | None = None,
     }
 
 
-@srv.tool(description=(
+@srv.tool(title="Compute Plan", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "Describe what a compute run would do on this cohort without running it: "
     "how many units are declared, how many shards the work splits into, which "
     "outputs already exist and would therefore be skipped, and what is missing. "
@@ -815,7 +815,7 @@ def _handle(app, run_id: str, out: dict) -> dict:
             "recorded": n_new, "halted": bool(out.get("halted"))}
 
 
-@srv.tool(description=(
+@srv.tool(title="H&E Encode", annotations=ToolAnnotations(readOnlyHint=False), description=(
     "Run the H&E morphology agent on a cohort. Fires its preflight gates as "
     "interrupts a client answers, then dispatches one shard per section. "
     "Returns a run handle. compute=false (the default) resolves the shard list "
@@ -848,7 +848,7 @@ def he_encode(project_id: str | None = None, platform: str | None = None,
             "unit_counts_cover": coverage}
 
 
-@srv.tool(description=(
+@srv.tool(title="ST Encode", annotations=ToolAnnotations(readOnlyHint=False), description=(
     "Run the spatial-transcriptomics agent on a cohort. Its own agent, not a "
     "mode of the H&E one: it asks whether each section clears the encoder's "
     "prototype floor, and it REFUSES rather than asking when the platform's edge "
@@ -887,7 +887,7 @@ def st_encode(project_id: str | None = None, platform: str | None = None,
             "unit_counts_cover": coverage}
 
 
-@srv.tool(description=(
+@srv.tool(title="Align Run", annotations=ToolAnnotations(readOnlyHint=False), description=(
     "RESOLVE a cohort's alignment grid from its recorded artifacts, behind a run "
     "handle. compute=true trains contrastive runs through the five-step LCEL chain "
     "(load_data, split, train, embed_test, evaluate_and_save) and dispatches "
@@ -927,7 +927,7 @@ def align_run(project_id: str | None = None, compute: bool = False,
     return {**_handle(app, rid, out), "checkpointer": spec}
 
 
-@srv.tool(description=(
+@srv.tool(title="Evaluate Run", annotations=ToolAnnotations(readOnlyHint=False), description=(
     "Return a VERDICT on H1 / H2 / H3 for a cohort, behind a run handle. Reads "
     "the artifacts the cohort's evidence declaration names, runs the guards the "
     "routing contract requires for each task family, and states per hypothesis "
@@ -963,7 +963,7 @@ def evaluate_run(project_id: str | None = None,
     return {**_handle(app, rid, out), "checkpointer": spec}
 
 
-@srv.tool(description=(
+@srv.tool(title="Evaluate Measure", annotations=ToolAnnotations(readOnlyHint=False), description=(
     "COMPUTE a verdict on H1 / H2 / H3 from a cohort's own arrays, rather than "
     "reading one from a curated evidence pack. This is the other half of "
     "evaluate_run and answers a different question: evaluate_run states what a "
@@ -1004,7 +1004,7 @@ def evaluate_measure(run: str, project_id: str | None = None,
     return {**_handle(app, rid, out), "checkpointer": spec}
 
 
-@srv.tool(description=(
+@srv.tool(title="Resume Run", annotations=ToolAnnotations(readOnlyHint=False), description=(
     "Answer the open gate on a run and continue it, or - on a run with no open "
     "gate whose shards are incomplete - re-dispatch the ones still missing. "
     "The run handle is an ordinary parameter, so a run started by one request "
@@ -1072,7 +1072,7 @@ def runs_resume(run_id: str, answers: dict | None = None,
             "checkpointer": spec, "arm": arm}
 
 
-@srv.tool(description=(
+@srv.tool(title="Run Status", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "What a run is doing: shards done, still missing, what it answered. "
     "Progress is counted from the output files rather than held in memory, so "
     "this is true from any process and after a restart."))
@@ -1121,7 +1121,7 @@ def runs_status(run_id: str) -> dict:
             "out_dir": rep.get("out_dir"), "geometry": rep.get("geometry")}
 
 
-@srv.tool(description=(
+@srv.tool(title="Run Timeline", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "The TIMELINE of a run: every step in the order it happened, how long it "
     "took, and which actor decided it. Answers 'where did this run spend its "
     "time' and 'what has not finished', which the decision record does not - it "
@@ -1156,7 +1156,7 @@ def runs_trace(run_id: str, limit: int = 100) -> dict:
                      "different question - see runs_record for where it lives.")}
 
 
-@srv.tool(description=(
+@srv.tool(title="Run Record", annotations=ToolAnnotations(readOnlyHint=True), description=(
     "The decision record for ONE run: every gate answered, by whom, and the "
     "declaration it resolved from, read from that run's checkpoint. The cohort's "
     "whole ledger is a different question and a different file - every arm "
@@ -1186,7 +1186,7 @@ def runs_record(run_id: str) -> dict:
             "encoder": v.get("encoder"), "platform": v.get("platform")}
 
 
-@srv.tool(description=(
+@srv.tool(title="Unit Notebook", annotations=ToolAnnotations(readOnlyHint=False), description=(
     "Write one ANALYSIS UNIT as a rerunnable notebook plus a markdown trace, "
     "and return both paths. The unit is the key, not the run: a run id is an "
     "execution artifact, so a cohort carries one current record per unit - eda, "
@@ -1234,7 +1234,7 @@ def unit_notebook(unit: str, project_id: str | None = None,
             "ledger": str(led.path) if led.path else None}
 
 
-@srv.tool(description=(
+@srv.tool(title="Ask", annotations=ToolAnnotations(readOnlyHint=False), description=(
     "Execute a biological analysis from structured parameters the client model "
     "has already interpreted. The client (Claude Desktop, Claude Code, or any "
     "MCP client) reads the question, decides the task_id and run from "

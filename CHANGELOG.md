@@ -1,6 +1,11 @@
 # changelog
 
-## v1.4.0 (unreleased)
+## v1.4.1 (unreleased)
+
+- tool annotations: `title=` and `readOnlyHint` on all 22 MCP tools (14 read-only, 8 write)
+- README: scientist-facing usability section
+
+## v1.4.0 (2026-11-19)
 
 defining claim: a second cohort goes from files to its own evidence pack and
 report without changes to `src/`.

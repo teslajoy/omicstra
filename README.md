@@ -8,7 +8,32 @@ the seed implementation evaluates 92 TNBC patients from [Wang et al. 2024](https
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.22754114-1682D4)](https://doi.org/10.5281/zenodo.22754114)
 
-`v1.0.0` · `v1.1.0` · `v1.2.0` · `v1.3.0`  `ResearchHub Foundation grant`  `Brenden-Colson Center / Sears Lab, OHSU`  [changelog](CHANGELOG.md)
+`v1.0.0` · `v1.1.0` · `v1.2.0` · `v1.3.0` · `v1.4.0` · `v1.4.1`  `ResearchHub Foundation grant`  `Brenden-Colson Center / Sears Lab, OHSU`  [changelog](CHANGELOG.md)
+
+---
+
+## using it as a tool
+
+omicstra runs as a tool inside Claude Desktop, Claude Code, or any MCP client. connect it once, then ask questions in plain language.
+
+**connect** - add to your MCP client config (Claude Desktop: Settings > Developer):
+
+```json
+{ "mcpServers": { "omicstra": {
+    "command": "python", "args": ["-c", "from omicstra.mcp.server import serve; serve()"],
+    "env": { "OMICSTRA_PROJECT_DIR": "/path/to/your/cohort" }
+}}}
+```
+
+**ask** - examples of questions you can ask:
+
+- "which method best retrieves matching expression profiles from H&E?"
+- "does the alignment preserve known tumor microenvironment subtypes?"
+- "which Reactome pathways are encoded in the shared embedding space?"
+- "can I use CCA to compare patients across the cohort?"
+- "what would an H&E encode cost on this machine?"
+
+**what you get back** - for each question: the recommended method, the measurement behind it, a confidence interval, and what the evidence cannot support. a question with no recorded evidence returns a refusal with the reason, not a number. ask for a figure with `show me the evidence` or a rerunnable notebook with `generate the analysis notebook`.
 
 ---
 
@@ -339,12 +364,11 @@ read as a pass.
 **what it cannot do yet**
 
 ```
-fuse or align on a second cohort         v1.3 commitment, not yet delivered.
-                                         tracked: completion_roadmap WS 10
-produce that cohort's own evidence pack  v1.3 commitment, not yet delivered.
-                                         the release claim it was named for
-a package path for the pathway arm       v1.3 commitment, partially delivered.
-                                         bridge wired, persistence TODO (WS 6)
+fuse or align on a second cohort         v1.4 open item #33: align_run trains
+                                         through the package, not scripts
+produce that cohort's own evidence pack  v1.4 open item #34: a real second
+                                         cohort (HEST Visium candidate) produces
+                                         its own routing_evidence.json
 registration across sections             declared, not built. both cohorts are
                                          same-section, so nothing here needs it
 mitochondrial-fraction exclusion         not implemented. a proposal commitment,
@@ -425,7 +449,7 @@ alignment strategies (experimental variable):
 
 ## repo structure
 
-audited against the filesystem 2026-10-27. `·` is built, `○` is named in the design and **not yet built** - kept here because the name is referenced elsewhere, not because it exists.
+audited against the filesystem 2026-11-17. `·` is built, `○` is named in the design and **not yet built** - kept here because the name is referenced elsewhere, not because it exists.
 
 ```
 omicstra/
@@ -488,7 +512,7 @@ omicstra/
 │   · dispatch/                      # shard submission and worker activity bodies
 │   │   · bodies.py  temporal.py     #   the one name table · Temporal executor
 │   · agents/modality.py             # he / st / pathway agents - read recorded evidence
-│   · mcp/server.py                  # 21 tools, 2+2 resources, stdio + http. zero model calls
+│   · mcp/server.py                  # 22 tools, 2+2 resources, stdio + http. zero model calls
 │   · records.py  artifacts.py       # the record contract - inventory/eda_summary io
 │   · settings.py  cli.py            # 15 commands. settings imports nothing from omicstra
 │   · routing.py  eda.py  figures.py # resolve + ledger · gate · plots
