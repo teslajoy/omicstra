@@ -37,6 +37,14 @@
   "h2_label": "mc_megacluster",
   "supervision": "mc_weights_niche",
   "headline_view": "z_he",
+  "paired_view": "z_st",
+  "continuous_signals": [
+    "TGF-beta_Signaling",
+    "Immune_System",
+    "ECM_Organization",
+    "Cell_Cycle",
+    "Programmed_Cell_Death"
+  ],
   "hypothesis_metric": "auc",
   "contrastive_runs": [
     "R1_v3",

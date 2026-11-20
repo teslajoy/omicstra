@@ -59,6 +59,8 @@ class EvaluateState(TypedDict, total=False):
     include_pathway_scores: bool  # True loads declared AUCell scores into
                                # ctx["scores"] for H3. False (default) keeps
                                # ctx["scores"] to only the niche-table signals
+    include_pathway_cosines: bool  # True loads CCA axes into ctx for
+                               # pathway_transfer_cca. False (default) skips
     paired_view: str | None    # the other modality's view. absent means
                                # identifiability is not_applicable, which is a
                                # true answer for a single-modality cohort
@@ -295,7 +297,9 @@ def measure(state: EvaluateState) -> dict:
                      paired_view=state.get("paired_view"),
                      signals=tuple(state.get("signals") or ()),
                      include_pathway_scores=bool(
-                         state.get("include_pathway_scores")))
+                         state.get("include_pathway_scores")),
+                     include_pathway_cosines=bool(
+                         state.get("include_pathway_cosines")))
     except (DeclarationMissing, ValueError, FileNotFoundError, KeyError) as e:
         return {"report": {"status": "unavailable", "stage": "arrays", "why": str(e)},
                 "records": [*state.get("records", []),

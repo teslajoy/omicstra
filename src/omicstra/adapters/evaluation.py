@@ -145,6 +145,9 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
     cfg = ProjectConfig.from_dir(project_dir)
     runs_path, niches_path = cfg.path(dec["runs_dir"]), cfg.path(dec["niches_dir"])
     view = dec["headline_view"]
+    paired_view = paired_view or dec.get("paired_view")
+    if not include_pathway_scores and dec.get("continuous_signals"):
+        include_pathway_scores = True
 
     he, frame = _views(runs_path, run, view)
     spaces = {view: he}

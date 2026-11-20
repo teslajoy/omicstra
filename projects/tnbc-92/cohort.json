@@ -92,7 +92,7 @@
       "note": "verified against scripts/eval_alignment_biology.py defaults. biology_labels are the aliases declared in project.json#biology_labels.columns. correction is BH-FDR per test family (biology and patient separately), not Bonferroni. the published counts are 100000/1000; reduced counts belong in test fixtures only"
     },
     "association_and_specificity": {
-      "n_permutations": 20,
+      "n_permutations": 1000,
       "alpha": 0.05,
       "tau_specificity": 0.5,
       "tail": "two_sided",

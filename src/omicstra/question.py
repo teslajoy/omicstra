@@ -40,6 +40,7 @@ class AnalysisRequest:
     paired_view: str | None = None
     signals: list[str] = field(default_factory=list)
     include_pathway_scores: bool = False
+    include_pathway_cosines: bool = False
     resolved_params: dict[str, Any] = field(default_factory=dict)
     param_sources: dict[str, str] = field(default_factory=dict)
     missing: list[str] = field(default_factory=list)
@@ -138,6 +139,7 @@ def validate(raw: dict, project_id: str | None = None) -> AnalysisRequest:
     paired_view = raw.get("paired_view")
     signals = list(raw.get("signals") or [])
     include_pathway_scores = bool(raw.get("include_pathway_scores"))
+    include_pathway_cosines = bool(raw.get("include_pathway_cosines"))
 
     # check that required evaluate_params steps are declared
     param_sources: dict[str, str] = {}
@@ -187,6 +189,7 @@ def validate(raw: dict, project_id: str | None = None) -> AnalysisRequest:
         paired_view=paired_view,
         signals=signals,
         include_pathway_scores=include_pathway_scores,
+        include_pathway_cosines=include_pathway_cosines,
         resolved_params=resolved,
         param_sources=param_sources,
         missing=missing,
@@ -231,6 +234,7 @@ class ExecutionResult:
             "paired_view": self.request.paired_view,
             "signals": self.request.signals,
             "include_pathway_scores": self.request.include_pathway_scores,
+            "include_pathway_cosines": self.request.include_pathway_cosines,
             "resolved_params": self.request.resolved_params,
             "param_sources": self.request.param_sources,
             "missing": self.request.missing,
@@ -356,6 +360,7 @@ def execute(request: AnalysisRequest) -> ExecutionResult:
         "paired_view": request.paired_view,
         "signals": request.signals,
         "include_pathway_scores": request.include_pathway_scores,
+        "include_pathway_cosines": request.include_pathway_cosines,
     })
 
     report = out.get("report", {})

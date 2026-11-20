@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 
 from mcp.server import MCPServer
@@ -26,6 +27,13 @@ from omicstra.labels import HandleArm, Route
 from omicstra.settings import settings
 
 srv = MCPServer("omicstra")
+
+# background evaluate/ask jobs: keyed by run_id.
+# _running_jobs holds the thread while it is alive.
+# _ask_results holds the formatted result once an ask thread finishes
+# (evaluate_measure results land in the durable checkpoint instead).
+_running_jobs: dict[str, threading.Thread] = {}
+_ask_results: dict[str, dict] = {}
 
 
 # --- tools: model-invoked, do work ----------------------------------------
@@ -985,6 +993,7 @@ def evaluate_measure(run: str, project_id: str | None = None,
                      paired_view: str | None = None,
                      signals: list[str] | None = None,
                      include_pathway_scores: bool = False,
+                     include_pathway_cosines: bool = False,
                      run_id: str | None = None) -> dict:
     import uuid
 
@@ -998,12 +1007,25 @@ def evaluate_measure(run: str, project_id: str | None = None,
     # inputs are cohort content, and this arm's inputs are the arrays themselves.
     assert_may_trace(cohort, project_id)
     cfg = {"configurable": {"thread_id": rid}}
-    out = app.invoke({"project_id": project_id, "arm": HandleArm.EVALUATE,
-                      "cohort": cohort, "compute": True, "run": run,
-                      "paired_view": paired_view,
-                      "include_pathway_scores": include_pathway_scores,
-                      "signals": list(signals or [])}, cfg)
-    return {**_handle(app, rid, out), "checkpointer": spec}
+    state = {"project_id": project_id, "arm": HandleArm.EVALUATE,
+             "cohort": cohort, "compute": True, "run": run,
+             "paired_view": paired_view,
+             "include_pathway_scores": include_pathway_scores,
+             "include_pathway_cosines": include_pathway_cosines,
+             "signals": list(signals or [])}
+
+    def _bg():
+        try:
+            out = app.invoke(state, cfg)
+            _handle(app, rid, out)
+        finally:
+            _running_jobs.pop(rid, None)
+
+    t = threading.Thread(target=_bg, daemon=True, name=f"eval-{rid}")
+    _running_jobs[rid] = t
+    t.start()
+    return {"run_id": rid, "status": "running", "checkpointer": spec,
+            "poll_with": f"runs_status(run_id='{rid}') — check every 30s"}
 
 
 @srv.tool(title="Resume Run", annotations=ToolAnnotations(readOnlyHint=False), description=(
@@ -1079,6 +1101,18 @@ def runs_resume(run_id: str, answers: dict | None = None,
     "Progress is counted from the output files rather than held in memory, so "
     "this is true from any process and after a restart."))
 def runs_status(run_id: str) -> dict:
+    # check background jobs before the checkpoint lookup: ask jobs have no
+    # durable checkpoint, and evaluate jobs haven't written theirs yet while
+    # the thread is still running.
+    if run_id in _running_jobs:
+        if _running_jobs[run_id].is_alive():
+            return {"run_id": run_id, "status": "running",
+                    "poll_with": f"runs_status(run_id='{run_id}') — check every 30s"}
+        _running_jobs.pop(run_id, None)
+
+    if run_id in _ask_results:
+        return _ask_results[run_id]
+
     try:
         _, spec, snap, arm = _runner_for(run_id)
     except NotAnArmHandle as e:
@@ -1257,12 +1291,19 @@ def ask(question: str, task_id: str, run: str,
         paired_view: str | None = None,
         signals: list[str] | None = None,
         include_pathway_scores: bool = False,
+        include_pathway_cosines: bool = False,
         interpretation_model: str = "",
         notes: list[str] | None = None,
         project_id: str | None = None) -> dict:
     from omicstra.question import ValidationError, execute, validate
 
     pid = project_id or _bound_id(project_id)
+
+    # H3 task families need pathway inputs; auto-enable so callers don't
+    # need to know the flag exists
+    if task_id in ("pathway_transfer", "pathway_discrimination"):
+        include_pathway_scores = True
+        include_pathway_cosines = True
 
     raw = {
         "question": question,
@@ -1273,6 +1314,7 @@ def ask(question: str, task_id: str, run: str,
         "paired_view": paired_view,
         "signals": list(signals or []),
         "include_pathway_scores": include_pathway_scores,
+        "include_pathway_cosines": include_pathway_cosines,
         "interpretation_model": interpretation_model,
         "notes": list(notes or []),
     }
@@ -1283,16 +1325,29 @@ def ask(question: str, task_id: str, run: str,
         return {"status": "validation_failed", "problems": e.problems,
                 "interpreted_as": raw, "question": question}
 
-    try:
-        result = execute(request)
-    except Exception as e:
-        return {"status": "execution_failed", "why": str(e),
-                "request": raw, "question": question}
+    import uuid
+    rid = f"ask-{uuid.uuid4().hex[:12]}"
 
-    return {
-        "status": result.report.get("status", "unknown"),
-        **result.summary(),
-    }
+    def _bg():
+        try:
+            result = execute(request)
+            _ask_results[rid] = {
+                "run_id": rid,
+                "status": result.report.get("status", "unknown"),
+                **result.summary(),
+            }
+        except Exception as e:
+            _ask_results[rid] = {"run_id": rid, "status": "execution_failed",
+                                 "why": str(e)}
+        finally:
+            _running_jobs.pop(rid, None)
+
+    t = threading.Thread(target=_bg, daemon=True, name=f"ask-{rid}")
+    _running_jobs[rid] = t
+    t.start()
+    return {"run_id": rid, "status": "running",
+            "poll_with": f"runs_status(run_id='{rid}') — check every 30s",
+            "question": question, "task_id": task_id, "run": run}
 
 
 # LAST in the file, and that is load-bearing. it sat above `_resources` and the
