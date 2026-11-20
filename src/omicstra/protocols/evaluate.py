@@ -182,7 +182,12 @@ def noise_floor(observed: float, null: object, tail: str = "greater") -> GuardRe
     nul = np.asarray(null, dtype=np.float64).ravel()
     if nul.size < 20:
         raise ValueError(f"a permutation null needs samples; got {nul.size}")
-    extreme = (nul >= obs) if tail == "greater" else (nul <= obs)
+    if tail == "greater":
+        extreme = nul >= obs
+    elif tail == "less":
+        extreme = nul <= obs
+    else:  # two_sided: count nulls whose absolute deviation >= |obs|
+        extreme = np.abs(nul) >= abs(obs)
     p = float((extreme.sum() + 1) / (nul.size + 1))
     sd = float(nul.std())
     z = (obs - float(nul.mean())) / sd if sd > 0 else float("nan")
@@ -1841,6 +1846,7 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                 "guard_g5": "pass" if (g5 and g5.passed)
                             else "fail" if g5 else "not_run",
                 "g5_not_run_because": why,
+                "g5_note": g5.note if g5 else why,
                 "within_cohort": {"r": w_obs, "z": within["z"], "p": within["p"],
                                   "note": "non-discriminating on the seed cohort - "
                                           "significant for every arm at once, so "
@@ -1935,7 +1941,7 @@ def association_and_specificity(ctx: Ctx) -> tuple[DiagnosticRecord, dict]:
                   "guards": [{"guard": "G5_noise_floor",
                               "scope": f"{v}/{r['signal']}",
                               "status": r["guard_g5"],
-                              "note": r.get("g5_not_run_because", "")}
+                              "note": r.get("g5_note") or r.get("g5_not_run_because", "")}
                              for v, blk in out.items() for r in blk["per_signal"]]
                             + [{"guard": "G2_held_out_honesty", "scope": v,
                                 "status": "pass",
