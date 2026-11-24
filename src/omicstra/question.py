@@ -133,8 +133,14 @@ def validate(raw: dict, project_id: str | None = None) -> AnalysisRequest:
         all_runs = list(cfg.contrastive_runs or []) + list(
             cfg.classical_runs or [])
         if all_runs and run not in all_runs:
-            problems.append(
-                f"run {run!r} is not declared. known: {all_runs}")
+            # accept shorthands: "R4" resolves to "R4_v3" when uniquely matched
+            matches = [r for r in all_runs if r.lower().startswith(run.lower())]
+            if len(matches) == 1:
+                run = matches[0]
+            else:
+                problems.append(
+                    f"run {run!r} is not declared. known: {all_runs}"
+                    + (f". shorthand matches: {matches}" if matches else ""))
 
     paired_view = raw.get("paired_view")
     signals = list(raw.get("signals") or [])

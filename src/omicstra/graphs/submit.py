@@ -15,6 +15,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -114,6 +115,10 @@ def dispatch(state: dict, shards: list, out: Path, body: Callable,
                    # progress is NOT reported here. this returns at submission, so
                    # any count would be a guess - runs_status counts the output
                    # files, which are the truth and stay true across a restart.
+                   # dispatched_at_utc + estimate_seconds let runs_status compute
+                   # elapsed time and ETA without polling or callbacks.
+                   "dispatched_at_utc": datetime.now(timezone.utc).isoformat(),
+                   "estimate_seconds": (state.get("plan") or {}).get("seconds"),
                    "submit_seconds": wall, "out_dir": str(out),
                    "answers": state.get("answers") or {},
                    "plan": state.get("plan", {}),

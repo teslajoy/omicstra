@@ -1145,9 +1145,36 @@ def runs_status(run_id: str) -> dict:
         # reportable - without it a dead run reads as a slow one indefinitely.
         status = ("complete" if not missing
                   else "failed" if failed else "running")
+
+    # ETA from dispatch timestamp + pre-flight estimate — no callbacks needed.
+    # linear interpolation: if 30% done in 20 min, estimate 46 min remaining.
+    elapsed_s = eta_s = progress_pct = None
+    dispatched_at = rep.get("dispatched_at_utc")
+    estimate_seconds = rep.get("estimate_seconds")
+    n_done = len(done)
+    n_shards = len(shards)
+    if dispatched_at and status in ("running", "submitted", "complete"):
+        try:
+            from datetime import datetime as _dt, timezone as _tz
+            dt = _dt.fromisoformat(dispatched_at)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=_tz.utc)
+            elapsed_s = round((_dt.now(_tz.utc) - dt).total_seconds(), 1)
+        except Exception:
+            pass
+    if n_shards > 0:
+        progress_pct = round(n_done / n_shards * 100, 1)
+        if elapsed_s and n_done > 0 and status == "running":
+            rate = elapsed_s / n_done
+            eta_s = round(rate * (n_shards - n_done), 1)
+        elif estimate_seconds and status == "running":
+            eta_s = round(float(estimate_seconds), 0)
+
     return {"run_id": run_id, "checkpointer": spec, "arm": arm,
             "executor": rep.get("executor"), "failed": failed or None,
-            "n_shards": len(shards), "n_done": len(done),
+            "n_shards": n_shards, "n_done": n_done,
+            "progress_pct": progress_pct,
+            "elapsed_s": elapsed_s, "eta_s": eta_s,
             "missing": missing,
             "status": status,
             "next": list(snap.next or []),
@@ -1222,6 +1249,57 @@ def runs_record(run_id: str) -> dict:
             "encoder": v.get("encoder"), "platform": v.get("platform")}
 
 
+@srv.tool(title="Warm Cache", annotations=ToolAnnotations(readOnlyHint=False), description=(
+    "Pre-load embedding matrices for one or all runs into server memory so the "
+    "first ask() call is fast. Without warming, the first ask() for a run loads "
+    "150-200 MB from disk (30-60s). After warming that cost is paid once at "
+    "startup and every subsequent ask() skips it. Call once after Claude Desktop "
+    "opens, or before a session where you plan to ask questions. Returns memory "
+    "usage and which runs are now cached."
+))
+def warm_cache(project_id: str = None, run: str = None) -> dict:
+    from omicstra import cache as _cache
+    from omicstra.adapters.evaluation import arrays
+    from omicstra.settings import settings
+
+    pid = project_id or _bound_id(project_id)
+    project_dir = settings.project_root(pid)
+
+    import json
+    pj = json.loads((project_dir / "project.json").read_text())
+    all_runs = list(pj.get("contrastive_runs", [])) + list(pj.get("classical_runs", []))
+    targets = [run] if run else all_runs
+
+    loaded, skipped, failed = [], [], []
+    for r in targets:
+        if _cache.get(project_dir, r) is not None:
+            skipped.append(r)
+            continue
+        try:
+            arrays(project_dir, r)
+            loaded.append(r)
+        except Exception as e:
+            failed.append({"run": r, "why": str(e)})
+
+    return {
+        "loaded": loaded,
+        "skipped_already_cached": skipped,
+        "failed": failed,
+        **_cache.status(),
+        "note": (f"loaded {len(loaded)} run(s) into memory. "
+                 f"ask() calls for these runs skip disk I/O."),
+    }
+
+
+@srv.tool(title="Cache Status", annotations=ToolAnnotations(readOnlyHint=True), description=(
+    "Show which runs are currently loaded in server memory and approximate "
+    "memory usage. Use to check whether warm_cache has run."
+))
+def cache_status() -> dict:
+    from omicstra import cache as _cache
+    return _cache.status()
+
+
 @srv.tool(title="Unit Notebook", annotations=ToolAnnotations(readOnlyHint=False), description=(
     "Write one ANALYSIS UNIT as a rerunnable notebook plus a markdown trace, "
     "and return both paths. The unit is the key, not the run: a run id is an "
@@ -1271,22 +1349,22 @@ def unit_notebook(unit: str, project_id: str | None = None,
 
 
 @srv.tool(title="Ask", annotations=ToolAnnotations(readOnlyHint=False), description=(
-    "THE ENTRY POINT for a researcher question about H1 / H2 / H3. Use this "
-    "when the user asks any hypothesis question - 'does alignment improve "
-    "retrieval?', 'which method preserves tumor subtypes?', 'are pathways "
-    "encoded in the shared space?' - and wants a result and a notebook.\n\n"
-    "This tool COMPUTES: it invokes the evaluation graph and LCEL chain on "
-    "the cohort's arrays, generates a rerunnable notebook, and returns "
-    "computed results with provenance. It is the only tool that produces a "
-    "notebook from a hypothesis question.\n\n"
-    "DO NOT use evaluate_run for this - evaluate_run reads a curated evidence "
-    "pack and audits whether its numbers hold up; it does not compute new "
-    "results and cannot generate a notebook. Use evaluate_run only when the "
-    "user asks 'do the published numbers still check out'.\n\n"
-    "Call list_task_families first to pick the task_id, then route() to see "
-    "which run the evidence recommends. Pass that run here. Pass the "
-    "researcher's original question in `question` for provenance."))
-def ask(question: str, task_id: str, run: str,
+    "THE ENTRY POINT for any researcher question. Pass only `question` — "
+    "task_id and run resolve automatically from recorded evidence.\n\n"
+    "task_id picks the analysis type (omit to get the full list back):\n"
+    "  pathway_transfer     H3 — are pathway signals in the shared space?\n"
+    "  pathway_discrimination H3 — which pathway drives a specific unit?\n"
+    "  cross_modal_retrieval  H1 — does alignment improve H&E↔ST retrieval?\n"
+    "  structural_agreement   H1 — do modalities agree geometrically?\n"
+    "  tissue_state_grouping  H2-A — do aligned embeddings recover tissue states?\n"
+    "  subject_identity_suppression H2-C — is batch/subject signal suppressed?\n"
+    "  morphology_decode      H2-B.2 — predict molecular signal from H&E alone\n\n"
+    "run accepts shorthands: 'R4' resolves to 'R4_v3'. omit run entirely to "
+    "use the evidence-recommended method for the chosen task.\n\n"
+    "This tool COMPUTES: invokes the evaluation graph, generates a rerunnable "
+    "notebook, returns results with provenance. Use evaluate_run only to audit "
+    "published numbers — it does not compute new results."))
+def ask(question: str, task_id: str = "", run: str = "",
         objective: str = "",
         paired_view: str | None = None,
         signals: list[str] | None = None,
@@ -1298,6 +1376,47 @@ def ask(question: str, task_id: str, run: str,
     from omicstra.question import ValidationError, execute, validate
 
     pid = project_id or _bound_id(project_id)
+    resolved_notes = list(notes or [])
+
+    # when task_id is absent return a structured prompt so the caller can
+    # re-call with the right one — avoids a separate list_task_families round trip
+    if not task_id:
+        from omicstra.routing import list_task_families as _ltf
+        fams = _ltf(project_id=pid)
+        return {
+            "status": "needs_task_id",
+            "question": question,
+            "message": "re-call ask() with task_id= from the list below",
+            "families": [{"task_id": f["task_id"], "asks": f["asks"],
+                          "hypothesis": f["hypothesis"],
+                          "routable": f["routable_on_this_cohort"]}
+                         for f in fams["families"]],
+        }
+
+    # when run is absent resolve it from recorded routing evidence
+    if not run:
+        from omicstra.contracts.routing import load_routing_evidence
+        from omicstra.routing import resolve as _resolve
+        rec = _resolve(task_id, question=question, project_id=pid, log=False)
+        resolution = ("override_ack" if (rec.contraindicated and rec.actor == "human")
+                      else "refuse" if rec.contraindicated
+                      else "escalate" if rec.escalated
+                      else "tie" if rec.tie else "recommend")
+        if resolution == "recommend" and rec.chosen:
+            # chosen is the display name; look up the run id via method_names
+            ev = load_routing_evidence(pid)
+            name_to_id = {v: k for k, v in (ev.get("method_names") or {}).items()}
+            run = name_to_id.get(rec.chosen, rec.chosen)
+            resolved_notes.append(f"run auto-resolved: {rec.chosen} → {run}")
+        elif resolution == "tie":
+            return {"status": "routing_tie", "question": question,
+                    "task_id": task_id, "why": rec.why,
+                    "consequence": rec.consequence,
+                    "tip": "pass run= explicitly to proceed with one method"}
+        else:
+            return {"status": "routing_refused", "question": question,
+                    "task_id": task_id, "resolution": resolution, "why": rec.why,
+                    "tip": "this cohort may have no evidence for this task yet"}
 
     # H3 task families need pathway inputs; auto-enable so callers don't
     # need to know the flag exists
@@ -1316,7 +1435,7 @@ def ask(question: str, task_id: str, run: str,
         "include_pathway_scores": include_pathway_scores,
         "include_pathway_cosines": include_pathway_cosines,
         "interpretation_model": interpretation_model,
-        "notes": list(notes or []),
+        "notes": resolved_notes,
     }
 
     try:
@@ -1345,9 +1464,11 @@ def ask(question: str, task_id: str, run: str,
     t = threading.Thread(target=_bg, daemon=True, name=f"ask-{rid}")
     _running_jobs[rid] = t
     t.start()
+    # include the resolved run so the caller can see what was auto-routed
+    resolved_run = request.run  # may differ from raw run= if alias was resolved
     return {"run_id": rid, "status": "running",
             "poll_with": f"runs_status(run_id='{rid}') — check every 30s",
-            "question": question, "task_id": task_id, "run": run}
+            "question": question, "task_id": task_id, "run": resolved_run}
 
 
 # LAST in the file, and that is load-bearing. it sat above `_resources` and the
