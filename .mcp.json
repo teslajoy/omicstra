@@ -2,7 +2,8 @@
   "mcpServers": {
     "omicstra": {
       "command": "./venv/bin/python",
-      "args": ["-m", "omicstra.mcp.server"]
+      "args": ["-m", "omicstra.mcp.server"],
+      "env": { "OMICSTRA_PROJECT_DIR": "/Users/sanati/BForePC/omicstra/projects/tnbc-92" }
     }
   }
 }

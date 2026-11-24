@@ -364,15 +364,14 @@ read as a pass.
 **what it cannot do yet**
 
 ```
-fuse or align on a second cohort         v1.4 open item #33: align_run trains
-                                         through the package, not scripts
-produce that cohort's own evidence pack  v1.4 open item #34: a real second
-                                         cohort (HEST Visium candidate) produces
-                                         its own routing_evidence.json
-registration across sections             declared, not built. both cohorts are
-                                         same-section, so nothing here needs it
-mitochondrial-fraction exclusion         not implemented. a proposal commitment,
-                                         recorded in open_items.md #18
+fuse or align on a second cohort         align_run trains through the package,
+                                         not scripts (#33)
+produce that cohort's own evidence pack  a second cohort needs its own
+                                         routing_evidence.json (#34)
+outer optimization loop                  propose config -> run -> score ->
+                                         keep/discard; planned extension
+registration across sections             declared, not built
+mitochondrial-fraction exclusion         not implemented
 SLURM                                    not implemented
 ```
 
@@ -409,11 +408,9 @@ evaluated on **35,594 niches across 14 held-out TNBC patients** (zero patient le
 
 ---
 
-## the loop
+## pipeline
 
-a **level** is what code is allowed to do (LEVEL 0/1/2 in the tree below); the
-**loop** is the order a cohort goes through. they are different axes and the
-words are easy to confuse:
+a cohort goes through two layers:
 
 ```
 layer 0: EDA (gate)
@@ -423,15 +420,12 @@ layer 0: EDA (gate)
 layer 1: pipeline (execution)
   embed -> align -> eval
   fixed protocol, deterministic with seed
-
-layer 2: karpathy loop (outer optimization)
-  editable asset: alignment_config.json
-  scalar metric: Recall@K or MRR (fixed)
-  proposes config -> runs pipeline -> scores -> keeps or discards
   output: git log of validated decisions + winner.json
 ```
 
-program.md defines search space, constraints, stopping criteria.
+outer optimization (propose config -> run -> score -> keep or discard) is a
+planned extension; `program.md` defines the search space and stopping criteria
+for when it is built.
 
 embedding dimensions: Virchow2 1280d - Novae GNN 64d (novae_latent) -> shared 512d
 

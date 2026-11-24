@@ -141,6 +141,12 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
 
     from omicstra.contracts.project import ProjectConfig
 
+    from omicstra import cache as _cache
+
+    cached = _cache.get(project_dir, run)
+    if cached is not None:
+        return cached
+
     dec = declared(project_dir)
     cfg = ProjectConfig.from_dir(project_dir)
     runs_path, niches_path = cfg.path(dec["runs_dir"]), cfg.path(dec["niches_dir"])
@@ -294,6 +300,8 @@ def arrays(project_dir: str | Path, run: str, *, paired_view: str | None = None,
         "run": run,
         "view": view,
     }
+    _cache.put(project_dir, run, ctx)
+    return ctx
 
 
 def biology_labels(project_dir: str | Path,
