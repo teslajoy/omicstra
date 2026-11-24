@@ -1359,8 +1359,9 @@ def unit_notebook(unit: str, project_id: str | None = None,
     "  tissue_state_grouping  H2-A — do aligned embeddings recover tissue states?\n"
     "  subject_identity_suppression H2-C — is batch/subject signal suppressed?\n"
     "  morphology_decode      H2-B.2 — predict molecular signal from H&E alone\n\n"
-    "run accepts shorthands: 'R4' resolves to 'R4_v3'. omit run entirely to "
-    "use the evidence-recommended method for the chosen task.\n\n"
+    "run accepts shorthands: a prefix like 'R4' resolves to the declared run id "
+    "when it is unambiguous. omit run entirely to use the evidence-recommended "
+    "method for the chosen task.\n\n"
     "This tool COMPUTES: invokes the evaluation graph, generates a rerunnable "
     "notebook, returns results with provenance. Use evaluate_run only to audit "
     "published numbers — it does not compute new results."))
